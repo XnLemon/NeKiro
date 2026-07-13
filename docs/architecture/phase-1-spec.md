@@ -38,14 +38,16 @@ Console -> Control Plane -> A2A Router -> Agents
 
 ## Contract Packages
 
-The `@nek/platform-contracts` package exposes versioned subpaths:
+The `@nekiro/contracts` package exposes versioned subpaths:
 
-- `@nek/platform-contracts/agent-card`
-- `@nek/platform-contracts/platform-api`
-- `@nek/platform-contracts/internal-api`
-- `@nek/platform-contracts/a2a-profile`
-- `@nek/platform-contracts/events`
-- `@nek/platform-contracts/common`
+- `@nekiro/contracts/agent-card`
+- `@nekiro/contracts/platform-api`
+- `@nekiro/contracts/internal-api`
+- `@nekiro/contracts/a2a-profile`
+- `@nekiro/contracts/events`
+- `@nekiro/contracts/identifiers`
+- `@nekiro/contracts/errors`
+- `@nekiro/contracts/common`
 
 Services must not exchange internal implementation types across a process boundary.
 

@@ -9,6 +9,14 @@
       "types": "./dist/common/index.d.ts",
       "default": "./dist/common/index.js"
     },
+    "./identifiers": {
+      "types": "./dist/identifiers/index.d.ts",
+      "default": "./dist/identifiers/index.js"
+    },
+    "./errors": {
+      "types": "./dist/errors/index.d.ts",
+      "default": "./dist/errors/index.js"
+    },
     "./agent-card": {
       "types": "./dist/agent-card/index.d.ts",
       "default": "./dist/agent-card/index.js"
@@ -36,6 +44,11 @@
     "test": "vitest run --config ../vitest.config.ts contracts"
   },
   "dependencies": {
-    "@sinclair/typebox": "^0.34.52"
+    "@sinclair/typebox": "^0.34.52",
+    "semver": "^7.7.3"
+  },
+  "devDependencies": {
+    "@a2a-js/sdk": "^0.3.14",
+    "@types/semver": "^7.7.1"
   }
 }

@@ -1,41 +1,55 @@
 import { Type, type Static } from "@sinclair/typebox";
 
 import { AgentCardSchema } from "../agent-card/index.js";
-import { CallerSchema, IdentifierSchema, JsonObjectSchema, SemverSchema } from "../common/index.js";
-import { InvocationEventSchema } from "../events/index.js";
-import { InstallationSchema } from "../platform-api/index.js";
+import { JsonObjectSchema, SemverSchema } from "../common/index.js";
+import { CallerSchema, InvocationEventSchema } from "../events/index.js";
+import {
+  AgentIdSchema,
+  CapabilityIdSchema,
+  InstallationIdSchema,
+  InvocationIdSchema,
+  PermissionIdSchema,
+  TaskIdSchema,
+  TraceIdSchema,
+  WorkspaceIdSchema
+} from "../identifiers/index.js";
 
 export const ResolveAgentRequestSchema = Type.Object(
-  {
-    workspaceId: IdentifierSchema,
-    agentId: IdentifierSchema,
-    version: SemverSchema,
-    capability: IdentifierSchema
-  },
+  { workspaceId: WorkspaceIdSchema, agentId: AgentIdSchema, version: SemverSchema, capability: CapabilityIdSchema },
   { additionalProperties: false }
 );
 export type ResolveAgentRequest = Static<typeof ResolveAgentRequestSchema>;
 
-export const ResolveAgentResponseSchema = Type.Object(
+export const ResolvedInstallationSchema = Type.Object(
   {
-    card: AgentCardSchema,
-    installation: InstallationSchema
+    installationId: InstallationIdSchema,
+    workspaceId: WorkspaceIdSchema,
+    agentId: AgentIdSchema,
+    installedVersion: SemverSchema,
+    acceptedPermissions: Type.Array(PermissionIdSchema, { uniqueItems: true }),
+    status: Type.Literal("enabled")
   },
+  { additionalProperties: false }
+);
+export type ResolvedInstallation = Static<typeof ResolvedInstallationSchema>;
+
+export const ResolveAgentResponseSchema = Type.Object(
+  { card: AgentCardSchema, installation: ResolvedInstallationSchema },
   { additionalProperties: false }
 );
 export type ResolveAgentResponse = Static<typeof ResolveAgentResponseSchema>;
 
 export const DispatchInvocationRequestSchema = Type.Object(
   {
-    invocationId: IdentifierSchema,
-    rootTaskId: IdentifierSchema,
-    parentInvocationId: Type.Optional(IdentifierSchema),
-    traceId: IdentifierSchema,
+    invocationId: InvocationIdSchema,
+    rootTaskId: TaskIdSchema,
+    parentInvocationId: Type.Optional(InvocationIdSchema),
+    traceId: TraceIdSchema,
     caller: CallerSchema,
-    workspaceId: IdentifierSchema,
-    targetAgentId: IdentifierSchema,
+    workspaceId: WorkspaceIdSchema,
+    targetAgentId: AgentIdSchema,
     agentCardVersion: SemverSchema,
-    capability: IdentifierSchema,
+    capability: CapabilityIdSchema,
     input: JsonObjectSchema,
     stream: Type.Boolean()
   },
@@ -44,10 +58,7 @@ export const DispatchInvocationRequestSchema = Type.Object(
 export type DispatchInvocationRequest = Static<typeof DispatchInvocationRequestSchema>;
 
 export const DispatchInvocationAcceptedSchema = Type.Object(
-  {
-    invocationId: IdentifierSchema,
-    accepted: Type.Literal(true)
-  },
+  { invocationId: InvocationIdSchema, accepted: Type.Literal(true) },
   { additionalProperties: false }
 );
 export type DispatchInvocationAccepted = Static<typeof DispatchInvocationAcceptedSchema>;

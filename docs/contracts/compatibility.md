@@ -11,6 +11,7 @@ Phase 1 starts with:
 | Agent Card Schema | `0.1` |
 | Northbound API | `v1` |
 | Internal API | `v1` |
+| Invocation Event Schema | `0.1` |
 | A2A protocol profile | `0.3.0` |
 
 ## Compatible Changes
