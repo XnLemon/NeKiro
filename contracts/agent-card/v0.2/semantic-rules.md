@@ -14,6 +14,10 @@ An Agent Card v0.2 document MUST pass both structural validation against
 document. Passing structural validation alone MUST NOT be reported as Agent
 Card v0.2 conformance.
 
+`protocol.endpoint` MUST be an absolute HTTP(S) URI without URI userinfo. The
+structural Schema MUST reject username, password, token-like, and empty
+userinfo marker forms before semantic rules are evaluated.
+
 Semantic evaluation operates on one complete Agent Card document. Identifier
 comparisons MUST use exact, case-sensitive JSON string equality. Implementations
 MUST NOT trim, normalize, case-fold, coerce, or resolve identifiers from another
@@ -49,3 +53,9 @@ be valid Agent Card v0.2 documents, but they MUST NOT participate in semantic
 evaluation of the primary `file`. They exist to demonstrate facts such as a
 permission being declared by another Agent Card version. For validator output,
 only `valid` and `violatedRules` are normative.
+
+Every manifest object member name MUST occur exactly once. The `file` and every
+`contextFiles` entry MUST be a nonempty canonical `/`-separated relative path
+confined to the conformance corpus. Absolute paths, URI schemes, backslashes,
+empty segments, `.` or `..` segments, and encoded or platform-equivalent
+traversal forms are invalid before fixture filesystem access.

@@ -30,6 +30,8 @@ func TestAgentCardConformance(t *testing.T) {
 		"invalid-cross-version-permission",
 		"invalid-case-mismatched-permission",
 		"invalid-structural-missing-name",
+		"invalid-endpoint-userinfo-credentials",
+		"invalid-endpoint-userinfo-empty",
 	}
 	caseIDs := make(map[string]struct{}, len(manifest.Cases))
 
@@ -92,19 +94,26 @@ func TestAgentCardConformanceManifestRequiresExplicitFields(t *testing.T) {
 		document string
 	}{
 		{name: "missing cases", document: `{}`},
+		{name: "null cases", document: `{"cases":null}`},
 		{name: "empty cases", document: `{"cases":[]}`},
 		{name: "missing id", document: `{"cases":[{"file":"card.json","valid":false,"violatedRules":[],"contextFiles":[]}]}`},
+		{name: "null id", document: `{"cases":[{"id":null,"file":"card.json","valid":false,"violatedRules":[],"contextFiles":[]}]}`},
 		{name: "missing file", document: `{"cases":[{"id":"case","valid":false,"violatedRules":[],"contextFiles":[]}]}`},
+		{name: "null file", document: `{"cases":[{"id":"case","file":null,"valid":false,"violatedRules":[],"contextFiles":[]}]}`},
 		{name: "missing valid", document: `{"cases":[{"id":"case","file":"card.json","violatedRules":[],"contextFiles":[]}]}`},
 		{name: "null valid", document: `{"cases":[{"id":"case","file":"card.json","valid":null,"violatedRules":[],"contextFiles":[]}]}`},
 		{name: "missing violated rules", document: `{"cases":[{"id":"case","file":"card.json","valid":false,"contextFiles":[]}]}`},
 		{name: "null violated rules", document: `{"cases":[{"id":"case","file":"card.json","valid":false,"violatedRules":null,"contextFiles":[]}]}`},
 		{name: "missing context files", document: `{"cases":[{"id":"case","file":"card.json","valid":false,"violatedRules":[]}]}`},
+		{name: "null context files", document: `{"cases":[{"id":"case","file":"card.json","valid":false,"violatedRules":[],"contextFiles":null}]}`},
 		{name: "unknown root field", document: `{"cases":[{"id":"case","file":"card.json","valid":false,"violatedRules":[],"contextFiles":[]}],"unknown":true}`},
 		{name: "unknown case field", document: `{"cases":[{"id":"case","file":"card.json","valid":false,"violatedRules":[],"contextFiles":[],"unknown":true}]}`},
 		{name: "unknown rule id", document: `{"cases":[{"id":"case","file":"card.json","valid":false,"violatedRules":["AC-SEM-999"],"contextFiles":[]}]}`},
 		{name: "valid with violated rule", document: `{"cases":[{"id":"case","file":"card.json","valid":true,"violatedRules":["AC-SEM-001"],"contextFiles":[]}]}`},
 		{name: "duplicate case id", document: `{"cases":[{"id":"case","file":"one.json","valid":true,"violatedRules":[],"contextFiles":[]},{"id":"case","file":"two.json","valid":true,"violatedRules":[],"contextFiles":[]}]}`},
+		{name: "duplicate root member", document: `{"cases":[{"id":"case-one","file":"one.json","valid":true,"violatedRules":[],"contextFiles":[]}],"cases":[{"id":"case-two","file":"two.json","valid":true,"violatedRules":[],"contextFiles":[]}]}`},
+		{name: "duplicate case member", document: `{"cases":[{"id":"case","file":"card.json","valid":false,"valid":true,"violatedRules":[],"contextFiles":[]}]}`},
+		{name: "escaped duplicate case member", document: `{"cases":[{"id":"case","\u0069d":"other","file":"card.json","valid":false,"violatedRules":[],"contextFiles":[]}]}`},
 		{name: "trailing JSON", document: `{"cases":[{"id":"case","file":"card.json","valid":true,"violatedRules":[],"contextFiles":[]}]} {}`},
 	}
 
@@ -114,6 +123,99 @@ func TestAgentCardConformanceManifestRequiresExplicitFields(t *testing.T) {
 				t.Fatal("malformed Agent Card conformance manifest was accepted")
 			}
 		})
+	}
+}
+
+func TestAgentCardConformanceManifestRejectsUnsafeFixturePaths(t *testing.T) {
+	testCases := []struct {
+		name string
+		path string
+	}{
+		{name: "empty", path: ""},
+		{name: "absolute POSIX", path: "/card.json"},
+		{name: "absolute Windows drive", path: "C:/card.json"},
+		{name: "HTTP URI", path: "https://example.test/card.json"},
+		{name: "file URI", path: "file:card.json"},
+		{name: "backslash", path: `nested\card.json`},
+		{name: "empty middle segment", path: "nested//card.json"},
+		{name: "empty trailing segment", path: "nested/card.json/"},
+		{name: "current directory segment", path: "nested/./card.json"},
+		{name: "parent directory segment", path: "nested/../card.json"},
+		{name: "encoded traversal", path: "nested/%2e%2e/card.json"},
+		{name: "platform-equivalent traversal", path: "nested/.. /card.json"},
+		{name: "nonportable colon", path: "nested/name:card.json"},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			encodedPath, err := json.Marshal(testCase.path)
+			if err != nil {
+				t.Fatalf("encode fixture path: %v", err)
+			}
+
+			primaryDocument := []byte(`{"cases":[{"id":"case","file":` + string(encodedPath) + `,"valid":false,"violatedRules":[],"contextFiles":[]}]}`)
+			if _, err := DecodeAgentCardConformanceManifest(primaryDocument); err == nil {
+				t.Fatal("unsafe primary fixture path was accepted")
+			}
+
+			contextDocument := []byte(`{"cases":[{"id":"case","file":"card.json","valid":false,"violatedRules":[],"contextFiles":[` + string(encodedPath) + `]}]}`)
+			if _, err := DecodeAgentCardConformanceManifest(contextDocument); err == nil {
+				t.Fatal("unsafe context fixture path was accepted")
+			}
+		})
+	}
+
+	canonical := []byte(`{"cases":[{"id":"case","file":"nested/card.json","valid":false,"violatedRules":[],"contextFiles":["related/context.json"]}]}`)
+	if _, err := DecodeAgentCardConformanceManifest(canonical); err != nil {
+		t.Fatalf("canonical nested fixture paths were rejected: %v", err)
+	}
+}
+
+func TestAgentCardEndpointRejectsURIUserinfoForms(t *testing.T) {
+	schema := compileAgentCardV02Schema(t)
+	fixturePath := filepath.Join("agent-card", "v0.2", "conformance", "valid-baseline.json")
+	card, structuralErr, ruleIDs := evaluateAgentCardFixture(t, schema, fixturePath)
+	if structuralErr != nil || len(ruleIDs) > 0 {
+		t.Fatalf("baseline fixture is not conformant: structural error %v, rules %v", structuralErr, ruleIDs)
+	}
+
+	for _, endpoint := range []string{
+		"https://alice@agent.example.test/a2a",
+		"https://alice:secret@agent.example.test/a2a",
+		"https://@agent.example.test/a2a",
+		"https://:@agent.example.test/a2a",
+	} {
+		t.Run(endpoint, func(t *testing.T) {
+			candidate := card
+			candidate.Protocol.Endpoint = endpoint
+			if violations := EvaluateAgentCardSemantics(candidate); len(violations) > 0 {
+				t.Fatalf("userinfo candidate unexpectedly failed semantic rules: %v", violations)
+			}
+			data, err := json.Marshal(candidate)
+			if err != nil {
+				t.Fatalf("encode userinfo candidate: %v", err)
+			}
+			document, err := jsonschema.UnmarshalJSON(bytes.NewReader(data))
+			if err != nil {
+				t.Fatalf("decode userinfo candidate: %v", err)
+			}
+			if err := schema.Validate(document); err == nil {
+				t.Fatal("endpoint URI userinfo was structurally accepted")
+			}
+		})
+	}
+
+	card.Protocol.Endpoint = "https://agent.example.test/a2a/@self?notify=user@example.test"
+	data, err := json.Marshal(card)
+	if err != nil {
+		t.Fatalf("encode endpoint with non-authority at-sign: %v", err)
+	}
+	document, err := jsonschema.UnmarshalJSON(bytes.NewReader(data))
+	if err != nil {
+		t.Fatalf("decode endpoint with non-authority at-sign: %v", err)
+	}
+	if err := schema.Validate(document); err != nil {
+		t.Fatalf("endpoint with non-authority at-sign was rejected: %v", err)
 	}
 }
 

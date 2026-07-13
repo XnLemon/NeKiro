@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"strings"
 )
 
 type AgentCardSemanticRuleID string
@@ -44,6 +45,10 @@ type AgentCardSemanticViolation struct {
 }
 
 func DecodeAgentCardConformanceManifest(data []byte) (AgentCardConformanceManifest, error) {
+	if err := rejectDuplicateJSONMemberNames(data); err != nil {
+		return AgentCardConformanceManifest{}, fmt.Errorf("decode Agent Card conformance manifest: %w", err)
+	}
+
 	var document agentCardConformanceManifestJSON
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.DisallowUnknownFields()
@@ -91,6 +96,9 @@ func decodeAgentCardConformanceCase(index int, wireCase agentCardConformanceCase
 	if *wireCase.File == "" {
 		return AgentCardConformanceCase{}, fmt.Errorf("Agent Card conformance case %q file must not be empty", *wireCase.ID)
 	}
+	if err := validateAgentCardConformanceFixturePath(*wireCase.File); err != nil {
+		return AgentCardConformanceCase{}, fmt.Errorf("Agent Card conformance case %q file: %w", *wireCase.ID, err)
+	}
 	if wireCase.Valid == nil {
 		return AgentCardConformanceCase{}, fmt.Errorf("Agent Card conformance case %q is missing valid", *wireCase.ID)
 	}
@@ -117,8 +125,8 @@ func decodeAgentCardConformanceCase(index int, wireCase agentCardConformanceCase
 
 	contextFiles := make(map[string]struct{}, len(*wireCase.ContextFiles))
 	for _, contextFile := range *wireCase.ContextFiles {
-		if contextFile == "" {
-			return AgentCardConformanceCase{}, fmt.Errorf("Agent Card conformance case %q contains an empty context file", *wireCase.ID)
+		if err := validateAgentCardConformanceFixturePath(contextFile); err != nil {
+			return AgentCardConformanceCase{}, fmt.Errorf("Agent Card conformance case %q context file: %w", *wireCase.ID, err)
 		}
 		if contextFile == *wireCase.File {
 			return AgentCardConformanceCase{}, fmt.Errorf("Agent Card conformance case %q uses its primary fixture as context", *wireCase.ID)
@@ -136,6 +144,134 @@ func decodeAgentCardConformanceCase(index int, wireCase agentCardConformanceCase
 		ViolatedRules: *wireCase.ViolatedRules,
 		ContextFiles:  *wireCase.ContextFiles,
 	}, nil
+}
+
+func rejectDuplicateJSONMemberNames(data []byte) error {
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	if err := scanJSONValue(decoder); err != nil {
+		return err
+	}
+	if err := requireJSONEOF(decoder); err != nil {
+		return err
+	}
+	return nil
+}
+
+func scanJSONValue(decoder *json.Decoder) error {
+	token, err := decoder.Token()
+	if err != nil {
+		return err
+	}
+	delimiter, isDelimiter := token.(json.Delim)
+	if !isDelimiter {
+		return nil
+	}
+
+	switch delimiter {
+	case '{':
+		members := make(map[string]struct{})
+		for decoder.More() {
+			memberToken, err := decoder.Token()
+			if err != nil {
+				return err
+			}
+			memberName, ok := memberToken.(string)
+			if !ok {
+				return fmt.Errorf("JSON object member name must be a string")
+			}
+			if _, exists := members[memberName]; exists {
+				return fmt.Errorf("duplicate JSON object member %q", memberName)
+			}
+			members[memberName] = struct{}{}
+			if err := scanJSONValue(decoder); err != nil {
+				return err
+			}
+		}
+		closing, err := decoder.Token()
+		if err != nil {
+			return err
+		}
+		if closing != json.Delim('}') {
+			return fmt.Errorf("JSON object has invalid closing delimiter")
+		}
+	case '[':
+		for decoder.More() {
+			if err := scanJSONValue(decoder); err != nil {
+				return err
+			}
+		}
+		closing, err := decoder.Token()
+		if err != nil {
+			return err
+		}
+		if closing != json.Delim(']') {
+			return fmt.Errorf("JSON array has invalid closing delimiter")
+		}
+	default:
+		return fmt.Errorf("unexpected JSON delimiter %q", delimiter)
+	}
+	return nil
+}
+
+func validateAgentCardConformanceFixturePath(fixturePath string) error {
+	if fixturePath == "" {
+		return fmt.Errorf("fixture path must not be empty")
+	}
+	if strings.HasPrefix(fixturePath, "/") {
+		return fmt.Errorf("fixture path must be relative")
+	}
+	if strings.Contains(fixturePath, "\\") {
+		return fmt.Errorf("fixture path must use forward slashes")
+	}
+	if strings.ContainsAny(fixturePath, "%?#\x00") {
+		return fmt.Errorf("fixture path contains a noncanonical character")
+	}
+	if hasURIScheme(fixturePath) {
+		return fmt.Errorf("fixture path must not contain a URI scheme")
+	}
+	if strings.ContainsRune(fixturePath, ':') {
+		return fmt.Errorf("fixture path contains a nonportable colon")
+	}
+
+	for _, segment := range strings.Split(fixturePath, "/") {
+		if segment == "" {
+			return fmt.Errorf("fixture path contains an empty segment")
+		}
+		if segment == "." || segment == ".." {
+			return fmt.Errorf("fixture path contains a traversal segment")
+		}
+		if strings.TrimRight(segment, " .") != segment {
+			return fmt.Errorf("fixture path contains a platform-equivalent traversal segment")
+		}
+	}
+	return nil
+}
+
+func hasURIScheme(value string) bool {
+	colon := strings.IndexByte(value, ':')
+	if colon <= 0 {
+		return false
+	}
+	if slash := strings.IndexByte(value, '/'); slash >= 0 && slash < colon {
+		return false
+	}
+	for index := 0; index < colon; index++ {
+		character := value[index]
+		if index == 0 {
+			if !isASCIIAlpha(character) {
+				return false
+			}
+			continue
+		}
+		if !isASCIIAlpha(character) && (character < '0' || character > '9') && character != '+' && character != '-' && character != '.' {
+			return false
+		}
+	}
+	return true
+}
+
+func isASCIIAlpha(character byte) bool {
+	return character >= 'A' && character <= 'Z' || character >= 'a' && character <= 'z'
 }
 
 func isAgentCardSemanticRuleID(ruleID AgentCardSemanticRuleID) bool {

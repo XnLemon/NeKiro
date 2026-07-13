@@ -1,0 +1,46 @@
+{
+  "schemaVersion": "0.2",
+  "agentId": "document-agent",
+  "name": "Document Agent",
+  "description": "Processes documents through declared skills.",
+  "owner": {
+    "id": "nene7ko",
+    "displayName": "Nene7ko"
+  },
+  "version": "2.4.0",
+  "protocol": {
+    "type": "a2a",
+    "version": "0.3.0",
+    "transport": "JSONRPC",
+    "endpoint": "https://@agent.example.test/a2a"
+  },
+  "skills": [
+    {
+      "id": "document.summarize",
+      "name": "Summarize document",
+      "description": "Produces a concise document summary.",
+      "inputSchema": {
+        "type": "object"
+      },
+      "outputSchema": {
+        "type": "object"
+      },
+      "requiredPermissions": ["documents.read"]
+    }
+  ],
+  "authentication": {
+    "type": "none"
+  },
+  "permissions": [
+    {
+      "id": "documents.read",
+      "description": "Read documents supplied for processing."
+    }
+  ],
+  "limits": {
+    "timeoutMs": 30000,
+    "maxInputBytes": 1000000,
+    "maxOutputBytes": 1000000,
+    "streaming": true
+  }
+}

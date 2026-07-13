@@ -62,6 +62,20 @@
       "valid": false,
       "violatedRules": [],
       "contextFiles": []
+    },
+    {
+      "id": "invalid-endpoint-userinfo-credentials",
+      "file": "invalid-endpoint-userinfo-credentials.json",
+      "valid": false,
+      "violatedRules": [],
+      "contextFiles": []
+    },
+    {
+      "id": "invalid-endpoint-userinfo-empty",
+      "file": "invalid-endpoint-userinfo-empty.json",
+      "valid": false,
+      "violatedRules": [],
+      "contextFiles": []
     }
   ]
 }
