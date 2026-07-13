@@ -79,6 +79,227 @@ func TestInvocationResultRequiresPresentJSONValue(t *testing.T) {
 	}
 }
 
+func TestStrictResultContractDecodingRejectsMissingNullAndUnknownFields(t *testing.T) {
+	platformError, err := NewPlatformErrorV2(ErrorCodeInternal, "trace-decode")
+	if err != nil {
+		t.Fatalf("create Platform Error v2: %v", err)
+	}
+	chunkIndex := int64(0)
+	chunkEvent := resultStreamEvent(ResultStreamEventChunk, 1)
+	chunkEvent.ChunkIndex = &chunkIndex
+	chunkEvent.Chunk = json.RawMessage(`{"piece":1}`)
+	streamFailureError, err := NewCorrelatedPlatformErrorV2(
+		ErrorCodeAgentExecutionFailed,
+		"trace-stream",
+		"inv-stream",
+		"task-stream",
+	)
+	if err != nil {
+		t.Fatalf("create stream failure error: %v", err)
+	}
+	failedStreamEvent := resultStreamEvent(ResultStreamEventFailed, 1)
+	failedStreamEvent.Error = &streamFailureError
+
+	chunkBytes := int64(12)
+	ledgerStreamEvent := validInvocationEventV02("stream", "running", nil)
+	ledgerStreamEvent.ChunkIndex = &chunkIndex
+	ledgerStreamEvent.ChunkBytes = &chunkBytes
+	ledgerSucceededEvent := validInvocationEventV02("succeeded", "succeeded", nil)
+	ledgerFailureError := mustCorrelatedPlatformErrorV2(t, ErrorCodeAgentExecutionFailed)
+	ledgerFailedEvent := validInvocationEventV02("failed", "failed", &ledgerFailureError)
+	ledgerStartedEvent := validInvocationEventV02("started", "running", nil)
+
+	testCases := []struct {
+		name        string
+		data        []byte
+		destination func() any
+	}{
+		{
+			name: "Platform Error missing required traceId",
+			data: mutateContractJSON(t, platformError, func(document map[string]any) {
+				delete(document, "traceId")
+			}),
+			destination: func() any { return &PlatformErrorV2{} },
+		},
+		{
+			name: "Platform Error null invocationId",
+			data: mutateContractJSON(t, platformError, func(document map[string]any) {
+				document["invocationId"] = nil
+			}),
+			destination: func() any { return &PlatformErrorV2{} },
+		},
+		{
+			name: "Platform Error null rootTaskId",
+			data: mutateContractJSON(t, platformError, func(document map[string]any) {
+				document["rootTaskId"] = nil
+			}),
+			destination: func() any { return &PlatformErrorV2{} },
+		},
+		{
+			name: "Platform Error unknown field",
+			data: mutateContractJSON(t, platformError, func(document map[string]any) {
+				document["details"] = "dependency detail"
+			}),
+			destination: func() any { return &PlatformErrorV2{} },
+		},
+		{
+			name: "result stream event missing required rootTaskId",
+			data: mutateContractJSON(t, chunkEvent, func(document map[string]any) {
+				delete(document, "rootTaskId")
+			}),
+			destination: func() any { return &InvocationResultStreamEvent{} },
+		},
+		{
+			name: "result stream event null chunkIndex",
+			data: mutateContractJSON(t, chunkEvent, func(document map[string]any) {
+				document["chunkIndex"] = nil
+			}),
+			destination: func() any { return &InvocationResultStreamEvent{} },
+		},
+		{
+			name: "result stream event null error",
+			data: mutateContractJSON(t, failedStreamEvent, func(document map[string]any) {
+				document["error"] = nil
+			}),
+			destination: func() any { return &InvocationResultStreamEvent{} },
+		},
+		{
+			name: "result stream event unknown field",
+			data: mutateContractJSON(t, chunkEvent, func(document map[string]any) {
+				document["cursor"] = "replay-token"
+			}),
+			destination: func() any { return &InvocationResultStreamEvent{} },
+		},
+		{
+			name: "Invocation Event missing required invocationId",
+			data: mutateContractJSON(t, ledgerStartedEvent, func(document map[string]any) {
+				delete(document, "invocationId")
+			}),
+			destination: func() any { return &InvocationEventV02{} },
+		},
+		{
+			name: "Invocation Event null parentInvocationId",
+			data: mutateContractJSON(t, ledgerStartedEvent, func(document map[string]any) {
+				document["parentInvocationId"] = nil
+			}),
+			destination: func() any { return &InvocationEventV02{} },
+		},
+		{
+			name: "Invocation Event null chunkIndex",
+			data: mutateContractJSON(t, ledgerStreamEvent, func(document map[string]any) {
+				document["chunkIndex"] = nil
+			}),
+			destination: func() any { return &InvocationEventV02{} },
+		},
+		{
+			name: "Invocation Event null chunkBytes",
+			data: mutateContractJSON(t, ledgerStreamEvent, func(document map[string]any) {
+				document["chunkBytes"] = nil
+			}),
+			destination: func() any { return &InvocationEventV02{} },
+		},
+		{
+			name: "Invocation Event null latencyMs",
+			data: mutateContractJSON(t, ledgerSucceededEvent, func(document map[string]any) {
+				document["latencyMs"] = nil
+			}),
+			destination: func() any { return &InvocationEventV02{} },
+		},
+		{
+			name: "Invocation Event null error",
+			data: mutateContractJSON(t, ledgerFailedEvent, func(document map[string]any) {
+				document["error"] = nil
+			}),
+			destination: func() any { return &InvocationEventV02{} },
+		},
+		{
+			name: "Invocation Event unknown field",
+			data: mutateContractJSON(t, ledgerStartedEvent, func(document map[string]any) {
+				document["result"] = map[string]any{"secret": true}
+			}),
+			destination: func() any { return &InvocationEventV02{} },
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			if err := json.Unmarshal(testCase.data, testCase.destination()); err == nil {
+				t.Fatalf("strict decode accepted invalid document: %s", testCase.data)
+			}
+		})
+	}
+}
+
+func TestStrictResultContractDecodingPreservesExplicitNullPayloads(t *testing.T) {
+	var result InvocationResult
+	if err := json.Unmarshal([]byte(`{
+		"schemaVersion":"1",
+		"invocationId":"inv-null",
+		"rootTaskId":"task-null",
+		"traceId":"trace-null",
+		"status":"succeeded",
+		"result":null
+	}`), &result); err != nil {
+		t.Fatalf("decode explicit null result: %v", err)
+	}
+	if string(result.Result) != "null" {
+		t.Fatalf("decoded result = %q, want explicit null", result.Result)
+	}
+	if err := mustResultContractValidator(t).ValidateInvocationResult(result); err != nil {
+		t.Fatalf("validate explicit null result: %v", err)
+	}
+
+	var chunk InvocationResultStreamEvent
+	if err := json.Unmarshal([]byte(`{
+		"schemaVersion":"1",
+		"sequence":1,
+		"type":"chunk",
+		"status":"running",
+		"invocationId":"inv-null",
+		"rootTaskId":"task-null",
+		"traceId":"trace-null",
+		"chunkIndex":0,
+		"chunk":null
+	}`), &chunk); err != nil {
+		t.Fatalf("decode explicit null chunk: %v", err)
+	}
+	if string(chunk.Chunk) != "null" {
+		t.Fatalf("decoded chunk = %q, want explicit null", chunk.Chunk)
+	}
+}
+
+func TestInvocationEventV02StrictDecodePreservesChildLineage(t *testing.T) {
+	child := validInvocationEventV02("started", "running", nil)
+	child.InvocationID = "inv-child"
+	child.ParentInvocationID = "inv-parent"
+	child.RootTaskID = "task-root"
+	child.TraceID = "trace-root"
+	child.Caller = Caller{Type: "agent", ID: "agent-parent"}
+
+	data, err := json.Marshal(child)
+	if err != nil {
+		t.Fatalf("marshal child Invocation Event: %v", err)
+	}
+	var decoded InvocationEventV02
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatalf("strict decode child Invocation Event: %v", err)
+	}
+	if decoded.ParentInvocationID != child.ParentInvocationID || decoded.RootTaskID != child.RootTaskID || decoded.TraceID != child.TraceID {
+		t.Fatalf(
+			"decoded lineage = parent %q root %q trace %q, want parent %q root %q trace %q",
+			decoded.ParentInvocationID,
+			decoded.RootTaskID,
+			decoded.TraceID,
+			child.ParentInvocationID,
+			child.RootTaskID,
+			child.TraceID,
+		)
+	}
+	if err := mustResultContractValidator(t).ValidateInvocationEvent(decoded); err != nil {
+		t.Fatalf("validate decoded child Invocation Event: %v", err)
+	}
+}
+
 func TestResultStreamFirstTerminalWins(t *testing.T) {
 	validator := mustResultContractValidator(t)
 	sequence := mustResultStreamSequenceValidator(t, validator, "inv-stream", "task-stream", "trace-stream")
@@ -252,6 +473,24 @@ func validateResultJSONBytes(schema interface{ Validate(any) error }, data []byt
 		return err
 	}
 	return schema.Validate(document)
+}
+
+func mutateContractJSON(t *testing.T, value any, mutate func(map[string]any)) []byte {
+	t.Helper()
+	data, err := json.Marshal(value)
+	if err != nil {
+		t.Fatalf("marshal contract value: %v", err)
+	}
+	var document map[string]any
+	if err := json.Unmarshal(data, &document); err != nil {
+		t.Fatalf("decode contract value: %v", err)
+	}
+	mutate(document)
+	data, err = json.Marshal(document)
+	if err != nil {
+		t.Fatalf("marshal mutated contract value: %v", err)
+	}
+	return data
 }
 
 func mustResultContractValidator(t *testing.T) *ResultContractValidator {

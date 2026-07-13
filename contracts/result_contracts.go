@@ -1,9 +1,11 @@
 package contracts
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sync"
 	"time"
 
 	semver "github.com/Masterminds/semver/v3"
@@ -55,6 +57,29 @@ type PlatformErrorV2 struct {
 	TraceID      TraceID           `json:"traceId"`
 	InvocationID string            `json:"invocationId,omitempty"`
 	RootTaskID   string            `json:"rootTaskId,omitempty"`
+}
+
+func (platformError *PlatformErrorV2) UnmarshalJSON(data []byte) error {
+	type wirePlatformErrorV2 PlatformErrorV2
+	var decoded wirePlatformErrorV2
+	if err := unmarshalStrictResultContractObject(
+		data,
+		&decoded,
+		[]string{"code", "message", "traceId"},
+		[]string{"invocationId", "rootTaskId"},
+	); err != nil {
+		return fmt.Errorf("decode Platform Error v2: %w", err)
+	}
+	value := PlatformErrorV2(decoded)
+	validator, err := resultContractDecodeValidator()
+	if err != nil {
+		return err
+	}
+	if err := validator.ValidatePlatformError(value); err != nil {
+		return fmt.Errorf("decode Platform Error v2: %w", err)
+	}
+	*platformError = value
+	return nil
 }
 
 func NewPlatformErrorV2(code PlatformErrorCode, traceID TraceID) (PlatformErrorV2, error) {
@@ -111,6 +136,29 @@ type InvocationResultStreamEvent struct {
 	Error         *PlatformErrorV2      `json:"error,omitempty"`
 }
 
+func (event *InvocationResultStreamEvent) UnmarshalJSON(data []byte) error {
+	type wireInvocationResultStreamEvent InvocationResultStreamEvent
+	var decoded wireInvocationResultStreamEvent
+	if err := unmarshalStrictResultContractObject(
+		data,
+		&decoded,
+		[]string{"schemaVersion", "sequence", "type", "status", "invocationId", "rootTaskId", "traceId"},
+		[]string{"chunkIndex", "error"},
+	); err != nil {
+		return fmt.Errorf("decode Invocation Result Stream Event: %w", err)
+	}
+	value := InvocationResultStreamEvent(decoded)
+	validator, err := resultContractDecodeValidator()
+	if err != nil {
+		return err
+	}
+	if err := validator.ValidateInvocationResultStreamEvent(value); err != nil {
+		return fmt.Errorf("decode Invocation Result Stream Event: %w", err)
+	}
+	*event = value
+	return nil
+}
+
 type InvocationEventV02 struct {
 	SchemaVersion      string           `json:"schemaVersion"`
 	EventID            string           `json:"eventId"`
@@ -133,6 +181,44 @@ type InvocationEventV02 struct {
 	Error              *PlatformErrorV2 `json:"error,omitempty"`
 }
 
+func (event *InvocationEventV02) UnmarshalJSON(data []byte) error {
+	type wireInvocationEventV02 InvocationEventV02
+	var decoded wireInvocationEventV02
+	if err := unmarshalStrictResultContractObject(
+		data,
+		&decoded,
+		[]string{
+			"schemaVersion",
+			"eventId",
+			"sequence",
+			"occurredAt",
+			"type",
+			"status",
+			"invocationId",
+			"rootTaskId",
+			"traceId",
+			"caller",
+			"workspaceId",
+			"targetAgentId",
+			"agentCardVersion",
+			"capability",
+		},
+		[]string{"parentInvocationId", "chunkIndex", "chunkBytes", "latencyMs", "error"},
+	); err != nil {
+		return fmt.Errorf("decode Invocation Event v0.2: %w", err)
+	}
+	value := InvocationEventV02(decoded)
+	validator, err := resultContractDecodeValidator()
+	if err != nil {
+		return err
+	}
+	if err := validator.ValidateInvocationEvent(value); err != nil {
+		return fmt.Errorf("decode Invocation Event v0.2: %w", err)
+	}
+	*event = value
+	return nil
+}
+
 type RouterEventEnvelopeV02 struct {
 	Event InvocationEventV02 `json:"event"`
 }
@@ -149,6 +235,22 @@ type ResultContractValidator struct {
 	invocationResultStreamEvent *jsonschema.Schema
 	invocationEvent             *jsonschema.Schema
 	platformError               *jsonschema.Schema
+}
+
+var resultContractDecodeState struct {
+	once      sync.Once
+	validator *ResultContractValidator
+	err       error
+}
+
+func resultContractDecodeValidator() (*ResultContractValidator, error) {
+	resultContractDecodeState.once.Do(func() {
+		resultContractDecodeState.validator, resultContractDecodeState.err = NewResultContractValidator()
+	})
+	if resultContractDecodeState.err != nil {
+		return nil, fmt.Errorf("initialize result contract decoder: %w", resultContractDecodeState.err)
+	}
+	return resultContractDecodeState.validator, nil
 }
 
 func NewResultContractValidator() (*ResultContractValidator, error) {
@@ -348,4 +450,44 @@ func validateSafeContractIdentifier(name string, value string) error {
 		return fmt.Errorf("invalid %s", name)
 	}
 	return nil
+}
+
+func unmarshalStrictResultContractObject(
+	data []byte,
+	destination any,
+	requiredFields []string,
+	optionalNonNullableFields []string,
+) error {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return err
+	}
+	if fields == nil {
+		return errors.New("contract value must be a JSON object")
+	}
+	for _, field := range requiredFields {
+		value, exists := fields[field]
+		if !exists {
+			return fmt.Errorf("required field %q is missing", field)
+		}
+		if isJSONNull(value) {
+			return fmt.Errorf("required field %q must not be null", field)
+		}
+	}
+	for _, field := range optionalNonNullableFields {
+		if value, exists := fields[field]; exists && isJSONNull(value) {
+			return fmt.Errorf("optional field %q must not be null", field)
+		}
+	}
+
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(destination); err != nil {
+		return err
+	}
+	return requireJSONEOF(decoder)
+}
+
+func isJSONNull(value json.RawMessage) bool {
+	return bytes.Equal(bytes.TrimSpace(value), []byte("null"))
 }
