@@ -223,7 +223,10 @@ func validateAgentCardConformanceFixturePath(fixturePath string) error {
 	if strings.Contains(fixturePath, "\\") {
 		return fmt.Errorf("fixture path must use forward slashes")
 	}
-	if strings.ContainsAny(fixturePath, "%?#\x00") {
+	if containsASCIIControl(fixturePath) {
+		return fmt.Errorf("fixture path contains an ASCII control character")
+	}
+	if strings.ContainsAny(fixturePath, "%?#<>\"|*") {
 		return fmt.Errorf("fixture path contains a noncanonical character")
 	}
 	if hasURIScheme(fixturePath) {
@@ -243,8 +246,35 @@ func validateAgentCardConformanceFixturePath(fixturePath string) error {
 		if strings.TrimRight(segment, " .") != segment {
 			return fmt.Errorf("fixture path contains a platform-equivalent traversal segment")
 		}
+		if isWindowsReservedBasename(segment) {
+			return fmt.Errorf("fixture path contains a Windows reserved device basename")
+		}
 	}
 	return nil
+}
+
+func containsASCIIControl(value string) bool {
+	for _, character := range value {
+		if character <= 0x1f || character == 0x7f {
+			return true
+		}
+	}
+	return false
+}
+
+func isWindowsReservedBasename(segment string) bool {
+	basename := segment
+	if extension := strings.IndexByte(segment, '.'); extension >= 0 {
+		basename = segment[:extension]
+	}
+	basename = strings.ToUpper(basename)
+	if basename == "CON" || basename == "PRN" || basename == "AUX" || basename == "NUL" {
+		return true
+	}
+	if len(basename) != 4 || basename[3] < '1' || basename[3] > '9' {
+		return false
+	}
+	return basename[:3] == "COM" || basename[:3] == "LPT"
 }
 
 func hasURIScheme(value string) bool {

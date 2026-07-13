@@ -3,6 +3,7 @@ package contracts
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -127,10 +128,11 @@ func TestAgentCardConformanceManifestRequiresExplicitFields(t *testing.T) {
 }
 
 func TestAgentCardConformanceManifestRejectsUnsafeFixturePaths(t *testing.T) {
-	testCases := []struct {
+	type pathTestCase struct {
 		name string
 		path string
-	}{
+	}
+	testCases := []pathTestCase{
 		{name: "empty", path: ""},
 		{name: "absolute POSIX", path: "/card.json"},
 		{name: "absolute Windows drive", path: "C:/card.json"},
@@ -144,7 +146,36 @@ func TestAgentCardConformanceManifestRejectsUnsafeFixturePaths(t *testing.T) {
 		{name: "encoded traversal", path: "nested/%2e%2e/card.json"},
 		{name: "platform-equivalent traversal", path: "nested/.. /card.json"},
 		{name: "nonportable colon", path: "nested/name:card.json"},
+		{name: "reserved CON", path: "nested/CON"},
+		{name: "reserved CON mixed case extension", path: "nested/CoN.json"},
+		{name: "reserved PRN extension", path: "nested/prn.txt"},
+		{name: "reserved AUX", path: "nested/AUX"},
+		{name: "reserved NUL extension", path: "nested/nul.json"},
+		{name: "trailing dot", path: "nested/card.json."},
+		{name: "trailing space", path: "nested/card.json "},
 	}
+	for number := 1; number <= 9; number++ {
+		testCases = append(testCases,
+			pathTestCase{name: fmt.Sprintf("reserved COM%d", number), path: fmt.Sprintf("nested/CoM%d.json", number)},
+			pathTestCase{name: fmt.Sprintf("reserved LPT%d", number), path: fmt.Sprintf("nested/LpT%d.log", number)},
+		)
+	}
+	for _, character := range []rune{'<', '>', ':', '"', '|', '?', '*'} {
+		testCases = append(testCases, pathTestCase{
+			name: fmt.Sprintf("Windows-invalid %q", character),
+			path: "nested/name" + string(character) + "card.json",
+		})
+	}
+	for character := rune(0); character <= 0x1f; character++ {
+		testCases = append(testCases, pathTestCase{
+			name: fmt.Sprintf("ASCII control 0x%02X", character),
+			path: "nested/name" + string(character) + "card.json",
+		})
+	}
+	testCases = append(testCases, pathTestCase{
+		name: "ASCII control DEL",
+		path: "nested/name" + string(rune(0x7f)) + "card.json",
+	})
 
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {
@@ -165,9 +196,28 @@ func TestAgentCardConformanceManifestRejectsUnsafeFixturePaths(t *testing.T) {
 		})
 	}
 
-	canonical := []byte(`{"cases":[{"id":"case","file":"nested/card.json","valid":false,"violatedRules":[],"contextFiles":["related/context.json"]}]}`)
-	if _, err := DecodeAgentCardConformanceManifest(canonical); err != nil {
-		t.Fatalf("canonical nested fixture paths were rejected: %v", err)
+	for _, fixturePath := range []string{
+		"card.json",
+		"nested/card.json",
+		".well-known/card.json",
+		"devices/console.json",
+		"devices/com0.json",
+		"devices/com10.json",
+		"devices/lpt0.json",
+		"devices/lpt10.json",
+		"devices/auxiliary.json",
+		"devices/null.json",
+	} {
+		t.Run("allowed "+fixturePath, func(t *testing.T) {
+			encodedPath, err := json.Marshal(fixturePath)
+			if err != nil {
+				t.Fatalf("encode fixture path: %v", err)
+			}
+			canonical := []byte(`{"cases":[{"id":"case","file":` + string(encodedPath) + `,"valid":false,"violatedRules":[],"contextFiles":["related/context.json"]}]}`)
+			if _, err := DecodeAgentCardConformanceManifest(canonical); err != nil {
+				t.Fatalf("canonical fixture path was rejected: %v", err)
+			}
+		})
 	}
 }
 
