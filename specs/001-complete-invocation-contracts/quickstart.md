@@ -33,6 +33,9 @@ go test -count=1 ./contracts -run 'TestInvocationResult|TestInvocationResultStre
 Expected outcomes:
 
 - Non-streaming result fixtures preserve arbitrary valid JSON output.
+- Non-streaming results and streaming chunks preserve legal large JSON number
+  tokens such as top-level and nested `1e400` without weakening duplicate-member
+  rejection or typed envelope constraints.
 - Streaming accepted/chunk/terminal sequences validate in order.
 - Event after terminal, duplicate terminal, EOF-without-terminal fixture, and
   contradictory terminal error codes are rejected.

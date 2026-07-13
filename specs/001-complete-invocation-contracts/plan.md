@@ -12,7 +12,9 @@ The plan introduces direct same-request Invocation Result delivery through the
 Gateway and Router, keeps result content separate from Ledger events, splits
 directional internal APIs by service owner, makes terminal event combinations
 coherent, publishes portable Agent Card semantic conformance rules, and expands
-the pinned A2A profile into executable conformance cases.
+the pinned A2A profile into executable conformance cases. Strict public JSON
+DTO scanning remains duplicate-aware without imposing a bounded native numeric
+range on arbitrary Agent results or chunks.
 
 Breaking contracts receive new versions; historical artifacts remain available
 for migration evidence but are not implemented by the first backend runtime.
@@ -43,7 +45,9 @@ MUST permit forwarding ordered chunks without requiring whole-result buffering.
 
 **Constraints**: Result content cannot enter Ledger; Frontend cannot access the
 Router; public errors remain fixed and secret-safe; fallback addition budget is
-zero; historical contract identity cannot be silently rewritten
+zero; historical contract identity cannot be silently rewritten; strict JSON
+pre-scanning cannot coerce unconstrained result numbers into a bounded native
+numeric representation
 
 **Scale/Scope**: Four contract families: result delivery and directional APIs,
 Invocation Event terminal semantics, Agent Card semantic conformance, and A2A
@@ -99,6 +103,10 @@ profile conformance
   compares all three identifiers, matching the stream sequence validator.
 - All public Invocation JSON DTO decoders reject duplicate members before typed
   decoding so parser selection cannot change correlation or error meaning.
+- The shared duplicate-member scanner preserves JSON number tokens during its
+  syntax walk. It does not apply a numeric range before typed or Schema
+  validation, so arbitrary raw `result` and `chunk` values such as `1e400`
+  remain exact while constrained DTO fields retain their declared limits.
 - Results and chunks are transient. Disconnect does not create a result replay
   or polling store; Ledger remains available for lifecycle diagnosis.
 - Exactly one terminal event ends a clean stream. EOF without one is interrupted
@@ -227,8 +235,11 @@ README.md
 ```
 
 **Structure Decision**: This feature changes only contract facts, Go mappings,
-conformance fixtures, and compatibility documentation. It does not create
-Control Plane or Router runtime packages; those are separate feature Specs.
+conformance fixtures, and compatibility documentation. Module A owns the narrow
+range-neutral update to the duplicate-member scanner shared from
+`contracts/agent_card_semantics.go`; all other Agent Card semantics remain
+Module B-owned. This feature does not create Control Plane or Router runtime
+packages; those are separate feature Specs.
 
 ## Implementation Order
 

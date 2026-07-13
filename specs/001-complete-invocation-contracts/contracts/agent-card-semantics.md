@@ -56,6 +56,12 @@ rule IDs for conformance tests; wording and evaluation order are not public
 contract. The Go implementation does not parse Markdown or execute a new rules
 DSL.
 
+The duplicate-member scanner is shared with strict Invocation DTO decoding. Its
+syntax walk preserves JSON number tokens without applying a bounded native
+numeric range; Agent Card field types and Schema remain responsible for any
+Card-specific numeric constraints. This parser invariant does not change the
+Agent Card semantic rule catalog.
+
 ## Migration
 
 The stricter semantic contract is Agent Card `0.2`. Version `0.1` remains

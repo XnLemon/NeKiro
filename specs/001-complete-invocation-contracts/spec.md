@@ -16,6 +16,11 @@ Agent Card, invocation lifecycle, and supported A2A behavior.
 ### Session 2026-07-13
 
 - Q: How does the Gateway return non-streaming and streaming Agent results? → A: The invocation request itself returns the result; non-streaming returns one complete result and streaming emits ordered result chunks on the same response. Results are not persisted or replayed.
+- Q: How do strict JSON DTO boundaries handle legal JSON numbers outside a
+  native bounded numeric range? → A: Duplicate-member and syntax validation
+  preserves the JSON number token without applying an implementation numeric
+  range. A later field-specific contract may impose a range, but unconstrained
+  Invocation `result` and `chunk` values preserve legal values such as `1e400`.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -44,6 +49,10 @@ Ledger remains queryable without storing the result content.
 3. **Given** any successful invocation, **When** an operator queries its Ledger
    history, **Then** the lifecycle is complete but Agent input and output
    content are absent from Ledger facts.
+4. **Given** a successful result or result chunk containing a legal JSON number
+   such as `1e400`, **When** a strict public DTO boundary checks it for
+   duplicate members and decodes it, **Then** the value is accepted and its
+   numeric token is preserved without bounded-number coercion.
 
 ---
 
@@ -145,6 +154,9 @@ dispatch and invocation queries target the Router.
   Invocation than the request being completed.
 - A public result, event, error, envelope, or resolution DTO repeats a JSON
   member and different parsers select different values.
+- A result or chunk contains a syntactically legal JSON number such as `1e400`,
+  including at a nested depth, that exceeds a native floating-point range but
+  is not restricted by the capability output schema.
 - A nominally valid JSON-RPC response contains both `result` and `error`, or an
   ID type that the pinned SDK/server cannot accept.
 - An invalid A2A fixture fails, but for a different protocol reason than the
@@ -238,6 +250,12 @@ dispatch and invocation queries target the Router.
   Fields for accepted results, accepted stream events, and expected errors MUST
   be required or forbidden according to that exact operation; incompatible
   operation metadata is structurally invalid.
+- **FR-027**: Strict duplicate-member validation at every public JSON DTO
+  boundary MUST preserve syntactically legal JSON number tokens without first
+  coercing them through a bounded implementation numeric type. Field-specific
+  schemas and typed DTO fields MAY apply their declared numeric constraints,
+  but unconstrained Invocation `result` and `chunk` values such as `1e400` MUST
+  reach validation and delivery without precision loss or range rejection.
 
 ### Key Entities
 
@@ -256,6 +274,22 @@ dispatch and invocation queries target the Router.
 - **Invocation Correlation Rule**: A language-neutral semantic invariant that
   binds duplicated correlation identifiers across an Invocation envelope and
   its nested Platform Error.
+- **Strict JSON DTO Boundary**: The ordered boundary that rejects malformed or
+  duplicate-member JSON without adding an implementation-specific numeric
+  range before field-specific validation.
+
+### Runtime/Platform Boundary
+
+- **Platform-owned behavior**: NeKiro owns the language-neutral result,
+  streaming, error, event, correlation, directional API, and A2A Profile
+  contracts plus their portable conformance decisions.
+- **Runtime-owned behavior**: Agent Runtimes produce result and chunk content
+  and apply capability-specific output semantics; model, tool, workflow,
+  memory, and session execution remain outside this feature.
+- **Cross-runtime proof**: Raw JSON and A2A conformance corpora must produce the
+  same decisions without framework-specific Control Plane or Router behavior.
+  The later Phase 1 E2E feature proves this boundary with independently
+  implemented sample Agents.
 
 ## Success Criteria *(mandatory)*
 
@@ -306,6 +340,10 @@ dispatch and invocation queries target the Router.
   not equal their declared `protocolError` are rejected as malformed cases.
 - **SC-020**: 100% of A2A Profile operations containing fields from an
   incompatible operation variant fail structural Schema validation.
+- **SC-021**: 100% of fixed non-streaming result and streaming chunk cases that
+  contain legal large JSON numbers, including nested `1e400`, decode
+  successfully and preserve the exact numeric token while duplicate-member
+  cases remain rejected.
 
 ## Assumptions
 
@@ -316,6 +354,9 @@ dispatch and invocation queries target the Router.
 - Agent Card Schema and Agent version identifiers remain separate and versioned.
 - Invocation Results are transient response data and are not retained for
   polling, replay, or reconnect.
+- JSON number validity follows the language-neutral JSON grammar. Numeric range
+  restrictions exist only where a field or resolved capability schema declares
+  them; the platform does not invent a range for arbitrary result content.
 
 ## Non-Goals
 
@@ -327,3 +368,5 @@ dispatch and invocation queries target the Router.
 - Replacing the pinned A2A protocol or changing the platform technology stack.
 - Implementing Catalog, Workspace, Router transport, or sample Agents beyond
   changes required to make their shared contracts implementable.
+- Normalizing arbitrary Agent result numbers into one platform floating-point
+  representation.

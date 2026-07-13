@@ -32,6 +32,20 @@ Non-streaming delivery compares the returned `invocationId`, `rootTaskId`, and
 The result schema permits any JSON value in `result`/`chunk`; the resolved Agent
 Skill output schema supplies capability-specific validation.
 
+### JSON Number Preservation
+
+Strict public DTO decoding checks JSON syntax and duplicate object members
+before typed decoding. That pre-scan MUST preserve number tokens without
+coercing them into a bounded implementation numeric type. It therefore accepts
+legal unconstrained result or chunk values such as `1e400`, including nested
+values, and leaves capability-specific numeric limits to the resolved output
+schema.
+
+Typed envelope fields retain their declared constraints. Number preservation
+does not make an out-of-range `sequence`, `chunkIndex`, or other constrained
+field valid. It prevents the duplicate-member scanner from adding a second,
+implementation-specific range to arbitrary Agent output.
+
 ## Correlation Semantics
 
 `contracts/invocation/v1/semantic-rules.md` defines `INV-CORR-001`: a Platform

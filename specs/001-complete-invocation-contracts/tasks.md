@@ -23,14 +23,11 @@ commits its work, and is followed by a new independent Review Agent reading
 contract implementation.
 
 - [x] T001 Verify ignored/untracked status and delete only the resolved
-  `E:\NeKiro\node_modules`, `E:\NeKiro\contracts\node_modules`,
-  `E:\NeKiro\contracts\dist`, `E:\NeKiro\contracts\platform-contracts`, and
-  confirmed-empty `E:\NeKiro\contracts\agent-card`,
-  `E:\NeKiro\contracts\common`, `E:\NeKiro\contracts\errors`,
-  `E:\NeKiro\contracts\events`, `E:\NeKiro\contracts\identifiers`,
-  `E:\NeKiro\contracts\internal-api`, and
-  `E:\NeKiro\contracts\platform-api`; retain root package manifests and
-  lockfiles
+  root `node_modules`, `contracts/node_modules`, `contracts/dist`,
+  `contracts/platform-contracts`, and confirmed-empty `contracts/agent-card`,
+  `contracts/common`, `contracts/errors`, `contracts/events`,
+  `contracts/identifiers`, `contracts/internal-api`, and
+  `contracts/platform-api`; retain root package manifests and lockfiles
 - [x] T002 Run placeholder, clarification, path-ownership, and constitution
   checks against `specs/001-complete-invocation-contracts/` and record the
   analyze result before implementation
@@ -38,10 +35,11 @@ contract implementation.
 **Checkpoint**: Working tree contains only tracked project assets and the
 approved Spec/Plan/Tasks define all implementation behavior.
 
-**Analyze result (2026-07-13)**: 15/15 Functional Requirements covered by 35
-tasks; no Critical/High findings, unresolved placeholders, or constitution
-conflicts. The T006 → T012 artifact dependency is explicit and does not share a
-write scope.
+**Analyze result (2026-07-13, amended)**: 27/27 Functional Requirements and all
+build-verifiable Success Criteria are covered by 35 tasks; no Critical/High
+findings, unresolved placeholders, or constitution conflicts remain. FR-027 is
+owned by T005/T008/T010, and the narrow shared-scanner write exception is
+explicit. The T006 → T012 artifact dependency does not share a write scope.
 
 ---
 
@@ -49,8 +47,10 @@ write scope.
 
 **Ownership**: This Agent exclusively owns the files listed in T003-T009. It
 MUST NOT edit `contracts/contracts.go`, `contracts/validate.go`,
-`contracts/contracts_test.go`, Agent Card semantic artifacts, or A2A Profile
-artifacts.
+`contracts/contracts_test.go`, or A2A Profile artifacts. For the remaining
+Module A review finding, it additionally owns only the range-neutral number
+token update in the shared scanner in `contracts/agent_card_semantics.go`; all
+other Agent Card semantic behavior and artifacts remain Module B-owned.
 
 ### Implementation
 
@@ -67,7 +67,9 @@ artifacts.
   in `contracts/result_contracts.go`, including corpus-driven enforcement that
   nested error correlation equals its enclosing event, request-bound
   non-streaming result validation, and duplicate-member rejection for every
-  public Module A DTO decoder
+  public Module A DTO decoder; update only the shared scanner initialization in
+  `contracts/agent_card_semantics.go` so duplicate-member traversal preserves
+  legal JSON number tokens before typed decoding
 - [ ] T006 [US1] [US4] Add active API documents
   `contracts/openapi/control-plane.v2.yaml`,
   `contracts/openapi/control-plane-internal.v1.yaml`, and
@@ -85,14 +87,17 @@ artifacts.
   interrupted-stream, no-result-in-Ledger, and Platform Error v2 tests in
   `contracts/result_contracts_test.go`, including every raw `INV-CORR-001`
   positive and negative fixture, non-streaming request-context mismatch, and
-  duplicate-member cases across public DTOs
+  duplicate-member cases across public DTOs; add exact-preservation cases for
+  top-level and nested `1e400` in non-streaming results and stream chunks
 - [ ] T009 [P] [US2] [US4] Add terminal coherence and directional OpenAPI/media
   negotiation mapping tests in `contracts/result_api_contracts_test.go`,
   including resolve correlation fields and exact Router Ledger/trace read error
   mappings plus required post-dispatch error correlation for active Northbound
   and Router `502`/`503`/`504` responses
-- [ ] T010 [US1] Run Module A tests, `go vet ./...`, and `git diff --check`,
-  report Module A fallback delta/evidence, then commit all Module A-owned files
+- [ ] T010 [US1] Run Module A tests plus the complete
+  `TestAgentCardConformance` Module B regression, `go vet ./...`, and
+  `git diff --check`; report Module A fallback delta/evidence, then commit all
+  Module A-owned files
 
 ### Independent Review Gate
 

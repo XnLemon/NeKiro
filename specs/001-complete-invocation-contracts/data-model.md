@@ -21,7 +21,9 @@ Gateway request.
 
 - A non-success outcome is not an Invocation Result.
 - `result` may be any JSON value permitted by the resolved Agent Skill output
-  schema; the contract layer must preserve its JSON shape.
+  schema; the contract layer must preserve its JSON shape and exact number
+  tokens, including a legal value such as `1e400` that exceeds a native
+  floating-point range.
 - Delivery validation compares `invocationId`, `rootTaskId`, and `traceId` to the
   expected request context. Schema-valid identifiers from another Invocation do
   not satisfy the current request.
@@ -57,7 +59,8 @@ Represents one transient SSE `data` value on a streaming invocation response.
 
 `failed.error.code` excludes `CANCELED` and `TIMEOUT`. A chunk is an ordered,
 capability-specific JSON value; consumers cannot assume chunks are strings or
-that concatenation produces the final result.
+that concatenation produces the final result. Unconstrained chunk numbers use
+the same exact-token preservation rule as non-streaming results.
 
 ### Lifecycle
 
@@ -120,8 +123,26 @@ identifiers. They are correlation context, not new identity, and resolution
 failures return them unchanged in Platform Error v2.
 
 Every public JSON decoder in this feature rejects duplicate object member names
-before typed decoding. Duplicate correlation, status, discriminator, result,
-error, or nested object members are invalid rather than parser-dependent.
+before typed decoding. This syntax walk preserves number tokens without first
+converting them to a bounded implementation number. Duplicate correlation,
+status, discriminator, result, error, or nested object members are invalid
+rather than parser-dependent.
+
+## Strict JSON DTO Boundary
+
+Strict public DTO decoding proceeds in this order:
+
+1. Validate JSON syntax and reject duplicate object member names recursively.
+   Number tokens remain lexical JSON numbers and receive no implementation
+   range at this stage.
+2. Decode the typed envelope. Declared numeric fields such as event sequence or
+   chunk index retain their field-specific type and Schema constraints.
+3. Preserve unconstrained `result` and `chunk` values as exact raw JSON for
+   capability-specific validation and delivery.
+
+Consequently, `1e400` is valid inside an unconstrained result or chunk and must
+not fail during duplicate-member scanning. The same token can still be invalid
+when supplied for a contract field whose declared numeric range excludes it.
 
 ## Invocation Event v0.2
 
