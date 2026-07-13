@@ -362,9 +362,12 @@ and require a fresh independent Review before convergence.
     publication order`, `feat(control-plane): implement catalog registration
     and discovery`, and `test(catalog): verify postgres and http workflows`;
     the final status-document commit completes the clean no-push checkpoint.
-- [ ] T043 Fetch `origin`, resolve its current HEAD, rebase the clean feature
+- [x] T043 Fetch `origin`, resolve its current HEAD, rebase the clean feature
   branch without force onto that remote base, rerun the full quickstart, and
   record the exact base in `specs/002-catalog-registry-discovery/tasks.md`
+  - Evidence: fetched and pruned `origin`, resolved `origin/HEAD` to
+    `origin/main` at `3bcb844`, and rebased without force; the branch was already
+    current with that base. Post-rebase verification is recorded with T041.
 - [ ] T044 Create a fresh independent Review Agent for the complete rebased
   Spec 002 diff; fix every High or Medium finding through the original
   implementation Agent, update Spec/Tasks before behavioral fixes, and use a new
