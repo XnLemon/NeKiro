@@ -31,6 +31,26 @@ Agent.
 - A caller may not claim an existing Agent identity by submitting a new owner.
 - The identity is not deleted when a version is disabled.
 
+## Entity: Publication Clock
+
+One Catalog-owned singleton row serializes successful first publication across
+Agent versions.
+
+| Field | Logical type | Constraints |
+|---|---|---|
+| `singleton` | boolean | Primary key; exactly `true` |
+| `last_sequence` | non-negative integer | Required; incremented transactionally on first publication |
+
+### Rules
+
+- The migration creates exactly one row with `last_sequence = 0`.
+- A publish transaction locks and increments this row before assigning the
+  returned value to `Agent Version.publication_sequence`.
+- The row lock remains held until the Agent Version state and sequence commit.
+  A competing publication cannot obtain a greater sequence and commit first.
+- A rolled-back publication rolls back the counter increment; no
+  non-transactional sequence or process-local counter is used.
+
 ## Entity: Agent Version
 
 One row stores the immutable active-version Agent Card and mutable publication
@@ -46,7 +66,7 @@ metadata.
 | `publication_status` | enum | `draft`, `published`, or `disabled` |
 | `registered_at` | timestamp | Required; server assigned once |
 | `published_at` | optional timestamp | Assigned on first publication; never rewritten |
-| `publication_sequence` | optional integer | Monotonic internal value assigned on first publication; never reused or rewritten |
+| `publication_sequence` | optional integer | Transactional clock value assigned on first publication; immutable and ordered by successful publication commit |
 | `disabled_at` | optional timestamp | Assigned on first disablement; never rewritten |
 
 Primary key: `(agent_id, version)`.
@@ -167,11 +187,15 @@ internal versioned value:
   filter hash that differs from the current request.
 - A cursor grants no authorization and contains no Card, owner secret, bearer
   credential, database offset, or internal error.
-- The first page records the highest committed publication sequence as its
-  snapshot boundary. Later pages retain it, require
+- The first page reads the Publication Clock and eligible rows in one
+  repeatable-read snapshot, recording that committed sequence as its boundary.
+  Later pages retain it, require
   `publication_sequence <= snapshot_publication_sequence`, and use the last
   public ordering tuple as a keyset continuation.
-- New publications after the snapshot are excluded. A version disabled before a
+- Publication Clock locking guarantees every publication committed after the
+  first-page snapshot has a greater sequence, even if its transaction began
+  earlier. New publications after the snapshot are therefore excluded. A
+  version disabled before a
   later page is read is excluded, so a page may contain fewer than `limit`
   items.
 - The response includes `nextCursor` only when another eligible row exists.
@@ -202,8 +226,8 @@ draft -> published -> disabled
 2. Return not found when no exact version exists.
 3. Require caller ID to equal immutable owner.
 4. Require current state `draft`; otherwise return conflict.
-5. Set state `published` and assign `published_at` plus a new monotonic
-   `publication_sequence` in one commit.
+5. Increment and lock the Publication Clock, then set state `published` and
+   assign `published_at` plus the returned `publication_sequence` in one commit.
 
 ### Disable
 

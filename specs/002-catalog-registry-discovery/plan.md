@@ -101,8 +101,10 @@ design.*
 
 - Database uniqueness and row locks enforce immutable registration and legal
   `draft -> published -> disabled` or `draft -> disabled` transitions.
-- Publish succeeds only from draft and assigns an immutable monotonic
-  publication sequence. Disable is explicitly idempotent.
+- Publish succeeds only from draft and increments one Catalog-owned
+  transactional publication clock. The clock row remains locked until commit,
+  so immutable publication sequence order is also successful commit order.
+  Disable is explicitly idempotent.
 - Publication success means discovery eligibility committed in the same source
   of truth. No event queue, repair worker, or eventual-success response exists.
 
@@ -114,6 +116,10 @@ design.*
   caller-controlled SQL wildcards.
 - A base64url strict JSON cursor carries format version, normalized-filter hash,
   first-page monotonic publication-sequence boundary, and last ordering tuple.
+- The first-page boundary and rows use one repeatable-read snapshot. Because the
+  publication clock serializes successful publication commits, a publication
+  that commits after that snapshot always has a greater sequence and cannot
+  enter a later page.
 - Keyset order is `published_at DESC, agent_id ASC, version ASC`. This is stable
   traversal order, not semantic-version recommendation.
 - Cursor values grant no authority, contain no secrets, and are not signed. All

@@ -22,11 +22,14 @@ identity-provider selection is in scope.
   index rows commit transactionally. Discovery reads those Registry-owned facts
   directly and stores no second Card copy.
 - Publication and disablement use row locking and database constraints.
-  Publication is discoverable in the same commit; disablement is excluded from
-  subsequent reads without an asynchronous projection, queue, cache, retry, or
-  repair path.
+  Publication additionally increments one Catalog-owned transactional clock
+  row whose lock is held until commit, making sequence order equal successful
+  publication commit order. Publication is discoverable in the same commit;
+  disablement is excluded from subsequent reads without an asynchronous
+  projection, queue, cache, retry, or repair path.
 - Discovery uses a stateless versioned keyset cursor bound to normalized
-  filters, page size, and a monotonic first-page publication boundary.
+  filters, page size, and a commit-ordered first-page publication boundary read
+  with eligible rows in one repeatable-read snapshot.
 - Gateway authentication is replaceable. The initial runnable adapter is
   enabled only by explicit `development-static` mode and accepts strict caller
   IDs paired with SHA-256 token digests. It stores no raw token and compares
@@ -50,7 +53,8 @@ only; no runtime decoder, route, upgrade, or dual-read window is introduced.
 - PostgreSQL/schema failure is visible as startup, readiness, or dependency
   failure rather than degraded success.
 - Deep pagination avoids offsets and excludes publications after traversal
-  begins while still rechecking current published state on every page.
+  begins, including transactions that began earlier but committed later, while
+  still rechecking current published state on every page.
 - Production identity-provider selection, asynchronous projections, search
   infrastructure, hot/cold Card storage, Agent deployment, and Runtime health
   remain deferred and require separate decisions when evidence exists.

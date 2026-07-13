@@ -93,35 +93,49 @@ simple.
 - Read from a cache during database failure: rejected because no stale-read
   policy exists and authorization-sensitive eligibility must fail closed.
 
-## Decision 5: Use Row Locks and Database Constraints for Races
+## Decision 5: Use Row Locks, A Transactional Publication Clock, And Constraints
 
 **Decision**: Enforce `(agent_id, version)` uniqueness and ownership with
 database constraints. Lifecycle commands use a transaction and lock the exact
 version row before evaluating state. Registering the first Agent identity and a
 version occurs atomically; concurrent owner claims resolve to one committed
-owner and explicit conflict/forbidden outcomes.
+owner and explicit conflict/forbidden outcomes. Publication also increments one
+Catalog-owned counter row in the same transaction and holds that row lock until
+commit. This makes publication sequence order equal successful commit order;
+rollback restores the counter value.
 
 **Rationale**: Process-local mutexes do not protect multiple instances and
-cannot make state durable. Database serialization keeps behavior correct when
-the Control Plane is later replicated.
+cannot make state durable. Exact-version locks serialize competing lifecycle
+operations, while the narrow publication-clock lock closes the cross-version
+commit-order gap required by a stateless snapshot cursor. Database
+serialization keeps behavior correct when the Control Plane is later
+replicated.
 
 **Alternatives considered**:
 
 - Last-write-wins updates: rejected because Cards are immutable.
 - Read-then-write without locking: rejected because publish/disable races can
   produce impossible or lost states.
-- Global advisory lock: rejected because row and uniqueness constraints provide
-  a narrower ownership boundary.
+- A process mutex or global advisory lock: rejected because an explicit
+  Catalog-owned transactional counter row provides durable state, rollback
+  semantics, and a visible ownership boundary.
+- A non-transactional PostgreSQL sequence alone: rejected because allocation
+  order is not commit order; a lower sequence can otherwise commit after a
+  traversal starts and enter a later page.
 
 ## Decision 6: Use a Versioned Stateless Discovery Cursor
 
 **Decision**: Encode a strict versioned cursor as base64url JSON containing a
 hash of normalized filters and page size, the first-page publication boundary,
 and the last `(published_at, agent_id, version)` ordering tuple. The boundary is
-an internal monotonic `publication_sequence` allocated on first publication, so
-a later publication with an equal timestamp cannot enter an existing traversal.
-Search uses keyset predicates ordered by publication time descending, Agent ID
-ascending, and exact version string ascending.
+an internal monotonic `publication_sequence` allocated from the transactional
+publication clock on first publication. The first page reads the committed
+clock boundary and result rows in one repeatable-read transaction. Since the
+clock row serializes successful publication commits, every publication that
+commits after that snapshot receives a greater sequence and cannot enter any
+later page, including when timestamps are equal. Search uses keyset predicates
+ordered by publication time descending, Agent ID ascending, and exact version
+string ascending.
 
 **Rationale**: Keyset pagination remains stable at the expected scale and does
 not degrade with deep offsets. A filter hash prevents accidental cursor reuse
