@@ -101,6 +101,12 @@ design.*
 - An ordered schema-v2 migration converts existing schema-v1 `jsonb` Cards to
   text and backfills name/description before serving requires schema v2. This
   is a forward migration, not runtime dual-read behavior.
+- The Agent Card validator handles the two active unbounded positive-integer
+  fields with a lexical integrality/minimum check that never materializes the
+  mathematical value. After those exact keywords pass, a validation-only Card
+  copy substitutes `1` for the two fields so the JSON Schema engine validates
+  every remaining structural rule without encountering its exponent limit.
+  The decoded DTO and persisted canonical Card are never substituted.
 - SQL migrations are embedded and applied only through an explicit `migrate`
   command. Request-serving startup verifies schema but does not migrate it.
 
@@ -177,7 +183,7 @@ design.*
 - Contract tests verify exact active OpenAPI mappings and historical artifacts.
 - Integration-tagged tests apply real migrations to a dedicated `_test`
   database and exercise pgx transactions and HTTP acceptance, including a
-  legal positive number beyond PostgreSQL `jsonb` range.
+  legal positive number beyond PostgreSQL `jsonb` and validator exponent range.
 - CI provisions PostgreSQL and runs integration tests explicitly. Default
   `go test ./...` remains usable without Docker.
 

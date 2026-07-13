@@ -75,6 +75,14 @@ while remaining transactionally tied to the single Registry Card fact.
   creates a second mutable Card fact and a consistency problem without scale
   evidence.
 
+The pinned JSON Schema engine also materializes integer values through a
+bounded exponent implementation. For the two active fields whose Schema is
+exactly `type: integer` plus `minimum: 1` with no maximum, the contract adapter
+therefore performs an equivalent lexical/integrality/minimum check without
+materializing the value. It substitutes `1` only in a temporary validation copy
+before invoking the engine for every other Schema rule. Narrowing the public
+Schema to the library limit or mutating the decoded Card was rejected.
+
 ## Decision 4: Keep Publication and Discovery Strongly Consistent
 
 **Decision**: Registration writes Agent identity, immutable version, and

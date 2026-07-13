@@ -64,7 +64,10 @@ or invalid request correlation is never replaced with caller-controlled data.
   unbounded positive `maxInputBytes` and `maxOutputBytes` values are not decoded
   through `int64` or `float64`, and persistence must not pass them through a
   bounded database numeric representation such as PostgreSQL `jsonb`. A value
-  such as `1e131072` is accepted and round-trips as the same JSON number value.
+  such as `1e1000001` is accepted and round-trips as the same JSON number value.
+  Validation checks JSON-number syntax, mathematical integrality, and minimum
+  `1` without constructing the unbounded value. Fractional, zero, and negative
+  equivalents remain validation failures regardless of exponent notation.
 - Path and query identifiers use the active common contract primitives.
 - Blank free text, explicit limits outside 1-100, malformed cursors, and cursors
   bound to different filters are validation failures.

@@ -393,6 +393,11 @@ and require a fresh independent Review before convergence.
     migration/deadline remediations, but returned `High 0`, `Medium 1`, `Low 0`:
     exact duplicate registration by a different owner returns forbidden before
     reaching the FR-005 conflict rule, while the contract described both codes.
+  - Review round 5: fresh boundary-focused Reviewer
+    `019f5d3c-699f-70e1-87c2-62c605463e35` did not use OCR and validated the
+    duplicate-precedence remediation, but returned `High 0`, `Medium 1`,
+    `Low 0`: the pinned JSON Schema engine materializes integers through
+    `big.Rat` and rejects legal `1e1000001` before persistence.
 
 ### Review Round 1 Remediation
 
@@ -503,6 +508,23 @@ and require a fresh independent Review before convergence.
   - Review round 4 remediation fallback delta: removed `0`, retained `3`, added
     `0`, net `0`. Added fallback evidence: none.
 - [ ] T063 [Review-R4] Run the complete verification matrix, report fallback
+  delta, and create another fresh non-OCR independent Reviewer
+
+### Review Round 5 Remediation
+
+- [ ] T064 [Review-R5] Implement a bounded-memory lexical validator for the
+  active unbounded `maxInputBytes` and `maxOutputBytes` fields that enforces JSON
+  number syntax, mathematical integrality, and minimum `1` for arbitrary-length
+  exponents without numeric materialization in `contracts/validate.go`
+- [ ] T065 [Review-R5] After exact unbounded-field validation, substitute a
+  validation-only `1` in a copied Agent Card before invoking the pinned JSON
+  Schema engine, preserving all other structural and semantic validation while
+  leaving the decoded/persisted Card unchanged in `contracts/validate.go`
+- [ ] T066 [Review-R5] Add contract and real PostgreSQL/HTTP acceptance for
+  `1e1000001` round-trip plus zero, negative, fractional, huge-negative-exponent,
+  malformed programmatic `json.Number`, and integral exponent forms in
+  `contracts/contracts_test.go` and `tests/integration/catalog/catalog_test.go`
+- [ ] T067 [Review-R5] Run the complete verification matrix, report fallback
   delta, and create another fresh non-OCR independent Reviewer
 
 ---

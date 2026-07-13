@@ -170,7 +170,8 @@ public outcomes, durable state, and secret-safe diagnostics.
   number rather than reject or round it. Values beyond PostgreSQL `numeric` /
   `jsonb` range, such as `1e131072`, remain valid and must survive registration,
   persistence, restart, exact reads, and Discovery without database numeric
-  coercion.
+  coercion. Exponents beyond a validation library's materialization range, such
+  as `1e1000001`, remain valid and must not be rejected by implementation limits.
 - A publication state is committed but the derived discovery update fails
   before the operation can report success.
 - Search text is blank or over its declared length, a page size is outside its
@@ -195,7 +196,9 @@ public outcomes, durable state, and secret-safe diagnostics.
   Active unbounded JSON integer fields MUST retain their exact number values
   even when they exceed a machine integer or PostgreSQL `numeric` / `jsonb`
   range. The durable Card fact MUST use a representation that does not parse or
-  coerce those number tokens at the database boundary.
+  coerce those number tokens at the database boundary. Validation MUST determine
+  JSON number syntax, mathematical integrality, and minimum `1` without
+  materializing an unbounded value or inheriting a library exponent limit.
 - **FR-002**: A successful registration MUST create one durable immutable draft
   identified by the exact `(agent_id, version)` pair and MUST assign its
   registration time at the platform boundary.
