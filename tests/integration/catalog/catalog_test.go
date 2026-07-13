@@ -67,9 +67,7 @@ func TestCatalogPostgreSQLAndHTTPAcceptance(t *testing.T) {
 	runCommand(t, root, databaseURL, binary, "migrate", "up")
 	assertCatalogSchemaV2(t, pool)
 	runCommand(t, root, databaseURL, binary, "migrate", "up")
-	runCommand(t, root, databaseURL, binary, "migrate", "down")
-	runCommand(t, root, databaseURL, binary, "migrate", "up")
-	assertCatalogSchemaV2(t, pool)
+	assertUnsupportedMigrationLeavesPopulatedCatalog(t, root, databaseURL, binary, pool)
 
 	server := startServer(t, root, databaseURL, binary)
 	defer func() {
@@ -542,6 +540,145 @@ WHERE agent_id = 'migration-agent' AND version = '1.0.0'`).Scan(&storedCard, &na
 	if err := migrator.MigrateTo(ctx, 0); err != nil {
 		t.Fatalf("roll back migration assertion schema: %v", err)
 	}
+}
+
+type migrationGuardSnapshot struct {
+	schemaVersion       int
+	ownerID             string
+	identityCreatedAt   time.Time
+	card                string
+	cardName            string
+	cardDescription     string
+	cardDigest          string
+	publicationStatus   string
+	registeredAt        time.Time
+	publishedAt         time.Time
+	publicationSequence int64
+	capabilityID        string
+	clockSequence       int64
+}
+
+func assertUnsupportedMigrationLeavesPopulatedCatalog(t *testing.T, root, databaseURL, binary string, pool *pgxpool.Pool) {
+	t.Helper()
+	ctx := context.Background()
+	card := scaleCard("1.0.0")
+	card.AgentID = "migration-guard-agent"
+	card.Name = "Migration Guard Agent"
+	card.Description = "Ordinary populated Catalog migration guard."
+	card.Skills[0].ID = "migration.guard"
+	card.Skills[0].Name = "Migration guard"
+	cardJSON := mustJSON(t, card)
+	cardDigest := sha256.Sum256(cardJSON)
+	createdAt := time.Date(2026, 7, 14, 1, 0, 0, 0, time.UTC)
+
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback(ctx)
+	if _, err := tx.Exec(ctx, `UPDATE catalog.publication_clock SET last_sequence = 1 WHERE singleton = true`); err != nil {
+		t.Fatalf("seed migration guard clock: %v", err)
+	}
+	if _, err := tx.Exec(ctx, `
+INSERT INTO catalog.agent_identities (agent_id, owner_id, created_at)
+VALUES ($1, $2, $3)`, card.AgentID, card.Owner.ID, createdAt); err != nil {
+		t.Fatalf("seed migration guard identity: %v", err)
+	}
+	if _, err := tx.Exec(ctx, `
+INSERT INTO catalog.agent_versions (
+    agent_id, version, schema_version, card, card_name, card_description,
+    card_digest, publication_status, registered_at, published_at, publication_sequence
+) VALUES ($1, $2, $3, $4, $5, $6, $7, 'published', $8, $8, 1)`,
+		card.AgentID, card.Version, card.SchemaVersion, string(cardJSON), card.Name,
+		card.Description, cardDigest[:], createdAt); err != nil {
+		t.Fatalf("seed migration guard version: %v", err)
+	}
+	if _, err := tx.Exec(ctx, `
+INSERT INTO catalog.agent_version_capabilities (agent_id, version, capability_id)
+VALUES ($1, $2, $3)`, card.AgentID, card.Version, card.Skills[0].ID); err != nil {
+		t.Fatalf("seed migration guard capability: %v", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		t.Fatalf("commit migration guard data: %v", err)
+	}
+
+	before := readMigrationGuardSnapshot(t, pool)
+	command := exec.Command(binary, "migrate", "down")
+	command.Dir = root
+	command.Env = environmentWith(map[string]string{"NEKIRO_DATABASE_URL": databaseURL})
+	if output, err := command.CombinedOutput(); err == nil {
+		t.Fatalf("unsupported migrate down succeeded: %s", output)
+	}
+	assertCatalogSchemaV2(t, pool)
+	after := readMigrationGuardSnapshot(t, pool)
+	if after != before {
+		t.Fatalf("unsupported migrate down changed Catalog\nbefore: %#v\nafter:  %#v", before, after)
+	}
+
+	cleanup, err := pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cleanup.Rollback(ctx)
+	if _, err := cleanup.Exec(ctx, `DELETE FROM catalog.agent_version_capabilities WHERE agent_id = $1`, card.AgentID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := cleanup.Exec(ctx, `DELETE FROM catalog.agent_versions WHERE agent_id = $1`, card.AgentID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := cleanup.Exec(ctx, `DELETE FROM catalog.agent_identities WHERE agent_id = $1`, card.AgentID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := cleanup.Exec(ctx, `UPDATE catalog.publication_clock SET last_sequence = 0 WHERE singleton = true`); err != nil {
+		t.Fatal(err)
+	}
+	if err := cleanup.Commit(ctx); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func readMigrationGuardSnapshot(t *testing.T, pool *pgxpool.Pool) migrationGuardSnapshot {
+	t.Helper()
+	var snapshot migrationGuardSnapshot
+	err := pool.QueryRow(context.Background(), `
+SELECT sv.version,
+       i.owner_id,
+       i.created_at,
+       v.card,
+       v.card_name,
+       v.card_description,
+       encode(v.card_digest, 'hex'),
+       v.publication_status,
+       v.registered_at,
+       v.published_at,
+       v.publication_sequence,
+       c.capability_id,
+       p.last_sequence
+FROM catalog.schema_version sv
+CROSS JOIN catalog.agent_identities i
+JOIN catalog.agent_versions v ON v.agent_id = i.agent_id
+JOIN catalog.agent_version_capabilities c
+  ON c.agent_id = v.agent_id AND c.version = v.version
+CROSS JOIN catalog.publication_clock p
+WHERE i.agent_id = 'migration-guard-agent' AND p.singleton = true`).Scan(
+		&snapshot.schemaVersion,
+		&snapshot.ownerID,
+		&snapshot.identityCreatedAt,
+		&snapshot.card,
+		&snapshot.cardName,
+		&snapshot.cardDescription,
+		&snapshot.cardDigest,
+		&snapshot.publicationStatus,
+		&snapshot.registeredAt,
+		&snapshot.publishedAt,
+		&snapshot.publicationSequence,
+		&snapshot.capabilityID,
+		&snapshot.clockSequence,
+	)
+	if err != nil {
+		t.Fatalf("read migration guard snapshot: %v", err)
+	}
+	return snapshot
 }
 
 func buildControlPlane(t *testing.T, root string) string {

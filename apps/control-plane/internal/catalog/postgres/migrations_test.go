@@ -1,11 +1,20 @@
 package postgres
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 )
+
+func TestMigrateRejectsUnsupportedDirectionBeforeUsingConnection(t *testing.T) {
+	for _, direction := range []string{"down", "sideways", ""} {
+		if err := Migrate(context.Background(), nil, direction); err == nil {
+			t.Fatalf("Migrate direction %q succeeded", direction)
+		}
+	}
+}
 
 func TestEmbeddedMigrationsMatchOwnedSQLFiles(t *testing.T) {
 	tests := []struct {

@@ -137,6 +137,10 @@ type RowQuerier interface {
 }
 
 func Migrate(ctx context.Context, conn *pgx.Conn, direction string) error {
+	if direction != "up" {
+		return fmt.Errorf("catalog migration direction %q is unsupported", direction)
+	}
+
 	if _, err := conn.Exec(ctx, `CREATE SCHEMA IF NOT EXISTS catalog`); err != nil {
 		return fmt.Errorf("create catalog migration schema: %w", err)
 	}
@@ -152,17 +156,8 @@ func Migrate(ctx context.Context, conn *pgx.Conn, direction string) error {
 		return fmt.Errorf("embedded catalog migration count: %w", ErrSchemaVersionMismatch)
 	}
 
-	switch direction {
-	case "up":
-		if err := migrator.Migrate(ctx); err != nil {
-			return fmt.Errorf("migrate catalog up: %w", err)
-		}
-	case "down":
-		if err := migrator.MigrateTo(ctx, 0); err != nil {
-			return fmt.Errorf("migrate catalog down: %w", err)
-		}
-	default:
-		return fmt.Errorf("catalog migration direction %q is invalid", direction)
+	if err := migrator.Migrate(ctx); err != nil {
+		return fmt.Errorf("migrate catalog up: %w", err)
 	}
 	return nil
 }

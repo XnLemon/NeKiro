@@ -39,8 +39,8 @@ func run(ctx context.Context, arguments []string, logger *slog.Logger) error {
 		}
 		return serve(ctx, logger)
 	case "migrate":
-		if len(arguments) != 2 {
-			return errors.New("migrate requires exactly one direction: up or down")
+		if len(arguments) != 2 || arguments[1] != "up" {
+			return errors.New("migrate requires exactly one direction: up")
 		}
 		return migrate(ctx, arguments[1])
 	case "healthcheck":
@@ -98,7 +98,6 @@ func serve(ctx context.Context, logger *slog.Logger) error {
 	server := &http.Server{
 		Addr:              cfg.ListenAddress,
 		Handler:           handler.Routes(),
-		ReadTimeout:       30 * time.Second,
 		ReadHeaderTimeout: 5 * time.Second,
 		IdleTimeout:       60 * time.Second,
 	}

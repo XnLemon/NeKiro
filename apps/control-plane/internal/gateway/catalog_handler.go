@@ -10,10 +10,13 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"time"
 
 	"github.com/Nene7ko/NeKiro/apps/control-plane/internal/catalog"
 	"github.com/Nene7ko/NeKiro/contracts"
 )
+
+const registrationBodyReadTimeout = 30 * time.Second
 
 type ReadinessChecker interface {
 	Check(context.Context) error
@@ -28,11 +31,12 @@ type CatalogService interface {
 }
 
 type Handler struct {
-	authenticator Authenticator
-	catalog       CatalogService
-	readiness     ReadinessChecker
-	traces        *TraceGenerator
-	logger        *slog.Logger
+	authenticator   Authenticator
+	catalog         CatalogService
+	readiness       ReadinessChecker
+	traces          *TraceGenerator
+	logger          *slog.Logger
+	bodyReadTimeout time.Duration
 }
 
 func NewHandler(
@@ -46,11 +50,12 @@ func NewHandler(
 		return nil, errors.New("gateway dependencies are required")
 	}
 	return &Handler{
-		authenticator: authenticator,
-		catalog:       catalogService,
-		readiness:     readiness,
-		traces:        traces,
-		logger:        logger,
+		authenticator:   authenticator,
+		catalog:         catalogService,
+		readiness:       readiness,
+		traces:          traces,
+		logger:          logger,
+		bodyReadTimeout: registrationBodyReadTimeout,
 	}, nil
 }
 
@@ -89,9 +94,19 @@ func (handler *Handler) register(writer http.ResponseWriter, request *http.Reque
 		handler.fail(writer, request, traceID, "register", catalog.ErrInvalid)
 		return
 	}
+	controller := http.NewResponseController(writer)
+	if err := controller.SetReadDeadline(time.Now().Add(handler.bodyReadTimeout)); err != nil {
+		handler.fail(writer, request, traceID, "register", err)
+		return
+	}
 	request.Body = http.MaxBytesReader(writer, request.Body, contracts.RegistrationMaximumBodyBytes)
-	body, err := io.ReadAll(request.Body)
-	if err != nil {
+	body, readErr := io.ReadAll(request.Body)
+	closeErr := request.Body.Close()
+	if err := controller.SetReadDeadline(time.Time{}); err != nil {
+		handler.fail(writer, request, traceID, "register", err)
+		return
+	}
+	if readErr != nil || closeErr != nil {
 		handler.fail(writer, request, traceID, "register", catalog.ErrInvalid)
 		return
 	}

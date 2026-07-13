@@ -1,14 +1,17 @@
 package gateway
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -119,13 +122,16 @@ func TestHandlerRegisterAndFixedDomainErrors(t *testing.T) {
 	handler := newTestHandler(t, fakeAuthenticator{caller: caller}, service, fakeReadiness{})
 	request := httptest.NewRequest(http.MethodPost, "/v2/agents", bytes.NewBufferString(`{"card":{}}`))
 	request.Header.Set("Content-Type", "application/json")
-	response := httptest.NewRecorder()
+	response := newDeadlineRecorder()
 	handler.Routes().ServeHTTP(response, request)
 	if response.Code != http.StatusCreated || response.Header().Get(TraceHeader) == "" {
 		t.Fatalf("register response = %d, trace %q", response.Code, response.Header().Get(TraceHeader))
 	}
 	if service.registerCaller != caller || string(service.registerBody) != `{"card":{}}` {
 		t.Fatalf("register adaptation = caller %#v body %q", service.registerCaller, service.registerBody)
+	}
+	if len(response.deadlines) != 2 || response.deadlines[0].IsZero() || !response.deadlines[1].IsZero() {
+		t.Fatalf("registration read deadlines = %v", response.deadlines)
 	}
 
 	tests := []struct {
@@ -188,13 +194,97 @@ func TestHandlerRejectsOversizedRegistrationBeforeCatalog(t *testing.T) {
 	body := io.LimitReader(repeatingReader{}, contracts.RegistrationMaximumBodyBytes+1)
 	request := httptest.NewRequest(http.MethodPost, "/v2/agents", body)
 	request.Header.Set("Content-Type", "application/json")
-	response := httptest.NewRecorder()
+	response := newDeadlineRecorder()
 	handler.Routes().ServeHTTP(response, request)
 	if response.Code != http.StatusBadRequest {
 		t.Fatalf("oversized registration status = %d, want 400", response.Code)
 	}
 	if service.registerCalls != 0 {
 		t.Fatalf("Catalog received %d oversized registrations", service.registerCalls)
+	}
+}
+
+func TestHandlerFailsBeforeCatalogWhenBodyDeadlineCannotBeControlled(t *testing.T) {
+	caller := catalog.AuthenticatedCaller{ID: "owner-a"}
+	service := &fakeCatalogService{}
+	handler := newTestHandler(t, fakeAuthenticator{caller: caller}, service, fakeReadiness{})
+	request := httptest.NewRequest(http.MethodPost, "/v2/agents", bytes.NewBufferString(`{"card":{}}`))
+	request.Header.Set("Content-Type", "application/json")
+	unsupported := httptest.NewRecorder()
+	handler.Routes().ServeHTTP(unsupported, request)
+	if unsupported.Code != http.StatusInternalServerError {
+		t.Fatalf("unsupported writer status = %d, want 500", unsupported.Code)
+	}
+	if service.registerCalls != 0 {
+		t.Fatalf("unsupported writer reached Catalog %d times", service.registerCalls)
+	}
+
+	for _, failCall := range []int{0, 1} {
+		service := &fakeCatalogService{}
+		handler := newTestHandler(t, fakeAuthenticator{caller: caller}, service, fakeReadiness{})
+		request := httptest.NewRequest(http.MethodPost, "/v2/agents", bytes.NewBufferString(`{"card":{}}`))
+		request.Header.Set("Content-Type", "application/json")
+		response := newDeadlineRecorder()
+		response.failCall = failCall
+		handler.Routes().ServeHTTP(response, request)
+		if response.Code != http.StatusInternalServerError {
+			t.Fatalf("deadline call %d failure status = %d, want 500", failCall, response.Code)
+		}
+		if service.registerCalls != 0 {
+			t.Fatalf("deadline call %d failure reached Catalog", failCall)
+		}
+	}
+}
+
+func TestRegistrationBodyDeadlineStartsAfterHeadersAndClearsForConnectionReuse(t *testing.T) {
+	caller := catalog.AuthenticatedCaller{ID: "owner-a"}
+	service := &fakeCatalogService{entry: contracts.CatalogEntry{PublicationStatus: "draft", RegisteredAt: time.Now().UTC()}}
+	handler := newTestHandler(t, fakeAuthenticator{caller: caller}, service, fakeReadiness{})
+	handler.bodyReadTimeout = 100 * time.Millisecond
+
+	server := httptest.NewUnstartedServer(handler.Routes())
+	server.Config.ReadHeaderTimeout = 2 * time.Second
+	server.Start()
+	defer server.Close()
+
+	body := []byte(`{"card":{}}`)
+	connection := dialTestServer(t, server)
+	defer connection.Close()
+	writeRequestHeaders(t, connection, server.Listener.Addr().String(), len(body), false)
+	time.Sleep(250 * time.Millisecond)
+	if _, err := connection.Write(append([]byte("\r\n"), body...)); err != nil {
+		t.Fatalf("finish delayed-header request: %v", err)
+	}
+	response := readSocketResponse(t, connection)
+	if response.StatusCode != http.StatusCreated {
+		t.Fatalf("delayed-header registration status = %d", response.StatusCode)
+	}
+	response.Body.Close()
+
+	time.Sleep(250 * time.Millisecond)
+	if _, err := fmt.Fprintf(connection, "GET /livez HTTP/1.1\r\nHost: %s\r\n\r\n", server.Listener.Addr().String()); err != nil {
+		t.Fatalf("reuse connection after registration: %v", err)
+	}
+	reused := readSocketResponse(t, connection)
+	if reused.StatusCode != http.StatusNoContent {
+		t.Fatalf("connection reuse status = %d", reused.StatusCode)
+	}
+	reused.Body.Close()
+
+	partial := dialTestServer(t, server)
+	defer partial.Close()
+	writeRequestHeaders(t, partial, server.Listener.Addr().String(), len(body), true)
+	if _, err := partial.Write(body[:4]); err != nil {
+		t.Fatalf("write partial registration body: %v", err)
+	}
+	time.Sleep(250 * time.Millisecond)
+	timedOut := readSocketResponse(t, partial)
+	if timedOut.StatusCode != http.StatusBadRequest {
+		t.Fatalf("partial registration status = %d, want 400", timedOut.StatusCode)
+	}
+	timedOut.Body.Close()
+	if service.registerCalls != 1 {
+		t.Fatalf("Catalog registrations = %d, want only completed body", service.registerCalls)
 	}
 }
 
@@ -224,6 +314,62 @@ func (repeatingReader) Read(buffer []byte) (int, error) {
 		buffer[index] = 'x'
 	}
 	return len(buffer), nil
+}
+
+type deadlineRecorder struct {
+	*httptest.ResponseRecorder
+	deadlines []time.Time
+	failCall  int
+}
+
+func newDeadlineRecorder() *deadlineRecorder {
+	return &deadlineRecorder{ResponseRecorder: httptest.NewRecorder(), failCall: -1}
+}
+
+func (recorder *deadlineRecorder) SetReadDeadline(deadline time.Time) error {
+	call := len(recorder.deadlines)
+	recorder.deadlines = append(recorder.deadlines, deadline)
+	if call == recorder.failCall {
+		return errors.New("injected read deadline failure")
+	}
+	return nil
+}
+
+func dialTestServer(t *testing.T, server *httptest.Server) net.Conn {
+	t.Helper()
+	connection, err := net.DialTimeout("tcp", server.Listener.Addr().String(), time.Second)
+	if err != nil {
+		t.Fatalf("dial test server: %v", err)
+	}
+	if err := connection.SetDeadline(time.Now().Add(3 * time.Second)); err != nil {
+		connection.Close()
+		t.Fatalf("set test connection deadline: %v", err)
+	}
+	return connection
+}
+
+func writeRequestHeaders(t *testing.T, connection net.Conn, host string, bodyLength int, complete bool) {
+	t.Helper()
+	ending := ""
+	if complete {
+		ending = "\r\n"
+	}
+	if _, err := fmt.Fprintf(connection, "POST /v2/agents HTTP/1.1\r\nHost: %s\r\nContent-Type: application/json\r\nContent-Length: %d\r\n%s", host, bodyLength, ending); err != nil {
+		t.Fatalf("write registration headers: %v", err)
+	}
+}
+
+func readSocketResponse(t *testing.T, connection net.Conn) *http.Response {
+	t.Helper()
+	response, err := http.ReadResponse(bufio.NewReader(connection), nil)
+	if err != nil {
+		t.Fatalf("read socket response: %v", err)
+	}
+	if _, err := io.Copy(io.Discard, response.Body); err != nil {
+		response.Body.Close()
+		t.Fatalf("read socket response body: %v", err)
+	}
+	return response
 }
 
 func newTestHandler(t *testing.T, authenticator Authenticator, service CatalogService, readiness ReadinessChecker) *Handler {
