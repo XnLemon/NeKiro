@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.nekiro.dev/a2a-profile/v0.3.0",
+  "title": "NeKiro A2A Profile v0.3.0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "protocolVersion", "sdk", "transport", "agentCardPath", "requiredMethods", "contextHeaders"],
+  "properties": {
+    "schemaVersion": { "const": "0.1" },
+    "protocolVersion": { "const": "0.3.0" },
+    "sdk": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["module", "version"],
+      "properties": {
+        "module": { "const": "github.com/a2aproject/a2a-go" },
+        "version": { "const": "v0.3.15" }
+      }
+    },
+    "transport": { "const": "JSONRPC" },
+    "agentCardPath": { "const": "/.well-known/agent-card.json" },
+    "requiredMethods": {
+      "type": "array",
+      "minItems": 4,
+      "uniqueItems": true,
+      "items": { "enum": ["message/send", "message/stream", "tasks/get", "tasks/cancel"] },
+      "allOf": [
+        { "contains": { "const": "message/send" } },
+        { "contains": { "const": "message/stream" } },
+        { "contains": { "const": "tasks/get" } },
+        { "contains": { "const": "tasks/cancel" } }
+      ]
+    },
+    "contextHeaders": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["traceId", "invocationId", "rootTaskId", "parentInvocationId", "workspaceId"],
+      "properties": {
+        "traceId": { "const": "x-nek-trace-id" },
+        "invocationId": { "const": "x-nek-invocation-id" },
+        "rootTaskId": { "const": "x-nek-root-task-id" },
+        "parentInvocationId": { "const": "x-nek-parent-invocation-id" },
+        "workspaceId": { "const": "x-nek-workspace-id" }
+      }
+    }
+  }
+}

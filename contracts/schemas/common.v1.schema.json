@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.nekiro.dev/common/v1",
+  "title": "NeKiro Common Contract Primitives v1",
+  "$defs": {
+    "safeIdentifier": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9._:-]{0,127})$"
+    },
+    "agentId": { "$ref": "#/$defs/safeIdentifier" },
+    "ownerId": { "$ref": "#/$defs/safeIdentifier" },
+    "capabilityId": { "$ref": "#/$defs/safeIdentifier" },
+    "permissionId": { "$ref": "#/$defs/safeIdentifier" },
+    "workspaceId": { "$ref": "#/$defs/safeIdentifier" },
+    "installationId": { "$ref": "#/$defs/safeIdentifier" },
+    "invocationId": { "$ref": "#/$defs/safeIdentifier" },
+    "taskId": { "$ref": "#/$defs/safeIdentifier" },
+    "traceId": { "$ref": "#/$defs/safeIdentifier" },
+    "eventId": { "$ref": "#/$defs/safeIdentifier" },
+    "callerId": { "$ref": "#/$defs/safeIdentifier" },
+    "semver": {
+      "type": "string",
+      "format": "semver",
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$"
+    },
+    "semverRange": {
+      "type": "string",
+      "format": "semver-range",
+      "minLength": 1,
+      "pattern": "\\S"
+    },
+    "dateTime": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "jsonObject": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "caller": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "id"],
+      "properties": {
+        "type": { "enum": ["user", "agent", "service"] },
+        "id": { "$ref": "#/$defs/callerId" }
+      }
+    }
+  }
+}

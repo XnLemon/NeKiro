@@ -11,8 +11,8 @@
     "build": "pnpm -r --if-present run build",
     "typecheck": "pnpm -r --if-present run typecheck",
     "test": "pnpm -r --if-present run test",
-    "test:contracts": "vitest run contracts",
-    "check": "pnpm typecheck && pnpm test && pnpm build"
+    "test:contracts": "go test ./contracts",
+    "check": "go test ./... && go vet ./... && pnpm typecheck && pnpm test && pnpm build"
   },
   "devDependencies": {
     "@types/node": "^26.1.1",

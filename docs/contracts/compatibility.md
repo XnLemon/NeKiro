@@ -14,6 +14,8 @@ Phase 1 starts with:
 | Invocation Event Schema | `0.1` |
 | A2A protocol profile | `0.3.0` |
 
+The versioned JSON Schema, OpenAPI, and A2A Profile files under `contracts/` are the contract facts. Go structs and future TypeScript types must be validated against or generated from those files.
+
 ## Compatible Changes
 
 - Adding an optional field is additive.

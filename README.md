@@ -1,7 +1,7 @@
 # NeKiro Agent Operating Platform
 
-NeKiro is a pnpm TypeScript monorepo for the first-stage Agent Operating
-Platform loop:
+NeKiro is an Agent Operating Platform with a React Console and Go Control
+Plane / A2A Router. Phase 1 proves this loop:
 
 ```text
 Register -> Discover -> Install -> Invoke -> Record
@@ -9,10 +9,10 @@ Register -> Discover -> Install -> Invoke -> Record
 
 ## Current status
 
-The repository currently has the versioned contracts workspace and a local
-PostgreSQL infrastructure baseline. The Console, Control Plane, A2A Router,
-SDKs, sample Agents, and the complete end-to-end loop are not implemented in
-the current tree.
+The repository currently has language-neutral JSON Schema/OpenAPI contracts,
+their tested Go mappings, and a local PostgreSQL infrastructure baseline. The
+Console, Control Plane, A2A Router, SDKs, sample Agents, and the complete
+end-to-end loop are not implemented in the current tree.
 
 The first-stage architecture keeps these boundaries:
 
@@ -35,7 +35,8 @@ the required first-stage shape, not a claim that every process already exists.
 
 ## Prerequisites
 
-- Node.js 24 (CI uses 24.16.0)
+- Go 1.26 or newer
+- Node.js 24 for frontend tooling (CI uses 24.16.0)
 - Corepack and pnpm 11.3.0
 - Docker Engine with Docker Compose 2.20 or newer
 
@@ -64,6 +65,8 @@ docker compose --env-file .env --file deploy/compose.yaml up --detach --wait pos
 Run the monorepo checks:
 
 ```powershell
+go test ./...
+go vet ./...
 pnpm typecheck
 pnpm test
 pnpm build

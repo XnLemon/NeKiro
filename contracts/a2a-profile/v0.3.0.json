@@ -1,0 +1,18 @@
+{
+  "schemaVersion": "0.1",
+  "protocolVersion": "0.3.0",
+  "sdk": {
+    "module": "github.com/a2aproject/a2a-go",
+    "version": "v0.3.15"
+  },
+  "transport": "JSONRPC",
+  "agentCardPath": "/.well-known/agent-card.json",
+  "requiredMethods": ["message/send", "message/stream", "tasks/get", "tasks/cancel"],
+  "contextHeaders": {
+    "traceId": "x-nek-trace-id",
+    "invocationId": "x-nek-invocation-id",
+    "rootTaskId": "x-nek-root-task-id",
+    "parentInvocationId": "x-nek-parent-invocation-id",
+    "workspaceId": "x-nek-workspace-id"
+  }
+}

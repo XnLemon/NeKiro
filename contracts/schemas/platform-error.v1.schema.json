@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.nekiro.dev/platform-error/v1",
+  "title": "NeKiro Platform Error v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["code", "message"],
+  "properties": {
+    "code": {
+      "enum": [
+        "VALIDATION_ERROR",
+        "UNAUTHENTICATED",
+        "FORBIDDEN",
+        "NOT_FOUND",
+        "CONFLICT",
+        "AGENT_NOT_INSTALLED",
+        "AGENT_DISABLED",
+        "CAPABILITY_NOT_ALLOWED",
+        "ROUTE_NOT_FOUND",
+        "A2A_PROTOCOL_ERROR",
+        "AGENT_UNAVAILABLE",
+        "AGENT_EXECUTION_FAILED",
+        "DEPENDENCY_ERROR",
+        "TIMEOUT",
+        "CANCELED",
+        "INTERNAL_ERROR"
+      ]
+    },
+    "message": { "type": "string", "minLength": 1 },
+    "traceId": { "$ref": "https://schemas.nekiro.dev/common/v1#/$defs/traceId" }
+  }
+}

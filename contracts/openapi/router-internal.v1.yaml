@@ -1,0 +1,170 @@
+openapi: 3.1.0
+info:
+  title: NeKiro Router Internal API
+  version: 1.0.0
+servers:
+  - url: http://localhost:8081
+paths:
+  /internal/v1/resolve-agent:
+    post:
+      operationId: resolveAgent
+      summary: Resolve an enabled installation to an exact Agent Card
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ResolveAgentRequest"
+      responses:
+        "200":
+          description: Resolved Agent Card and authorization facts
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResolveAgentResponse"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+  /internal/v1/invocations:
+    post:
+      operationId: dispatchInvocation
+      summary: Dispatch an authorized invocation through A2A
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DispatchInvocationRequest"
+      responses:
+        "202":
+          description: Router accepted invocation
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [invocationId, accepted]
+                properties:
+                  invocationId:
+                    $ref: ../schemas/common.v1.schema.json#/$defs/invocationId
+                  accepted:
+                    const: true
+        "400":
+          $ref: "#/components/responses/Error"
+  /internal/v1/invocations/{invocationId}:
+    get:
+      operationId: getRouterInvocation
+      parameters:
+        - in: path
+          name: invocationId
+          required: true
+          schema:
+            $ref: ../schemas/common.v1.schema.json#/$defs/invocationId
+      responses:
+        "200":
+          description: Router-owned invocation events
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: ../schemas/invocation-event.v0.1.schema.json
+        "404":
+          $ref: "#/components/responses/Error"
+  /internal/v1/traces/{traceId}:
+    get:
+      operationId: getRouterTrace
+      parameters:
+        - in: path
+          name: traceId
+          required: true
+          schema:
+            $ref: ../schemas/common.v1.schema.json#/$defs/traceId
+      responses:
+        "200":
+          description: All invocation events in a trace
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: ../schemas/invocation-event.v0.1.schema.json
+        "404":
+          $ref: "#/components/responses/Error"
+components:
+  responses:
+    Error:
+      description: Platform error
+      content:
+        application/json:
+          schema:
+            $ref: ../schemas/platform-error.v1.schema.json
+  schemas:
+    ResolveAgentRequest:
+      type: object
+      additionalProperties: false
+      required: [workspaceId, agentId, version, capability]
+      properties:
+        workspaceId:
+          $ref: ../schemas/common.v1.schema.json#/$defs/workspaceId
+        agentId:
+          $ref: ../schemas/common.v1.schema.json#/$defs/agentId
+        version:
+          $ref: ../schemas/common.v1.schema.json#/$defs/semver
+        capability:
+          $ref: ../schemas/common.v1.schema.json#/$defs/capabilityId
+    ResolveAgentResponse:
+      type: object
+      additionalProperties: false
+      required: [card, installation]
+      properties:
+        card:
+          $ref: ../schemas/agent-card.v0.1.schema.json
+        installation:
+          type: object
+          additionalProperties: false
+          required: [installationId, workspaceId, agentId, installedVersion, acceptedPermissions, status]
+          properties:
+            installationId:
+              $ref: ../schemas/common.v1.schema.json#/$defs/installationId
+            workspaceId:
+              $ref: ../schemas/common.v1.schema.json#/$defs/workspaceId
+            agentId:
+              $ref: ../schemas/common.v1.schema.json#/$defs/agentId
+            installedVersion:
+              $ref: ../schemas/common.v1.schema.json#/$defs/semver
+            acceptedPermissions:
+              type: array
+              uniqueItems: true
+              items:
+                $ref: ../schemas/common.v1.schema.json#/$defs/permissionId
+            status:
+              const: enabled
+    DispatchInvocationRequest:
+      type: object
+      additionalProperties: false
+      required: [invocationId, rootTaskId, traceId, caller, workspaceId, targetAgentId, agentCardVersion, capability, input, stream]
+      properties:
+        invocationId:
+          $ref: ../schemas/common.v1.schema.json#/$defs/invocationId
+        rootTaskId:
+          $ref: ../schemas/common.v1.schema.json#/$defs/taskId
+        parentInvocationId:
+          $ref: ../schemas/common.v1.schema.json#/$defs/invocationId
+        traceId:
+          $ref: ../schemas/common.v1.schema.json#/$defs/traceId
+        caller:
+          $ref: ../schemas/common.v1.schema.json#/$defs/caller
+        workspaceId:
+          $ref: ../schemas/common.v1.schema.json#/$defs/workspaceId
+        targetAgentId:
+          $ref: ../schemas/common.v1.schema.json#/$defs/agentId
+        agentCardVersion:
+          $ref: ../schemas/common.v1.schema.json#/$defs/semver
+        capability:
+          $ref: ../schemas/common.v1.schema.json#/$defs/capabilityId
+        input:
+          $ref: ../schemas/common.v1.schema.json#/$defs/jsonObject
+        stream:
+          type: boolean

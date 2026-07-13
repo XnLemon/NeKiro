@@ -1,11 +1,12 @@
 # Local development
 
 This runbook covers the repository's current local infrastructure baseline:
-the pnpm workspace and one PostgreSQL container. It is not a production
-deployment configuration.
+the Go backend workspace, frontend tooling, and one PostgreSQL container. It
+is not a production deployment configuration.
 
 ## Requirements
 
+- Go 1.26 or newer
 - Node.js 24; CI is pinned to 24.16.0
 - Corepack with pnpm 11.3.0
 - Docker Engine and Docker Compose 2.20 or newer
@@ -66,6 +67,8 @@ binding reachable from the host.
 ```powershell
 corepack enable
 pnpm install --frozen-lockfile
+go test ./...
+go vet ./...
 pnpm typecheck
 pnpm test
 pnpm build

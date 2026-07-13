@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.nekiro.dev/installation/v1",
+  "title": "NeKiro Workspace Installation v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "installationId",
+    "workspaceId",
+    "agentId",
+    "versionConstraint",
+    "installedVersion",
+    "acceptedPermissions",
+    "status",
+    "installedAt",
+    "updatedAt"
+  ],
+  "properties": {
+    "installationId": { "$ref": "https://schemas.nekiro.dev/common/v1#/$defs/installationId" },
+    "workspaceId": { "$ref": "https://schemas.nekiro.dev/common/v1#/$defs/workspaceId" },
+    "agentId": { "$ref": "https://schemas.nekiro.dev/common/v1#/$defs/agentId" },
+    "versionConstraint": { "$ref": "https://schemas.nekiro.dev/common/v1#/$defs/semverRange" },
+    "installedVersion": { "$ref": "https://schemas.nekiro.dev/common/v1#/$defs/semver" },
+    "acceptedPermissions": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "$ref": "https://schemas.nekiro.dev/common/v1#/$defs/permissionId" }
+    },
+    "status": { "enum": ["enabled", "disabled", "uninstalled"] },
+    "installedAt": { "$ref": "https://schemas.nekiro.dev/common/v1#/$defs/dateTime" },
+    "updatedAt": { "$ref": "https://schemas.nekiro.dev/common/v1#/$defs/dateTime" }
+  }
+}

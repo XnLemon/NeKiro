@@ -19,8 +19,8 @@ Console -> Control Plane -> A2A Router -> Agents
 ```
 
 - `apps/console` is the only user interface.
-- `apps/control-plane` is one Phase 1 process containing Gateway, Catalog, Workspace, and Invocation Dispatch modules.
-- `apps/a2a-router` is an independent data-plane process.
+- `apps/control-plane` is one Go process containing Gateway, Catalog, Workspace, and Invocation Dispatch modules.
+- `apps/a2a-router` is an independent Go data-plane process.
 - Sample agents are independent A2A servers.
 - PostgreSQL is the target persistent store. Logical module ownership applies even when modules share one database instance.
 
@@ -36,20 +36,17 @@ Console -> Control Plane -> A2A Router -> Agents
 | A2A Router | Resolution, transport, context propagation, timeout/cancel, event emission | Permanent Agent Card ownership |
 | Ledger | Append-only invocation events and query projection | Routing or authorization decisions |
 
-## Contract Packages
+## Contract Sources
 
-The `@nekiro/contracts` package exposes versioned subpaths:
+Cross-language contracts are owned by language-neutral artifacts:
 
-- `@nekiro/contracts/agent-card`
-- `@nekiro/contracts/platform-api`
-- `@nekiro/contracts/internal-api`
-- `@nekiro/contracts/a2a-profile`
-- `@nekiro/contracts/events`
-- `@nekiro/contracts/identifiers`
-- `@nekiro/contracts/errors`
-- `@nekiro/contracts/common`
+- `contracts/schemas/` contains versioned JSON Schema documents.
+- `contracts/openapi/control-plane.v1.yaml` defines the Northbound API.
+- `contracts/openapi/router-internal.v1.yaml` defines Control Plane / Router communication.
+- `contracts/a2a-profile/v0.3.0.json` pins the supported A2A subset and context headers.
+- `contracts/*.go` maps these contracts into Go and verifies the mapping against the source schemas.
 
-Services must not exchange internal implementation types across a process boundary.
+Go and TypeScript types are consumers of these artifacts, never competing sources of truth. Services must not exchange internal implementation types across a process boundary.
 
 ## Northbound API v1
 
@@ -95,7 +92,7 @@ Ledger writes are append-only events. A mutable read projection may be derived f
 
 ## A2A Profile
 
-Phase 1 targets A2A `0.3.0` over JSON-RPC using the official `@a2a-js/sdk`. Agents expose `/.well-known/agent-card.json` and support:
+Phase 1 targets A2A `0.3.0` over JSON-RPC using `github.com/a2aproject/a2a-go` `v0.3.15`. Agents expose `/.well-known/agent-card.json` and support:
 
 - `message/send`
 - `message/stream`
