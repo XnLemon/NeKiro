@@ -22,7 +22,7 @@ commits its work, and is followed by a new independent Review Agent reading
 **Purpose**: Remove obsolete local artifacts and verify the SDD gate before any
 contract implementation.
 
-- [ ] T001 Verify ignored/untracked status and delete only the resolved
+- [x] T001 Verify ignored/untracked status and delete only the resolved
   `E:\NeKiro\node_modules`, `E:\NeKiro\contracts\node_modules`,
   `E:\NeKiro\contracts\dist`, `E:\NeKiro\contracts\platform-contracts`, and
   confirmed-empty `E:\NeKiro\contracts\agent-card`,
