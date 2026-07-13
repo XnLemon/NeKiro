@@ -48,7 +48,7 @@ components:
             $ref: ../schemas/platform-error.v2.schema.json
     Forbidden:
       description: Installation or Agent version is disabled or capability is forbidden
-      x-platform-error-codes: [FORBIDDEN, AGENT_NOT_INSTALLED, AGENT_DISABLED, CAPABILITY_NOT_ALLOWED]
+      x-platform-error-codes: [FORBIDDEN, AGENT_DISABLED, CAPABILITY_NOT_ALLOWED]
       content:
         application/json:
           schema:

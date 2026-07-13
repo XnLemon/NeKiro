@@ -79,6 +79,10 @@ func TestDirectionalOpenAPIOwnership(t *testing.T) {
 	if controlPlane.Paths.Find("/internal/v2/invocations") != nil {
 		t.Fatal("Control Plane internal API contains Router-owned dispatch")
 	}
+	resolveAgent := controlPlane.Paths.Find("/internal/v1/resolve-agent").Post
+	assertDeterministicErrorCodeStatuses(t, resolveAgent)
+	assertResponseErrorCode(t, resolveAgent, 404, "AGENT_NOT_INSTALLED")
+	assertResponseOmitsErrorCode(t, resolveAgent, 403, "AGENT_NOT_INSTALLED")
 	if router.Paths.Find("/internal/v1/resolve-agent") != nil {
 		t.Fatal("Router internal API contains Control Plane-owned resolution")
 	}
