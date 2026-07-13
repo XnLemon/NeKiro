@@ -1,0 +1,32 @@
+name: nekiro
+
+services:
+  postgres:
+    image: postgres:17.9-bookworm@sha256:47f917f7409eacd22fc5dfb1dee634e1b55cf0c01d1a7eb701be2227a03e0641
+    environment:
+      POSTGRES_USER: "${POSTGRES_USER:?POSTGRES_USER must be set and non-empty}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set and non-empty}"
+      POSTGRES_DB: "${POSTGRES_DB:?POSTGRES_DB must be set and non-empty}"
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:?POSTGRES_PORT must be set and non-empty}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - platform-internal
+      - local-access
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready --username "$${POSTGRES_USER}" --dbname "$${POSTGRES_DB}"
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
+volumes:
+  postgres-data:
+
+networks:
+  platform-internal:
+    internal: true
+  local-access:
