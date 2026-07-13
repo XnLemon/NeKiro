@@ -1,0 +1,9 @@
+packages:
+  - "apps/*"
+  - "contracts"
+  - "sdks/*"
+  - "agents/*"
+  - "tests/*"
+
+onlyBuiltDependencies:
+  - esbuild

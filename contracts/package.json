@@ -1,0 +1,41 @@
+{
+  "name": "@nekiro/contracts",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "files": ["dist"],
+  "exports": {
+    "./common": {
+      "types": "./dist/common/index.d.ts",
+      "default": "./dist/common/index.js"
+    },
+    "./agent-card": {
+      "types": "./dist/agent-card/index.d.ts",
+      "default": "./dist/agent-card/index.js"
+    },
+    "./events": {
+      "types": "./dist/events/index.d.ts",
+      "default": "./dist/events/index.js"
+    },
+    "./platform-api": {
+      "types": "./dist/platform-api/index.d.ts",
+      "default": "./dist/platform-api/index.js"
+    },
+    "./internal-api": {
+      "types": "./dist/internal-api/index.d.ts",
+      "default": "./dist/internal-api/index.js"
+    },
+    "./a2a-profile": {
+      "types": "./dist/a2a-profile/index.d.ts",
+      "default": "./dist/a2a-profile/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --config ../vitest.config.ts contracts"
+  },
+  "dependencies": {
+    "@sinclair/typebox": "^0.34.52"
+  }
+}
