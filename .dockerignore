@@ -1,0 +1,8 @@
+**
+!go.mod
+!go.sum
+!contracts/
+!contracts/**
+!apps/
+!apps/control-plane/
+!apps/control-plane/**

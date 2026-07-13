@@ -11,6 +11,24 @@ jobs:
   verify:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    env:
+      NEKIRO_DATABASE_URL: postgresql://nekiro_ci:nekiro_ci_password@127.0.0.1:5432/nekiro_catalog_ci_test?sslmode=disable
+      NEKIRO_TEST_DATABASE_URL: postgresql://nekiro_ci:nekiro_ci_password@127.0.0.1:5432/nekiro_catalog_ci_test?sslmode=disable
+
+    services:
+      postgres:
+        image: postgres:17.9-bookworm@sha256:47f917f7409eacd22fc5dfb1dee634e1b55cf0c01d1a7eb701be2227a03e0641
+        env:
+          POSTGRES_USER: nekiro_ci
+          POSTGRES_PASSWORD: nekiro_ci_password
+          POSTGRES_DB: nekiro_catalog_ci_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready --username nekiro_ci --dbname nekiro_catalog_ci_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
 
     steps:
       - name: Check out repository
@@ -47,10 +65,19 @@ jobs:
           POSTGRES_PASSWORD: compose-config-check-only
           POSTGRES_DB: compose_config_check
           POSTGRES_PORT: "55432"
+          NEKIRO_COMPOSE_DATABASE_URL: postgresql://compose_config_check:compose-config-check-only@postgres:5432/compose_config_check?sslmode=disable
+          NEKIRO_DEV_AUTH_PRINCIPALS_JSON: '[{"id":"compose-check","tokenSha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}]'
+          CONTROL_PLANE_PORT: "18080"
         run: docker compose --file deploy/compose.yaml config --quiet
 
       - name: Test Go
         run: go test ./...
+
+      - name: Migrate Catalog test database
+        run: go run ./apps/control-plane/cmd/control-plane migrate up
+
+      - name: Test Catalog integration
+        run: go test -tags=integration -count=1 ./tests/integration/catalog
 
       - name: Vet Go
         run: go vet ./...

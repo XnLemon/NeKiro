@@ -23,6 +23,44 @@ services:
       retries: 12
       start_period: 10s
 
+  control-plane-migrate:
+    build:
+      context: ..
+      dockerfile: apps/control-plane/Dockerfile
+    command: ["migrate", "up"]
+    environment:
+      NEKIRO_DATABASE_URL: "${NEKIRO_COMPOSE_DATABASE_URL:?NEKIRO_COMPOSE_DATABASE_URL must be set and non-empty}"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - platform-internal
+    restart: "no"
+
+  control-plane:
+    build:
+      context: ..
+      dockerfile: apps/control-plane/Dockerfile
+    environment:
+      NEKIRO_DATABASE_URL: "${NEKIRO_COMPOSE_DATABASE_URL:?NEKIRO_COMPOSE_DATABASE_URL must be set and non-empty}"
+      NEKIRO_LISTEN_ADDRESS: "0.0.0.0:8080"
+      NEKIRO_AUTH_MODE: "development-static"
+      NEKIRO_DEV_AUTH_PRINCIPALS_JSON: "${NEKIRO_DEV_AUTH_PRINCIPALS_JSON:?NEKIRO_DEV_AUTH_PRINCIPALS_JSON must be set and non-empty}"
+    ports:
+      - "127.0.0.1:${CONTROL_PLANE_PORT:?CONTROL_PLANE_PORT must be set and non-empty}:8080"
+    depends_on:
+      control-plane-migrate:
+        condition: service_completed_successfully
+    networks:
+      - platform-internal
+      - local-access
+    healthcheck:
+      test: ["CMD", "/control-plane", "healthcheck", "http://127.0.0.1:8080/readyz"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 5s
+
 volumes:
   postgres-data:
 
