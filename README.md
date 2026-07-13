@@ -27,10 +27,18 @@ different Runtime implementations. See
 
 ## Current status
 
-The repository currently has language-neutral JSON Schema/OpenAPI contracts,
-their tested Go mappings, and a local PostgreSQL infrastructure baseline. The
-Console, Control Plane, A2A Router, SDKs, sample Agents, and the complete
-end-to-end loop are not implemented in the current tree.
+The repository currently has an active language-neutral contract set and its
+tested Go mappings: Agent Card `0.2`, Northbound API `v2`, Control Plane
+Internal API `v1`, Router Internal API `v2`, Invocation Event `0.2`, Platform
+Error `v2`, Invocation Result and Result Stream Event `v1`, and A2A Profile
+Schema `0.2` for protocol `0.3.0`. Historical `v1` and `0.1` artifacts remain
+readable migration evidence; the future runtime will not add speculative
+dual-read behavior for them.
+
+Frontend work remains paused. The Console, Control Plane, A2A Router, SDKs,
+sample Agents, and the complete end-to-end loop are not implemented in the
+current tree. A local PostgreSQL infrastructure baseline is available for later
+service work.
 
 The first-stage architecture keeps these boundaries:
 

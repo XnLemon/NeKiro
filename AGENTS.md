@@ -176,7 +176,9 @@ agent-platform/
 - PostgreSQL 是第一阶段的持久化数据库，逻辑模块即使共用数据库实例也必须保持数据所有权边界。
 - Node.js 只用于前端构建、契约生成和必要的工程工具，不得用于实现 Control Plane、A2A Router 或其他后端核心服务。
 
-当前仓库中的 TypeScript / TypeBox 契约属于技术栈确认前的过渡实现。恢复业务功能开发前，必须先将契约事实来源迁移为语言无关格式，并保证已有语义、版本规则和测试用例不丢失；不得让 Go 后端反向依赖 TypeScript 运行时代码。
+当前仓库已将跨边界契约事实来源迁移为语言无关的 JSON Schema、OpenAPI 和 A2A Profile。当前活动契约集为 Agent Card `0.2`、Northbound API `v2`、Control Plane Internal API `v1`、Router Internal API `v2`、Invocation Event `0.2`、Platform Error `v2`、Invocation Result / Result Stream Event `v1`，以及 A2A Profile Schema `0.2` / protocol `0.3.0`；历史 `v1` / `0.1` 工件仅作为迁移证据保留，不提供运行时双读 fallback。
+
+当前仓库仍处于契约基础阶段。Frontend 开发保持暂停；Control Plane、A2A Router、SDK、Sample Agents 和完整 E2E 闭环尚未实现，不得因活动契约已就绪而宣称对应服务存在。
 
 Go 的 HTTP Router、数据库访问、A2A SDK 和代码生成工具应通过独立 ADR 选择。可以评估 `trpc-agent-go` 及成熟 A2A Go 实现，但完整 Agent Framework 不得成为 Control Plane 或 A2A Router 的核心依赖。外部 Framework 只能作为 Agent Runtime、示例实现或隔离的协议适配器，不能取代本项目的 Control Plane / Data Plane 架构边界。
 

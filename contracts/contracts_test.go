@@ -190,10 +190,10 @@ func TestPlatformErrorRejectsArbitraryDetails(t *testing.T) {
 		t.Fatal("public error accepted an unsafe trace id")
 	}
 
-	if len(publicErrorMessages) != 16 {
-		t.Fatalf("public error policy contains %d codes, want 16", len(publicErrorMessages))
+	if len(platformErrorV2Messages) != 17 {
+		t.Fatalf("public error policy contains %d codes, want 17", len(platformErrorV2Messages))
 	}
-	for code := range publicErrorMessages {
+	for code := range platformErrorV2Messages {
 		publicError, err := NewPlatformError(code, "trace-1")
 		if err != nil {
 			t.Fatalf("create public error %s: %v", code, err)
@@ -220,13 +220,16 @@ func TestA2AProfileUsesOfficialSDK(t *testing.T) {
 		t.Fatalf("validate A2A profile: %v", err)
 	}
 
+	if profile.SchemaVersion != A2AProfileSchemaVersion || profile.ProtocolVersion != A2AProtocolVersion {
+		t.Fatalf("active A2A profile versions = schema %q protocol %q", profile.SchemaVersion, profile.ProtocolVersion)
+	}
 	wantMethods := []string{"message/send", "message/stream", "tasks/get", "tasks/cancel"}
-	if len(profile.RequiredMethods) != len(wantMethods) {
-		t.Fatalf("required method count = %d, want %d", len(profile.RequiredMethods), len(wantMethods))
+	if len(profile.Operations) != len(wantMethods) {
+		t.Fatalf("required operation count = %d, want %d", len(profile.Operations), len(wantMethods))
 	}
 	for index := range wantMethods {
-		if profile.RequiredMethods[index] != wantMethods[index] {
-			t.Fatalf("required method %d = %q, want %q", index, profile.RequiredMethods[index], wantMethods[index])
+		if profile.Operations[index].Method != wantMethods[index] {
+			t.Fatalf("required method %d = %q, want %q", index, profile.Operations[index].Method, wantMethods[index])
 		}
 	}
 
@@ -262,12 +265,63 @@ func TestA2AProfileUsesOfficialSDK(t *testing.T) {
 
 func TestOpenAPIDocuments(t *testing.T) {
 	for _, path := range []string{
+		filepath.Join("openapi", "control-plane.v2.yaml"),
+		filepath.Join("openapi", "control-plane-internal.v1.yaml"),
+		filepath.Join("openapi", "router-internal.v2.yaml"),
+	} {
+		t.Run(path, func(t *testing.T) {
+			loadOpenAPIDocument(t, path)
+		})
+	}
+}
+
+func TestHistoricalV1AndV01ArtifactsRemainReadable(t *testing.T) {
+	for _, path := range []string{
+		"schemas/agent-card.v0.1.schema.json",
+		"schemas/invocation-event.v0.1.schema.json",
+		"schemas/platform-error.v1.schema.json",
+		"schemas/a2a-profile.v0.3.0.schema.json",
+	} {
+		t.Run(path, func(t *testing.T) {
+			if _, err := readJSONDocument(path); err != nil {
+				t.Fatalf("historical schema is not readable: %v", err)
+			}
+		})
+	}
+
+	for _, path := range []string{
 		filepath.Join("openapi", "control-plane.v1.yaml"),
 		filepath.Join("openapi", "router-internal.v1.yaml"),
 	} {
 		t.Run(path, func(t *testing.T) {
 			loadOpenAPIDocument(t, path)
 		})
+	}
+
+	type historicalA2AProfile struct {
+		SchemaVersion   string            `json:"schemaVersion"`
+		ProtocolVersion string            `json:"protocolVersion"`
+		SDK             A2ASDK            `json:"sdk"`
+		Transport       string            `json:"transport"`
+		AgentCardPath   string            `json:"agentCardPath"`
+		RequiredMethods []string          `json:"requiredMethods"`
+		ContextHeaders  A2AContextHeaders `json:"contextHeaders"`
+	}
+	data, err := contractFiles.ReadFile("a2a-profile/v0.3.0.json")
+	if err != nil {
+		t.Fatalf("read historical A2A profile: %v", err)
+	}
+	var profile historicalA2AProfile
+	decoder := json.NewDecoder(strings.NewReader(string(data)))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&profile); err != nil {
+		t.Fatalf("decode historical A2A profile: %v", err)
+	}
+	if err := requireJSONEOF(decoder); err != nil {
+		t.Fatalf("decode historical A2A profile: %v", err)
+	}
+	if profile.SchemaVersion != "0.1" || profile.ProtocolVersion != "0.3.0" || len(profile.RequiredMethods) == 0 {
+		t.Fatalf("historical A2A profile identity changed: %+v", profile)
 	}
 }
 
@@ -290,8 +344,16 @@ func TestGoDTOsMatchOpenAPI(t *testing.T) {
 		CreatedAt:        now,
 		UpdatedAt:        now,
 	}
+	result := InvocationResult{
+		SchemaVersion: InvocationResultSchemaVersion,
+		InvocationID:  event.InvocationID,
+		RootTaskID:    event.RootTaskID,
+		TraceID:       event.TraceID,
+		Status:        "succeeded",
+		Result:        json.RawMessage(`{"summary":"contract accepted"}`),
+	}
 
-	controlPlane := loadOpenAPIDocument(t, filepath.Join("openapi", "control-plane.v1.yaml"))
+	controlPlane := loadOpenAPIDocument(t, filepath.Join("openapi", "control-plane.v2.yaml"))
 	controlCases := []struct {
 		name   string
 		schema *openapi3.SchemaRef
@@ -299,47 +361,47 @@ func TestGoDTOsMatchOpenAPI(t *testing.T) {
 	}{
 		{
 			name:   "register request",
-			schema: controlPlane.Paths.Find("/v1/agents").Post.RequestBody.Value.Content["application/json"].Schema,
+			schema: controlPlane.Paths.Find("/v2/agents").Post.RequestBody.Value.Content["application/json"].Schema,
 			value:  RegisterAgentRequest{Card: card},
 		},
 		{
 			name:   "search response",
-			schema: controlPlane.Paths.Find("/v1/agents").Get.Responses.Status(200).Value.Content["application/json"].Schema,
+			schema: controlPlane.Paths.Find("/v2/agents").Get.Responses.Status(200).Value.Content["application/json"].Schema,
 			value:  SearchAgentsResponse{Items: []CatalogEntry{catalogEntry}},
 		},
 		{
 			name:   "install request",
-			schema: controlPlane.Paths.Find("/v1/workspaces/{workspaceId}/installations").Post.RequestBody.Value.Content["application/json"].Schema,
+			schema: controlPlane.Paths.Find("/v2/workspaces/{workspaceId}/installations").Post.RequestBody.Value.Content["application/json"].Schema,
 			value:  InstallAgentRequest{AgentID: card.AgentID, VersionConstraint: "^1.0.0", AcceptedPermissions: []string{"document.read"}},
 		},
 		{
 			name:   "installation response",
-			schema: controlPlane.Paths.Find("/v1/workspaces/{workspaceId}/installations").Post.Responses.Status(201).Value.Content["application/json"].Schema,
+			schema: controlPlane.Paths.Find("/v2/workspaces/{workspaceId}/installations").Post.Responses.Status(201).Value.Content["application/json"].Schema,
 			value:  installation,
 		},
 		{
 			name:   "update installation request",
-			schema: controlPlane.Paths.Find("/v1/workspaces/{workspaceId}/installations/{installationId}").Patch.RequestBody.Value.Content["application/json"].Schema,
+			schema: controlPlane.Paths.Find("/v2/workspaces/{workspaceId}/installations/{installationId}").Patch.RequestBody.Value.Content["application/json"].Schema,
 			value:  UpdateInstallationRequest{Status: "disabled"},
 		},
 		{
 			name:   "invoke request",
-			schema: controlPlane.Paths.Find("/v1/workspaces/{workspaceId}/invocations").Post.RequestBody.Value.Content["application/json"].Schema,
+			schema: controlPlane.Paths.Find("/v2/workspaces/{workspaceId}/invocations").Post.RequestBody.Value.Content["application/json"].Schema,
 			value:  InvokeAgentRequest{AgentID: card.AgentID, Capability: "contract.review", Input: map[string]any{"text": "contract"}, Stream: true},
 		},
 		{
-			name:   "invocation accepted",
-			schema: controlPlane.Paths.Find("/v1/workspaces/{workspaceId}/invocations").Post.Responses.Status(202).Value.Content["application/json"].Schema,
-			value:  InvocationAccepted{InvocationID: event.InvocationID, RootTaskID: event.RootTaskID, TraceID: event.TraceID, Status: "pending"},
+			name:   "invocation result",
+			schema: controlPlane.Paths.Find("/v2/workspaces/{workspaceId}/invocations").Post.Responses.Status(200).Value.Content["application/json"].Schema,
+			value:  result,
 		},
 		{
 			name:   "invocation detail",
-			schema: controlPlane.Paths.Find("/v1/invocations/{invocationId}").Get.Responses.Status(200).Value.Content["application/json"].Schema,
+			schema: controlPlane.Paths.Find("/v2/invocations/{invocationId}").Get.Responses.Status(200).Value.Content["application/json"].Schema,
 			value:  InvocationDetailResponse{Invocation: record, Events: []InvocationEvent{event}},
 		},
 		{
 			name:   "trace response",
-			schema: controlPlane.Paths.Find("/v1/traces/{traceId}").Get.Responses.Status(200).Value.Content["application/json"].Schema,
+			schema: controlPlane.Paths.Find("/v2/traces/{traceId}").Get.Responses.Status(200).Value.Content["application/json"].Schema,
 			value:  TraceResponse{TraceID: event.TraceID, Invocations: []InvocationRecord{record}},
 		},
 	}
@@ -349,8 +411,9 @@ func TestGoDTOsMatchOpenAPI(t *testing.T) {
 		})
 	}
 
-	router := loadOpenAPIDocument(t, filepath.Join("openapi", "router-internal.v1.yaml"))
-	streamOperation := router.Paths.Find("/internal/v1/invocations/{invocationId}/events")
+	controlPlaneInternal := loadOpenAPIDocument(t, filepath.Join("openapi", "control-plane-internal.v1.yaml"))
+	router := loadOpenAPIDocument(t, filepath.Join("openapi", "router-internal.v2.yaml"))
+	streamOperation := router.Paths.Find("/internal/v2/invocations/{invocationId}/events")
 	if streamOperation == nil || streamOperation.Get == nil {
 		t.Fatal("Router SSE operation is missing")
 	}
@@ -365,24 +428,27 @@ func TestGoDTOsMatchOpenAPI(t *testing.T) {
 		AcceptedPermissions: installation.AcceptedPermissions,
 		Status:              "enabled",
 	}
-	routerCases := []struct {
+	internalCases := []struct {
 		name   string
 		schema *openapi3.SchemaRef
 		value  any
 	}{
 		{
 			name:   "resolve request",
-			schema: router.Paths.Find("/internal/v1/resolve-agent").Post.RequestBody.Value.Content["application/json"].Schema,
-			value:  ResolveAgentRequest{WorkspaceID: installation.WorkspaceID, AgentID: card.AgentID, Version: card.Version, Capability: "contract.review"},
+			schema: controlPlaneInternal.Paths.Find("/internal/v1/resolve-agent").Post.RequestBody.Value.Content["application/json"].Schema,
+			value: ResolveAgentRequest{
+				InvocationID: event.InvocationID, RootTaskID: event.RootTaskID, TraceID: event.TraceID,
+				WorkspaceID: installation.WorkspaceID, AgentID: card.AgentID, Version: card.Version, Capability: "contract.review",
+			},
 		},
 		{
 			name:   "resolve response",
-			schema: router.Paths.Find("/internal/v1/resolve-agent").Post.Responses.Status(200).Value.Content["application/json"].Schema,
+			schema: controlPlaneInternal.Paths.Find("/internal/v1/resolve-agent").Post.Responses.Status(200).Value.Content["application/json"].Schema,
 			value:  ResolveAgentResponse{Card: card, Installation: resolvedInstallation},
 		},
 		{
 			name:   "dispatch request",
-			schema: router.Paths.Find("/internal/v1/invocations").Post.RequestBody.Value.Content["application/json"].Schema,
+			schema: router.Paths.Find("/internal/v2/invocations").Post.RequestBody.Value.Content["application/json"].Schema,
 			value: DispatchInvocationRequest{
 				InvocationID: event.InvocationID, RootTaskID: event.RootTaskID, TraceID: event.TraceID,
 				Caller: event.Caller, WorkspaceID: event.WorkspaceID, TargetAgentID: event.TargetAgentID,
@@ -391,9 +457,9 @@ func TestGoDTOsMatchOpenAPI(t *testing.T) {
 			},
 		},
 		{
-			name:   "dispatch accepted",
-			schema: router.Paths.Find("/internal/v1/invocations").Post.Responses.Status(202).Value.Content["application/json"].Schema,
-			value:  DispatchInvocationAccepted{InvocationID: event.InvocationID, Accepted: true},
+			name:   "dispatch result",
+			schema: router.Paths.Find("/internal/v2/invocations").Post.Responses.Status(200).Value.Content["application/json"].Schema,
+			value:  result,
 		},
 		{
 			name:   "router event envelope",
@@ -401,7 +467,7 @@ func TestGoDTOsMatchOpenAPI(t *testing.T) {
 			value:  RouterEventEnvelope{Event: event},
 		},
 	}
-	for _, testCase := range routerCases {
+	for _, testCase := range internalCases {
 		t.Run(testCase.name, func(t *testing.T) {
 			validateOpenAPIValue(t, testCase.schema, testCase.value)
 		})
@@ -409,8 +475,8 @@ func TestGoDTOsMatchOpenAPI(t *testing.T) {
 }
 
 func TestSearchAgentsQueryMatchesOpenAPI(t *testing.T) {
-	document := loadOpenAPIDocument(t, filepath.Join("openapi", "control-plane.v1.yaml"))
-	operation := document.Paths.Find("/v1/agents").Get
+	document := loadOpenAPIDocument(t, filepath.Join("openapi", "control-plane.v2.yaml"))
+	operation := document.Paths.Find("/v2/agents").Get
 	query := SearchAgentsQuery{
 		Query:      stringPointer("contract"),
 		Capability: stringPointer("contract.review"),
@@ -454,11 +520,16 @@ func loadOpenAPIDocument(t *testing.T, path string) *openapi3.T {
 	loader.ReadFromURIFunc = func(loader *openapi3.Loader, location *url.URL) ([]byte, error) {
 		if location.Scheme == "https" && location.Host == "schemas.nekiro.dev" {
 			schemaFiles := map[string]string{
-				"/common/v1":             "schemas/common.v1.schema.json",
-				"/agent-card/v0.1":       "schemas/agent-card.v0.1.schema.json",
-				"/platform-error/v1":     "schemas/platform-error.v1.schema.json",
-				"/installation/v1":       "schemas/installation.v1.schema.json",
-				"/invocation-event/v0.1": "schemas/invocation-event.v0.1.schema.json",
+				"/common/v1":                         "schemas/common.v1.schema.json",
+				"/agent-card/v0.1":                   "schemas/agent-card.v0.1.schema.json",
+				"/agent-card/v0.2":                   "schemas/agent-card.v0.2.schema.json",
+				"/platform-error/v1":                 "schemas/platform-error.v1.schema.json",
+				"/platform-error/v2":                 "schemas/platform-error.v2.schema.json",
+				"/installation/v1":                   "schemas/installation.v1.schema.json",
+				"/invocation-event/v0.1":             "schemas/invocation-event.v0.1.schema.json",
+				"/invocation-event/v0.2":             "schemas/invocation-event.v0.2.schema.json",
+				"/invocation-result/v1":              "schemas/invocation-result.v1.schema.json",
+				"/invocation-result-stream-event/v1": "schemas/invocation-result-stream-event.v1.schema.json",
 			}
 			localPath, exists := schemaFiles[location.Path]
 			if !exists {

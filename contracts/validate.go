@@ -16,25 +16,29 @@ import (
 
 const (
 	commonSchemaID          = "https://schemas.nekiro.dev/common/v1"
-	agentCardSchemaID       = "https://schemas.nekiro.dev/agent-card/v0.1"
-	platformErrorSchemaID   = "https://schemas.nekiro.dev/platform-error/v1"
+	agentCardSchemaID       = "https://schemas.nekiro.dev/agent-card/v0.2"
+	platformErrorSchemaID   = platformErrorV2SchemaID
 	installationSchemaID    = "https://schemas.nekiro.dev/installation/v1"
-	invocationEventSchemaID = "https://schemas.nekiro.dev/invocation-event/v0.1"
-	a2aProfileSchemaID      = "https://schemas.nekiro.dev/a2a-profile/v0.3.0"
+	invocationEventSchemaID = invocationEventV02SchemaID
+	a2aProfileSchemaID      = "https://schemas.nekiro.dev/a2a-profile/v0.2"
 )
 
-//go:embed schemas/*.json a2a-profile/*.json openapi/*.yaml
+//go:embed schemas/*.json openapi/*.yaml a2a-profile/*.json a2a-profile/v0.3.0/*.json a2a-profile/v0.3.0/conformance/*.json a2a-profile/v0.3.0/conformance/*.sse agent-card/v0.2/semantic-rules.md agent-card/v0.2/conformance/*.json invocation/v1/semantic-rules.md invocation/v1/conformance/*.json
 var contractFiles embed.FS
 
 type Validator struct {
-	agentCard       *jsonschema.Schema
-	platformError   *jsonschema.Schema
-	installation    *jsonschema.Schema
-	invocationEvent *jsonschema.Schema
-	a2aProfile      *jsonschema.Schema
+	agentCard                   *jsonschema.Schema
+	platformError               *jsonschema.Schema
+	installation                *jsonschema.Schema
+	invocationEvent             *jsonschema.Schema
+	invocationResult            *jsonschema.Schema
+	invocationResultStreamEvent *jsonschema.Schema
+	a2aProfile                  *jsonschema.Schema
+	resultContracts             *ResultContractValidator
 }
 
 type SemanticIssue struct {
+	RuleID  AgentCardSemanticRuleID
 	Path    string
 	Message string
 }
@@ -75,12 +79,10 @@ func NewValidator() (*Validator, error) {
 	})
 
 	resources := map[string]string{
-		commonSchemaID:          "schemas/common.v1.schema.json",
-		agentCardSchemaID:       "schemas/agent-card.v0.1.schema.json",
-		platformErrorSchemaID:   "schemas/platform-error.v1.schema.json",
-		installationSchemaID:    "schemas/installation.v1.schema.json",
-		invocationEventSchemaID: "schemas/invocation-event.v0.1.schema.json",
-		a2aProfileSchemaID:      "schemas/a2a-profile.v0.3.0.schema.json",
+		commonSchemaID:       "schemas/common.v1.schema.json",
+		agentCardSchemaID:    "schemas/agent-card.v0.2.schema.json",
+		installationSchemaID: "schemas/installation.v1.schema.json",
+		a2aProfileSchemaID:   "schemas/a2a-profile.v0.2.schema.json",
 	}
 
 	for id, path := range resources {
@@ -97,29 +99,29 @@ func NewValidator() (*Validator, error) {
 	if err != nil {
 		return nil, fmt.Errorf("compile Agent Card schema: %w", err)
 	}
-	platformError, err := compiler.Compile(platformErrorSchemaID)
-	if err != nil {
-		return nil, fmt.Errorf("compile platform error schema: %w", err)
-	}
 	installation, err := compiler.Compile(installationSchemaID)
 	if err != nil {
 		return nil, fmt.Errorf("compile installation schema: %w", err)
-	}
-	invocationEvent, err := compiler.Compile(invocationEventSchemaID)
-	if err != nil {
-		return nil, fmt.Errorf("compile invocation event schema: %w", err)
 	}
 	a2aProfile, err := compiler.Compile(a2aProfileSchemaID)
 	if err != nil {
 		return nil, fmt.Errorf("compile A2A profile schema: %w", err)
 	}
 
+	resultContracts, err := NewResultContractValidator()
+	if err != nil {
+		return nil, fmt.Errorf("compile active result contracts: %w", err)
+	}
+
 	return &Validator{
-		agentCard:       agentCard,
-		platformError:   platformError,
-		installation:    installation,
-		invocationEvent: invocationEvent,
-		a2aProfile:      a2aProfile,
+		agentCard:                   agentCard,
+		platformError:               resultContracts.platformError,
+		installation:                installation,
+		invocationEvent:             resultContracts.invocationEvent,
+		invocationResult:            resultContracts.invocationResult,
+		invocationResultStreamEvent: resultContracts.invocationResultStreamEvent,
+		a2aProfile:                  a2aProfile,
+		resultContracts:             resultContracts,
 	}, nil
 }
 
@@ -128,36 +130,14 @@ func (v *Validator) ValidateAgentCard(card AgentCard) error {
 		return fmt.Errorf("validate Agent Card schema: %w", err)
 	}
 
-	issues := make([]SemanticIssue, 0)
-	permissions := make(map[string]struct{}, len(card.Permissions))
-	for index, permission := range card.Permissions {
-		if _, exists := permissions[permission.ID]; exists {
-			issues = append(issues, SemanticIssue{
-				Path:    fmt.Sprintf("/permissions/%d/id", index),
-				Message: "duplicate permission id",
-			})
-		}
-		permissions[permission.ID] = struct{}{}
-	}
-
-	skills := make(map[string]struct{}, len(card.Skills))
-	for skillIndex, skill := range card.Skills {
-		if _, exists := skills[skill.ID]; exists {
-			issues = append(issues, SemanticIssue{
-				Path:    fmt.Sprintf("/skills/%d/id", skillIndex),
-				Message: "duplicate skill id",
-			})
-		}
-		skills[skill.ID] = struct{}{}
-
-		for permissionIndex, permissionID := range skill.RequiredPermissions {
-			if _, declared := permissions[permissionID]; !declared {
-				issues = append(issues, SemanticIssue{
-					Path:    fmt.Sprintf("/skills/%d/requiredPermissions/%d", skillIndex, permissionIndex),
-					Message: "required permission is not declared",
-				})
-			}
-		}
+	violations := EvaluateAgentCardSemantics(card)
+	issues := make([]SemanticIssue, 0, len(violations))
+	for _, violation := range violations {
+		issues = append(issues, SemanticIssue{
+			RuleID:  violation.RuleID,
+			Path:    violation.Path,
+			Message: fmt.Sprintf("violates %s", violation.RuleID),
+		})
 	}
 
 	if len(issues) > 0 {
@@ -167,8 +147,12 @@ func (v *Validator) ValidateAgentCard(card AgentCard) error {
 }
 
 func (v *Validator) DecodeAgentCard(data []byte) (AgentCard, error) {
+	if err := rejectDuplicateJSONMemberNames(data); err != nil {
+		return AgentCard{}, fmt.Errorf("decode Agent Card: %w", err)
+	}
 	var card AgentCard
 	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.UseNumber()
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&card); err != nil {
 		return AgentCard{}, fmt.Errorf("decode Agent Card: %w", err)
@@ -187,11 +171,28 @@ func (v *Validator) ValidateInstallation(installation Installation) error {
 }
 
 func (v *Validator) ValidateInvocationEvent(event InvocationEvent) error {
-	return validateMappedValue(v.invocationEvent, event)
+	return v.resultContracts.ValidateInvocationEvent(event)
 }
 
 func (v *Validator) ValidatePlatformError(platformError PlatformError) error {
-	return validateMappedValue(v.platformError, platformError)
+	return v.resultContracts.ValidatePlatformError(platformError)
+}
+
+func (v *Validator) ValidateInvocationResult(result InvocationResult) error {
+	return v.resultContracts.ValidateInvocationResult(result)
+}
+
+func (v *Validator) ValidateInvocationResultForRequest(
+	result InvocationResult,
+	invocationID string,
+	rootTaskID string,
+	traceID TraceID,
+) error {
+	return v.resultContracts.ValidateInvocationResultForRequest(result, invocationID, rootTaskID, traceID)
+}
+
+func (v *Validator) ValidateInvocationResultStreamEvent(event InvocationResultStreamEvent) error {
+	return v.resultContracts.ValidateInvocationResultStreamEvent(event)
 }
 
 func (v *Validator) ValidateA2AProfile(profile A2AProfile) error {
@@ -199,20 +200,7 @@ func (v *Validator) ValidateA2AProfile(profile A2AProfile) error {
 }
 
 func LoadA2AProfile() (A2AProfile, error) {
-	data, err := contractFiles.ReadFile("a2a-profile/v0.3.0.json")
-	if err != nil {
-		return A2AProfile{}, fmt.Errorf("read A2A profile: %w", err)
-	}
-	var profile A2AProfile
-	decoder := json.NewDecoder(bytes.NewReader(data))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&profile); err != nil {
-		return A2AProfile{}, fmt.Errorf("decode A2A profile: %w", err)
-	}
-	if err := requireJSONEOF(decoder); err != nil {
-		return A2AProfile{}, fmt.Errorf("decode A2A profile: %w", err)
-	}
-	return profile, nil
+	return LoadA2AProfileV02()
 }
 
 func ContractFiles() fs.FS {
