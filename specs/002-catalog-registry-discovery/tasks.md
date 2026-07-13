@@ -485,14 +485,23 @@ and require a fresh independent Review before convergence.
 
 ### Review Round 4 Remediation
 
-- [ ] T061 [Review-R4] After locking the stable Agent identity, detect an
+- [x] T061 [Review-R4] After locking the stable Agent identity, detect an
   existing exact `(agent_id, version)` before evaluating owner mismatch and
   return fixed conflict without exposing stored metadata in
   `apps/control-plane/internal/catalog/postgres/store.go`
-- [ ] T062 [Review-R4] Add real PostgreSQL/HTTP acceptance proving cross-owner
+- [x] T062 [Review-R4] Add real PostgreSQL/HTTP acceptance proving cross-owner
   exact duplicates return `409 CONFLICT` with the original Card unchanged,
   while a cross-owner different version remains `403 FORBIDDEN`, in
   `tests/integration/catalog/catalog_test.go`
+  - Evidence T061-T062: registration checks exact version existence while the
+    stable Agent identity row is locked and before owner mismatch, retaining the
+    primary key as the final concurrent conflict guard. Fresh PostgreSQL/HTTP
+    acceptance proves a cross-owner exact duplicate returns fixed 409 without
+    metadata disclosure or fact mutation, while a different cross-owner version
+    returns fixed 403. Default, integration, full race, vet, build, Compose,
+    tidy-diff, formatting, and diff checks pass.
+  - Review round 4 remediation fallback delta: removed `0`, retained `3`, added
+    `0`, net `0`. Added fallback evidence: none.
 - [ ] T063 [Review-R4] Run the complete verification matrix, report fallback
   delta, and create another fresh non-OCR independent Reviewer
 
