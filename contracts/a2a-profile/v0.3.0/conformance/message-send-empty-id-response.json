@@ -1,0 +1,13 @@
+{
+  "jsonrpc": "2.0",
+  "id": "message-send-1",
+  "result": {
+    "kind": "message",
+    "messageId": "",
+    "contextId": "context-1",
+    "role": "agent",
+    "parts": [
+      { "kind": "text", "text": "This Agent Message has no identity." }
+    ]
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "jsonrpc": "2.0",
+  "id": "message-send-1",
+  "result": {
+    "kind": "message",
+    "messageId": "message-user-result-1",
+    "contextId": "context-1",
+    "role": "user",
+    "parts": [
+      { "kind": "text", "text": "This result is not Agent-authored." }
+    ]
+  }
+}

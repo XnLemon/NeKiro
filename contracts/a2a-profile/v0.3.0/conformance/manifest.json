@@ -22,7 +22,7 @@
       "wireResultKind": "message",
       "goConcreteType": "*a2a.Message",
       "mediaType": "application/json",
-      "rules": ["jsonrpc-envelope", "request-response-id", "result-union"]
+      "rules": ["jsonrpc-envelope", "request-response-id", "result-union", "result-type", "message-result"]
     },
     {
       "id": "message-send-task-result",
@@ -34,7 +34,7 @@
       "wireResultKind": "task",
       "goConcreteType": "*a2a.Task",
       "mediaType": "application/json",
-      "rules": ["jsonrpc-envelope", "request-response-id", "result-union", "task-identity", "task-state"]
+      "rules": ["jsonrpc-envelope", "request-response-id", "result-union", "result-type", "task-identity", "task-state"]
     },
     {
       "id": "message-send-invalid-kind",
@@ -46,6 +46,39 @@
       "protocolError": "invalid-result-kind",
       "mediaType": "application/json",
       "rules": ["result-union"]
+    },
+    {
+      "id": "message-send-empty-id",
+      "file": "message-send-empty-id-response.json",
+      "requestFile": "message-send-request.json",
+      "operation": "message/send",
+      "fixtureKind": "response",
+      "expectedValid": false,
+      "protocolError": "invalid-message-result",
+      "mediaType": "application/json",
+      "rules": ["message-result"]
+    },
+    {
+      "id": "message-send-user-role",
+      "file": "message-send-user-role-response.json",
+      "requestFile": "message-send-request.json",
+      "operation": "message/send",
+      "fixtureKind": "response",
+      "expectedValid": false,
+      "protocolError": "invalid-message-result",
+      "mediaType": "application/json",
+      "rules": ["message-result"]
+    },
+    {
+      "id": "message-send-no-parts",
+      "file": "message-send-no-parts-response.json",
+      "requestFile": "message-send-request.json",
+      "operation": "message/send",
+      "fixtureKind": "response",
+      "expectedValid": false,
+      "protocolError": "invalid-message-result",
+      "mediaType": "application/json",
+      "rules": ["message-result"]
     },
     {
       "id": "message-stream-request",
@@ -64,7 +97,7 @@
       "fixtureKind": "stream",
       "expectedValid": true,
       "mediaType": "text/event-stream",
-      "rules": ["sse-framing", "jsonrpc-envelope", "request-response-id", "event-kinds", "task-context-stability", "terminal-required", "artifact-order"]
+      "rules": ["sse-framing", "jsonrpc-envelope", "request-response-id", "event-kinds", "task-identity", "task-state", "task-context-stability", "terminal-required", "terminal-last", "artifact-order", "artifact-last-chunk"]
     },
     {
       "id": "message-stream-context-mismatch",
@@ -140,7 +173,7 @@
       "wireResultKind": "task",
       "goConcreteType": "*a2a.Task",
       "mediaType": "application/json",
-      "rules": ["jsonrpc-envelope", "request-response-id", "task-identity", "task-state", "history-length"]
+      "rules": ["jsonrpc-envelope", "request-response-id", "result-type", "task-identity", "task-state", "history-length"]
     },
     {
       "id": "tasks-get-not-found",
@@ -185,7 +218,7 @@
       "wireResultKind": "task",
       "goConcreteType": "*a2a.Task",
       "mediaType": "application/json",
-      "rules": ["task-state", "rejected-mapping"]
+      "rules": ["jsonrpc-envelope", "request-response-id", "result-type", "task-identity", "task-state", "history-length", "rejected-mapping"]
     },
     {
       "id": "tasks-get-auth-required-state",
@@ -217,7 +250,7 @@
       "wireResultKind": "task",
       "goConcreteType": "*a2a.Task",
       "mediaType": "application/json",
-      "rules": ["jsonrpc-envelope", "request-response-id", "same-task", "canceled-state"]
+      "rules": ["jsonrpc-envelope", "request-response-id", "result-type", "task-identity", "task-state", "same-task", "canceled-state"]
     },
     {
       "id": "tasks-cancel-not-found",
