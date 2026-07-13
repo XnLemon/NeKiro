@@ -180,3 +180,41 @@ Describes NeKiro's supported subset of A2A protocol `0.3.0`.
 | unspecified/empty | invalid | failed / `A2A_PROTOCOL_ERROR` |
 
 Timeout is a platform Invocation outcome and is not added to A2A TaskState.
+
+### A2A Conformance Manifest v0.1
+
+The manifest is an executable contract. Top-level `schemaVersion`,
+`profileSchemaVersion`, `protocolVersion`, and `cases` fields are required and
+non-null. Unknown or duplicate JSON members are invalid at every object level.
+
+Each case has these fields:
+
+| Field | Constraint |
+|---|---|
+| `id` | Required, non-empty, and unique within the manifest |
+| `file` | Required canonical relative path to one regular corpus file |
+| `requestFile` | Required for response, error, and stream cases; forbidden otherwise |
+| `operation` | Required supported Profile operation, or `context/propagation` for the header case |
+| `fixtureKind` | One of `request`, `response`, `error`, `stream`, or `headers` |
+| `expectedValid` | Required explicit boolean |
+| `wireResultKind` | Required for a valid success response; `message` or `task`; forbidden otherwise |
+| `goConcreteType` | Required with `wireResultKind` and fixed to its pinned SDK type; forbidden otherwise |
+| `protocolError` | Required for error fixtures and invalid cases; forbidden for valid non-error cases |
+| `mediaType` | `application/json` except `stream`, which requires `text/event-stream` |
+| `rules` | Required non-empty unique list of known rule IDs executed for that case |
+
+Path rules apply to both `file` and `requestFile`: `/` separators only; no empty,
+absolute, drive, UNC, URI-scheme, `.`/`..`, backslash, control-character, invalid
+portable-character, or Windows-reserved segments; resolution must remain below
+the conformance corpus before any file is opened.
+
+`wireResultKind` and `goConcreteType` are one authoritative pair:
+`message` maps only to `*a2a.Message`, and `task` maps only to `*a2a.Task`.
+Operation, fixture kind, media type, conditional fields, and rules must form a
+supported combination before fixture execution. During execution, every listed
+rule and expected type must be asserted; metadata that is merely recorded or
+ignored does not establish conformance.
+
+An accepted Agent Message result has a non-empty ID, Agent role, and at least
+one part. An accepted Task result has non-empty Task and Context IDs plus a
+supported Profile state.

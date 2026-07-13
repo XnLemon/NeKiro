@@ -128,6 +128,10 @@ dispatch and invocation queries target the Router.
 - An Agent Card endpoint embeds URI userinfo such as a username or password.
 - A conformance manifest repeats a JSON member name or references an absolute,
   parent-traversing, or platform-specific fixture path.
+- An A2A conformance manifest declares metadata that is inconsistent with the
+  referenced fixture, operation, media type, result type, or asserted rules.
+- `message/send` returns a syntactically decodable but semantically empty Agent
+  Message.
 - Agent resolution is unavailable after an invocation has been accepted.
 
 ## Requirements *(mandatory)*
@@ -172,6 +176,15 @@ dispatch and invocation queries target the Router.
 - **FR-015**: Agent Card conformance manifests MUST preserve required-field
   presence, reject duplicate JSON member names, and use canonical portable
   relative fixture paths confined to the conformance corpus.
+- **FR-016**: A2A conformance manifests MUST reject unknown or duplicate JSON
+  members and unsafe fixture paths. Their operation, fixture kind, media type,
+  request reference, expected result type, protocol error, and rule list MUST
+  be authoritative claims that are validated before and during fixture
+  execution rather than descriptive labels.
+- **FR-017**: A successful `message/send` Message result MUST identify a
+  concrete Agent-authored Message with at least one part. Each required A2A
+  operation MUST be exercised through its pinned SDK client method and server
+  handler path; raw transport checks MAY only supplement those paths.
 
 ### Key Entities
 
@@ -184,8 +197,9 @@ dispatch and invocation queries target the Router.
   owning service and destination.
 - **Agent Card Semantic Rule**: A language-neutral invariant that cannot be
   fully expressed by structural field typing alone.
-- **A2A Conformance Case**: A portable example proving one declared profile
-  interaction or lifecycle expectation.
+- **A2A Conformance Case**: A portable example whose manifest metadata is an
+  executable assertion of one declared profile interaction or lifecycle
+  expectation.
 
 ## Success Criteria *(mandatory)*
 
@@ -209,6 +223,12 @@ dispatch and invocation queries target the Router.
   by the language-neutral structural contract.
 - **SC-009**: 100% of malformed conformance manifests with omitted/null required
   fields, duplicate members, or unsafe paths are rejected consistently.
+- **SC-010**: 100% of A2A conformance cases either execute every rule and type
+  claim declared by their manifest metadata or fail manifest validation before
+  the fixture is treated as covered.
+- **SC-011**: All four required A2A operations pass through the pinned SDK
+  client method and server handler in conformance tests, and all semantically
+  empty `message/send` Message results are rejected.
 
 ## Assumptions
 

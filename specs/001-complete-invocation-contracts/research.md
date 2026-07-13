@@ -183,8 +183,30 @@ Task state policy:
 Fixtures are hand-authored language-neutral wire values, not values marshaled
 by Go and then treated as their own oracle.
 
+The conformance manifest is executable metadata, not documentation. Its loader
+rejects unknown or duplicate JSON members and validates canonical corpus-local
+paths before filesystem access. Supported operation/fixture-kind/media-type
+combinations are closed. Conditional fields such as `requestFile`,
+`wireResultKind`, `goConcreteType`, and `protocolError` must be present or absent
+as required by the case kind. Each `rules` entry names a known harness assertion
+that must execute for that case; unsupported or unexecuted claims invalidate the
+manifest rather than being ignored.
+
+Successful `message/send` Message results require a non-empty Message ID, Agent
+role, and at least one part. Task results continue through the task identity and
+state validator. The four required operations execute through the public
+`a2aclient.Client` methods and matching `a2asrv` handlers; raw JSON-RPC transport
+tests remain useful only as additional wire-level evidence.
+
+The A2A conformance manifest remains schema `0.1` because it has no accepted or
+external consumer and this amendment completes the strict semantics intended by
+the active, still-unreleased Profile `0.2`. No compatibility fallback or dual
+decoder is introduced.
+
 **Rationale**: SDK decode success alone is insufficient: ordinary unmarshaling
-can accept zero-valued Tasks and arbitrary TaskState strings.
+can accept zero-valued Tasks, semantically empty Messages, and arbitrary
+TaskState strings. Descriptive manifest fields can also claim coverage that the
+harness never performed.
 
 **Alternatives considered**:
 
@@ -192,6 +214,8 @@ can accept zero-valued Tasks and arbitrary TaskState strings.
   or lifecycle compatibility.
 - Copy the complete upstream A2A schema: rejected because it duplicates the
   protocol instead of defining NeKiro's supported subset.
+- Dispatch only by operation and fixture kind: rejected because unvalidated
+  manifest type and rule metadata could falsely report conformance coverage.
 
 ## Decision 7: Failure Status Mapping
 

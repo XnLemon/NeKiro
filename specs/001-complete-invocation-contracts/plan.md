@@ -121,9 +121,14 @@ profile conformance
 - The profile describes required methods, accepted event kinds, transient,
   terminal, and unsupported task states, plus required correlation headers.
 - Language-neutral JSON-RPC fixtures verify wire shapes.
-- Go tests additionally compile and execute against the pinned SDK methods
+- The conformance manifest is strict and executable: it rejects duplicate or
+  unknown members and unsafe paths, validates every metadata combination, and
+  requires each listed rule and expected type to be asserted by the harness.
+- Go tests compile and execute against the pinned SDK client methods
   `SendMessage`, `SendStreamingMessage`, `GetTask`, and `CancelTask` and their
-  exported request/result types.
+  corresponding server handlers. Direct transport checks are supplemental.
+- Decoding a result is not sufficient conformance. Agent-authored Message
+  results and Task results must satisfy the profile's semantic invariants.
 
 ## Project Structure
 

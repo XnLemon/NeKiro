@@ -138,18 +138,26 @@ MUST NOT edit shared Go mapping files or Result/Agent Card artifacts.
   profile file
 - [ ] T019 [P] [US3] Add hand-authored JSON-RPC/SSE request, result, error,
   lifecycle, artifact, and propagation fixtures plus manifest under
-  `contracts/a2a-profile/v0.3.0/conformance/`
+  `contracts/a2a-profile/v0.3.0/conformance/`; keep manifest metadata
+  authoritative for operation, fixture kind, media type, expected type, error,
+  and every listed rule
 - [ ] T020 [US3] Add Profile v0.2 DTOs, loader, state mapping, and conformance
-  manifest types in `contracts/a2a_profile_v02.go`
+  manifest types in `contracts/a2a_profile_v02.go`, including duplicate-member
+  rejection, presence checks, portable corpus-confined regular-file paths, and
+  strict conditional metadata combinations
 
 ### Tests After Implementation
 
 - [ ] T021 [US3] Add compile-time SDK signature/type assertions and fixed
-  fixture validation through real `a2aclient`/`a2asrv` paths in
-  `contracts/a2a_profile_conformance_test.go`
+  fixture validation through all four public `a2aclient.Client` methods and
+  matching `a2asrv` handlers in `contracts/a2a_profile_conformance_test.go`;
+  direct transport validation is supplemental
 - [ ] T022 [US3] Cover invalid envelopes, zero Tasks, unsupported states,
   mismatched IDs, event-after-terminal, EOF-without-terminal, task errors,
-  artifact ordering, and all context headers in the same conformance test file
+  artifact ordering, all context headers, semantically empty Agent Messages,
+  malformed manifests, unsafe paths, invalid metadata combinations, unknown or
+  unexecuted rule claims, and expected concrete result types in the same
+  conformance test file
 - [ ] T023 [US3] Run Module C tests, `go vet ./...`, and `git diff --check`,
   report Module C fallback delta/evidence, then commit all Module C-owned files
 

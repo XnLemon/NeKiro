@@ -64,10 +64,14 @@ go test -count=1 ./contracts -run 'TestA2AProfileConformance'
 Expected outcomes:
 
 - Fixed wire fixtures exercise message send/stream and task get/cancel through
-  the pinned SDK transport and server handler.
+  all four pinned SDK client methods and matching server handlers.
 - Message, Task, status update, and artifact update variants are recognized.
-- Bad JSON-RPC envelopes, zero-valued Tasks, unsupported states, mismatched
-  identities, and incomplete streams are rejected.
+- Bad JSON-RPC envelopes, semantically empty Messages, zero-valued Tasks,
+  unsupported states, mismatched identities, and incomplete streams are
+  rejected.
+- Manifests with duplicate members, unsafe paths, invalid metadata combinations,
+  unknown rules, or type/rule claims that the harness does not execute are
+  rejected before they can claim coverage.
 - All required NeKiro context headers are emitted.
 
 ## 5. Run Repository Static Verification
