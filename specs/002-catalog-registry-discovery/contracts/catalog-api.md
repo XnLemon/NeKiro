@@ -55,6 +55,13 @@ or invalid request correlation is never replaced with caller-controlled data.
 - Registration rejects malformed JSON, duplicate members at any depth,
   unknown envelope/Card fields, trailing JSON values, and every active Agent
   Card structural or semantic violation before persistence.
+- Registration accepts at most 16,777,216 request-body bytes and must receive
+  the complete body within the server's 30-second body-read window. An
+  oversized body returns `400 VALIDATION_ERROR`; a partial or timed-out body is
+  never passed to Registry persistence.
+- Go mappings preserve every active legal JSON integer exactly. In particular,
+  unbounded positive `maxInputBytes` and `maxOutputBytes` values are not decoded
+  through `int64` or `float64`.
 - Path and query identifiers use the active common contract primitives.
 - Blank free text, explicit limits outside 1-100, malformed cursors, and cursors
   bound to different filters are validation failures.
@@ -75,7 +82,7 @@ whether the submitted Card is equal.
 
 | Status | Platform Error code | Meaning |
 |---:|---|---|
-| `400` | `VALIDATION_ERROR` | Malformed request or nonconforming active Card |
+| `400` | `VALIDATION_ERROR` | Malformed, oversized, or nonconforming active Card request |
 | `401` | `UNAUTHENTICATED` | No accepted caller identity |
 | `403` | `FORBIDDEN` | Caller does not match Card owner or existing Agent owner |
 | `409` | `CONFLICT` | Exact version already exists or immutable owner conflicts |

@@ -373,6 +373,28 @@ and require a fresh independent Review before convergence.
   implementation Agent, update Spec/Tasks before behavioral fixes, and use a new
   Reviewer after every fix until explicit PASS is recorded in
   `specs/002-catalog-registry-discovery/tasks.md`
+  - Review round 1: Reviewer `019f5ce2-28ae-7352-a31f-206561292e97` used
+    `open-code-review`; `ocr` reviewed 23 files and returned 8 comments. Four
+    validated Medium findings make the round FAIL: unbounded body reads,
+    machine-range Agent limits, incomplete Publication Clock readiness, and
+    insufficiently synchronized concurrency coverage.
+
+### Review Round 1 Remediation
+
+- [ ] T048 [Review-R1] Enforce the Spec-defined 16,777,216-byte registration
+  cap and 30-second request-body read window with fixed validation/no-partial
+  persistence semantics in `contracts/openapi/control-plane.v2.yaml`,
+  `apps/control-plane/internal/gateway/catalog_handler.go`, and
+  `apps/control-plane/cmd/control-plane/main.go`
+- [ ] T049 [Review-R1] Preserve active unbounded Agent Card limit integers as
+  exact `json.Number` values and add beyond-`int64` contract/Catalog round-trip
+  coverage in `contracts/contracts.go`, contract tests, and Catalog acceptance
+- [ ] T050 [Review-R1] Require exactly one valid Publication Clock singleton in
+  readiness and test missing-row failure in
+  `apps/control-plane/internal/catalog/postgres/migrations.go` and acceptance
+- [ ] T051 [Review-R1] Synchronize lifecycle race starts and add concurrent
+  duplicate registration atomicity acceptance in
+  `tests/integration/catalog/catalog_test.go`
 
 ---
 

@@ -158,6 +158,12 @@ public outcomes, durable state, and secret-safe diagnostics.
 - The Card is valid JSON but has duplicate members, unknown fields, duplicate
   skill or permission IDs, undeclared permissions, credential-bearing endpoint
   userinfo, or another active conformance failure.
+- A registration body exceeds 16,777,216 bytes or is not fully received within
+  30 seconds; the Gateway must stop reading it and must not persist a partial
+  Card.
+- A valid Card uses a positive JSON integer beyond machine `int64` range for
+  `maxInputBytes` or `maxOutputBytes`; the Go mapping must preserve the exact
+  number rather than reject or round it.
 - A publication state is committed but the derived discovery update fails
   before the operation can report success.
 - Search text is blank or over its declared length, a page size is outside its
@@ -177,6 +183,8 @@ public outcomes, durable state, and secret-safe diagnostics.
 
 - **FR-001**: The platform MUST accept registrations only for the active Agent
   Card contract and MUST apply both its structural and semantic validation.
+  Active unbounded JSON integer fields MUST retain their exact number values
+  even when they exceed a machine integer range.
 - **FR-002**: A successful registration MUST create one durable immutable draft
   identified by the exact `(agent_id, version)` pair and MUST assign its
   registration time at the platform boundary.
@@ -235,7 +243,10 @@ public outcomes, durable state, and secret-safe diagnostics.
   successful responses.
 - **FR-020**: All public failures MUST use fixed, versioned, secret-safe error
   semantics and MUST NOT contain Card bodies, endpoint credentials, schema
-  content, stack traces, or dependency details.
+  content, stack traces, or dependency details. Registration bodies MUST be
+  limited to 16,777,216 bytes and 30 seconds of request-body read time; an
+  oversized fully handled request uses the existing `400 VALIDATION_ERROR`
+  response and no partial Card is persisted.
 - **FR-021**: Successful Catalog writes MUST survive process restart without
   changing Card content, owner, state, or previously assigned timestamps.
 - **FR-022**: Concurrent registration and lifecycle operations MUST be atomic:

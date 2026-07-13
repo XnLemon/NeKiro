@@ -46,6 +46,9 @@ unspecified behavior explicit:
   `1-100`, and opaque cursors are bound to filters and traversal boundary;
 - validation, unauthenticated, forbidden, not found, conflict, and dependency
   failures use their exact Platform Error v2 status/code mappings.
+- the registration transport cap is 16,777,216 bytes and uses the existing
+  validation failure, while active unbounded JSON integer fields keep exact
+  `json.Number` semantics instead of a machine `int64` range.
 
 No existing deployed Catalog runtime or generated client consumes the earlier
 underspecified form, so a new API version or compatibility window is not

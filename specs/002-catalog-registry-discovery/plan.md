@@ -135,6 +135,9 @@ design.*
   constant-time token comparison. Raw caller-ID headers are rejected.
 - Trace generation is initialized before the server accepts traffic. One trace
   value appears in the response header and Platform Error body.
+- Registration uses a contract-declared 16 MiB body cap and the HTTP server
+  limits request-body reads to 30 seconds. Oversized bodies map to the existing
+  fixed validation failure; partial or timed-out bodies never reach Catalog.
 - Public error messages remain fixed Platform Error v2 values. Internal auth,
   Card, cursor, SQL, DSN, dependency, and stack details are never returned or
   logged.
@@ -147,7 +150,8 @@ design.*
 - One command binary exposes explicit `serve`, `migrate`, and `healthcheck`
   modes. `serve` does not run migrations.
 - Liveness reports only process availability. Readiness checks database/schema
-  availability and fails rather than reporting degraded success.
+  availability, including exactly one valid Publication Clock singleton row,
+  and fails rather than reporting degraded success.
 - The local Compose model adds Control Plane beside PostgreSQL without changing
   Frontend services or pnpm policy.
 

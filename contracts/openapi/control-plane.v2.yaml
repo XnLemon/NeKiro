@@ -17,11 +17,14 @@ paths:
         Registers only an active Agent Card 0.2 document. The authenticated
         caller must equal card.owner.id. The request rejects malformed JSON,
         duplicate members, unknown fields, trailing values, and structural or
-        semantic Card violations before persistence.
+        semantic Card violations before persistence. The Gateway reads at most
+        16,777,216 body bytes; an oversized request returns the fixed validation
+        failure without persistence.
       security:
         - bearerAuth: []
       requestBody:
         required: true
+        x-nekiro-max-body-bytes: 16777216
         content:
           application/json:
             schema:

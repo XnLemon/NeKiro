@@ -50,6 +50,9 @@ Agent versions.
   A competing publication cannot obtain a greater sequence and commit first.
 - A rolled-back publication rolls back the counter increment; no
   non-transactional sequence or process-local counter is used.
+- Readiness requires exactly one row whose `singleton = true` and whose
+  `last_sequence` is non-negative; a missing or extra-invalid clock state is a
+  schema/readiness failure before publication traffic is accepted.
 
 ## Entity: Agent Version
 
@@ -81,6 +84,9 @@ Primary key: `(agent_id, version)`.
   has the same digest.
 - JSON storage may normalize insignificant whitespace and object member order;
   logical JSON values, number values, and all contract fields remain unchanged.
+- Active Card integer fields without a Schema maximum, including
+  `maxInputBytes` and `maxOutputBytes`, use arbitrary-precision JSON number
+  mappings rather than machine-range integer DTOs.
 - Publication metadata is not inserted into the Card document.
 
 ### State/Timestamp Constraints
