@@ -1,0 +1,24 @@
+{
+  "schemaVersion": "0.2",
+  "eventId": "event-corr-invocation",
+  "sequence": 3,
+  "occurredAt": "2026-07-13T10:00:00Z",
+  "type": "failed",
+  "status": "failed",
+  "invocationId": "inv-corr-event",
+  "rootTaskId": "task-corr-root",
+  "traceId": "trace-corr-event",
+  "caller": { "type": "user", "id": "user-corr" },
+  "workspaceId": "workspace-corr",
+  "targetAgentId": "agent-corr",
+  "agentCardVersion": "1.0.0",
+  "capability": "answer",
+  "latencyMs": 25,
+  "error": {
+    "code": "AGENT_EXECUTION_FAILED",
+    "message": "The Agent failed to complete the invocation.",
+    "traceId": "trace-corr-event",
+    "invocationId": "inv-corr-event-other",
+    "rootTaskId": "task-corr-root"
+  }
+}

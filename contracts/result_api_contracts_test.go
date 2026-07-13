@@ -116,6 +116,66 @@ func TestDirectionalOpenAPIOwnership(t *testing.T) {
 	}
 }
 
+func TestResolveAgentOpenAPIPreservesExistingCorrelation(t *testing.T) {
+	controlPlane := loadResultOpenAPIDocument(t, filepath.Join("openapi", "control-plane-internal.v1.yaml"))
+	operation := controlPlane.Paths.Find("/internal/v1/resolve-agent").Post
+	requestSchema := operation.RequestBody.Value.Content["application/json"].Schema
+	assertExactStringSet(t, "Resolve Agent required fields", requestSchema.Value.Required, []string{
+		"invocationId",
+		"rootTaskId",
+		"traceId",
+		"workspaceId",
+		"agentId",
+		"version",
+		"capability",
+	})
+	if len(requestSchema.Value.Properties) != 7 {
+		t.Fatalf("Resolve Agent request properties = %v, want exactly seven versioned fields", requestSchema.Value.Properties)
+	}
+	request := ResolveAgentRequestV1{
+		InvocationID: "inv-resolve",
+		RootTaskID:   "task-root",
+		TraceID:      "trace-resolve",
+		WorkspaceID:  "workspace-resolve",
+		AgentID:      "agent-resolve",
+		Version:      "1.2.3",
+		Capability:   "answer",
+	}
+	validateOpenAPIValue(t, requestSchema, request)
+
+	responseCodes := map[int][]string{
+		400: {"VALIDATION_ERROR"},
+		403: {"FORBIDDEN", "AGENT_DISABLED", "CAPABILITY_NOT_ALLOWED"},
+		404: {"NOT_FOUND", "AGENT_NOT_INSTALLED"},
+		503: {"DEPENDENCY_ERROR"},
+	}
+	for status, expectedCodes := range responseCodes {
+		assertExactResponseErrorCodes(t, operation, status, expectedCodes)
+		response := operation.Responses.Status(status)
+		assertExactResponseCorrelation(t, status, response, []string{"invocationId", "rootTaskId", "traceId"})
+	}
+}
+
+func TestRouterInternalReadAndDispatchUnavailableMappings(t *testing.T) {
+	router := loadResultOpenAPIDocument(t, filepath.Join("openapi", "router-internal.v2.yaml"))
+	dispatch := router.Paths.Find("/internal/v2/invocations").Post
+	assertExactResponseErrorCodes(t, dispatch, 503, []string{"ROUTE_NOT_FOUND", "AGENT_UNAVAILABLE", "DEPENDENCY_ERROR"})
+
+	readPaths := []string{
+		"/internal/v2/invocations/{invocationId}",
+		"/internal/v2/invocations/{invocationId}/events",
+		"/internal/v2/traces/{traceId}",
+	}
+	for _, path := range readPaths {
+		t.Run(path, func(t *testing.T) {
+			operation := router.Paths.Find(path).Get
+			assertExactResponseErrorCodes(t, operation, 503, []string{"DEPENDENCY_ERROR"})
+			assertResponseOmitsErrorCode(t, operation, 503, "ROUTE_NOT_FOUND")
+			assertResponseOmitsErrorCode(t, operation, 503, "AGENT_UNAVAILABLE")
+		})
+	}
+}
+
 func TestInvocationOpenAPIResultMediaAndStatusMapping(t *testing.T) {
 	northbound := loadResultOpenAPIDocument(t, filepath.Join("openapi", "control-plane.v2.yaml"))
 	router := loadResultOpenAPIDocument(t, filepath.Join("openapi", "router-internal.v2.yaml"))
@@ -378,6 +438,66 @@ func assertExactResponseErrorCodes(t *testing.T, operation *openapi3.Operation, 
 	for _, code := range expected {
 		if _, exists := actualSet[code]; !exists {
 			t.Fatalf("response %d error codes = %v, want %v", status, actual, expected)
+		}
+	}
+}
+
+func assertExactResponseCorrelation(
+	t *testing.T,
+	status int,
+	response *openapi3.ResponseRef,
+	expectedFields []string,
+) {
+	t.Helper()
+	if response == nil || response.Value == nil {
+		t.Fatalf("response %d is missing", status)
+	}
+	encoded, err := json.Marshal(response.Value.Extensions["x-platform-error-correlation"])
+	if err != nil {
+		t.Fatalf("marshal response %d correlation contract: %v", status, err)
+	}
+	var correlation struct {
+		Source      string   `json:"source"`
+		ExactFields []string `json:"exactFields"`
+	}
+	if err := json.Unmarshal(encoded, &correlation); err != nil {
+		t.Fatalf("decode response %d correlation contract: %v", status, err)
+	}
+	if correlation.Source != "request" {
+		t.Fatalf("response %d correlation source = %q, want request", status, correlation.Source)
+	}
+	assertExactStringSet(t, fmt.Sprintf("response %d exact correlation fields", status), correlation.ExactFields, expectedFields)
+
+	schema := response.Value.Content["application/json"].Schema
+	if schema == nil || schema.Value == nil {
+		t.Fatalf("response %d Platform Error schema is missing", status)
+	}
+	if len(schema.Value.AllOf) != 2 || schema.Value.AllOf[1] == nil || schema.Value.AllOf[1].Value == nil {
+		t.Fatalf("response %d does not compose the correlated Platform Error schema", status)
+	}
+	assertExactStringSet(
+		t,
+		fmt.Sprintf("response %d correlated error required fields", status),
+		schema.Value.AllOf[1].Value.Required,
+		expectedFields,
+	)
+}
+
+func assertExactStringSet(t *testing.T, label string, actual []string, expected []string) {
+	t.Helper()
+	if len(actual) != len(expected) {
+		t.Fatalf("%s = %v, want %v", label, actual, expected)
+	}
+	actualSet := make(map[string]struct{}, len(actual))
+	for _, value := range actual {
+		if _, exists := actualSet[value]; exists {
+			t.Fatalf("%s repeats %q", label, value)
+		}
+		actualSet[value] = struct{}{}
+	}
+	for _, value := range expected {
+		if _, exists := actualSet[value]; !exists {
+			t.Fatalf("%s = %v, want %v", label, actual, expected)
 		}
 	}
 }

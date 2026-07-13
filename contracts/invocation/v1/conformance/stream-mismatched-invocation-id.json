@@ -1,0 +1,16 @@
+{
+  "schemaVersion": "1",
+  "sequence": 2,
+  "type": "failed",
+  "status": "failed",
+  "invocationId": "inv-corr-stream",
+  "rootTaskId": "task-corr-root",
+  "traceId": "trace-corr-stream",
+  "error": {
+    "code": "AGENT_EXECUTION_FAILED",
+    "message": "The Agent failed to complete the invocation.",
+    "traceId": "trace-corr-stream",
+    "invocationId": "inv-corr-stream-other",
+    "rootTaskId": "task-corr-root"
+  }
+}

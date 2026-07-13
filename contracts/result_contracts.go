@@ -2,9 +2,13 @@ package contracts
 
 import (
 	"bytes"
+	"embed"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
+	"path"
+	"strings"
 	"sync"
 	"time"
 
@@ -19,6 +23,21 @@ const (
 
 	ErrorCodeNotAcceptable PlatformErrorCode = "NOT_ACCEPTABLE"
 )
+
+type InvocationSemanticRuleID string
+
+const InvocationRuleCorrelationMatches InvocationSemanticRuleID = "INV-CORR-001"
+
+type InvocationContractKind string
+
+const (
+	InvocationContractEventV02         InvocationContractKind = "invocation-event-v0.2"
+	InvocationContractStreamEventV1    InvocationContractKind = "invocation-result-stream-event-v1"
+	invocationConformanceSchemaVersion                        = "1"
+)
+
+//go:embed invocation/v1/semantic-rules.md invocation/v1/conformance/*.json
+var invocationContractFiles embed.FS
 
 type ResultStreamEventType string
 
@@ -57,6 +76,14 @@ type PlatformErrorV2 struct {
 	TraceID      TraceID           `json:"traceId"`
 	InvocationID string            `json:"invocationId,omitempty"`
 	RootTaskID   string            `json:"rootTaskId,omitempty"`
+}
+
+type InvocationSemanticValidationError struct {
+	RuleID InvocationSemanticRuleID
+}
+
+func (validationError *InvocationSemanticValidationError) Error() string {
+	return fmt.Sprintf("invocation correlation changed (%s)", validationError.RuleID)
 }
 
 func (platformError *PlatformErrorV2) UnmarshalJSON(data []byte) error {
@@ -122,6 +149,61 @@ type InvocationResult struct {
 	TraceID       TraceID         `json:"traceId"`
 	Status        string          `json:"status"`
 	Result        json.RawMessage `json:"result"`
+}
+
+type ResolveAgentRequestV1 struct {
+	InvocationID string  `json:"invocationId"`
+	RootTaskID   string  `json:"rootTaskId"`
+	TraceID      TraceID `json:"traceId"`
+	WorkspaceID  string  `json:"workspaceId"`
+	AgentID      string  `json:"agentId"`
+	Version      string  `json:"version"`
+	Capability   string  `json:"capability"`
+}
+
+func (request *ResolveAgentRequestV1) UnmarshalJSON(data []byte) error {
+	type wireResolveAgentRequestV1 ResolveAgentRequestV1
+	var decoded wireResolveAgentRequestV1
+	if err := unmarshalStrictResultContractObject(
+		data,
+		&decoded,
+		[]string{"invocationId", "rootTaskId", "traceId", "workspaceId", "agentId", "version", "capability"},
+		nil,
+		nil,
+	); err != nil {
+		return fmt.Errorf("decode Resolve Agent Request v1: %w", err)
+	}
+	value := ResolveAgentRequestV1(decoded)
+	if err := ValidateResolveAgentRequestV1(value); err != nil {
+		return fmt.Errorf("decode Resolve Agent Request v1: %w", err)
+	}
+	*request = value
+	return nil
+}
+
+func ValidateResolveAgentRequestV1(request ResolveAgentRequestV1) error {
+	identifiers := []struct {
+		name  string
+		value string
+	}{
+		{name: "invocation id", value: request.InvocationID},
+		{name: "root task id", value: request.RootTaskID},
+		{name: "workspace id", value: request.WorkspaceID},
+		{name: "agent id", value: request.AgentID},
+		{name: "capability", value: request.Capability},
+	}
+	for _, identifier := range identifiers {
+		if err := validateSafeContractIdentifier(identifier.name, identifier.value); err != nil {
+			return err
+		}
+	}
+	if _, err := ParseTraceID(string(request.TraceID)); err != nil {
+		return fmt.Errorf("invalid trace id")
+	}
+	if _, err := semver.StrictNewVersion(request.Version); err != nil {
+		return fmt.Errorf("invalid Agent version")
+	}
+	return nil
 }
 
 func (result *InvocationResult) UnmarshalJSON(data []byte) error {
@@ -368,21 +450,37 @@ func (v *ResultContractValidator) ValidateInvocationResult(result InvocationResu
 }
 
 func (v *ResultContractValidator) ValidateInvocationResultStreamEvent(event InvocationResultStreamEvent) error {
-	return validateMappedValue(v.invocationResultStreamEvent, event)
+	if err := validateMappedValue(v.invocationResultStreamEvent, event); err != nil {
+		return err
+	}
+	return validateNestedPlatformErrorCorrelation(event.InvocationID, event.RootTaskID, event.TraceID, event.Error)
 }
 
 func (v *ResultContractValidator) ValidateInvocationEvent(event InvocationEventV02) error {
 	if err := validateMappedValue(v.invocationEvent, event); err != nil {
 		return err
 	}
-	if event.Error != nil && (event.Error.InvocationID != event.InvocationID || event.Error.RootTaskID != event.RootTaskID || event.Error.TraceID != event.TraceID) {
-		return errors.New("invocation event error correlation changed")
-	}
-	return nil
+	return validateNestedPlatformErrorCorrelation(event.InvocationID, event.RootTaskID, event.TraceID, event.Error)
 }
 
 func (v *ResultContractValidator) ValidatePlatformError(platformError PlatformErrorV2) error {
 	return validateMappedValue(v.platformError, platformError)
+}
+
+func (v *ResultContractValidator) ValidateResolveAgentErrorCorrelation(
+	request ResolveAgentRequestV1,
+	platformError PlatformErrorV2,
+) error {
+	if err := ValidateResolveAgentRequestV1(request); err != nil {
+		return err
+	}
+	if err := v.ValidatePlatformError(platformError); err != nil {
+		return err
+	}
+	if platformError.InvocationID != request.InvocationID || platformError.RootTaskID != request.RootTaskID || platformError.TraceID != request.TraceID {
+		return errors.New("Resolve Agent error correlation changed")
+	}
+	return nil
 }
 
 var (
@@ -456,10 +554,6 @@ func (v *ResultStreamSequenceValidator) Accept(event InvocationResultStreamEvent
 		}
 		v.nextChunkIndex++
 	}
-	if event.Error != nil && (event.Error.TraceID != v.traceID || event.Error.InvocationID != v.invocationID || event.Error.RootTaskID != v.rootTaskID) {
-		return errors.New("result stream error correlation changed")
-	}
-
 	v.nextSequence++
 	if isResultStreamTerminal(event.Type) {
 		v.terminal = event.Type
@@ -539,4 +633,241 @@ func unmarshalStrictResultContractObject(
 
 func isJSONNull(value json.RawMessage) bool {
 	return bytes.Equal(bytes.TrimSpace(value), []byte("null"))
+}
+
+func validateNestedPlatformErrorCorrelation(
+	invocationID string,
+	rootTaskID string,
+	traceID TraceID,
+	platformError *PlatformErrorV2,
+) error {
+	if platformError == nil {
+		return nil
+	}
+	if platformError.InvocationID != invocationID || platformError.RootTaskID != rootTaskID || platformError.TraceID != traceID {
+		return &InvocationSemanticValidationError{RuleID: InvocationRuleCorrelationMatches}
+	}
+	return nil
+}
+
+type invocationConformanceManifest struct {
+	SchemaVersion string
+	Cases         []invocationConformanceCase
+}
+
+type invocationConformanceCase struct {
+	ID            string
+	ContractKind  InvocationContractKind
+	File          string
+	ExpectedValid bool
+	ViolatedRules []InvocationSemanticRuleID
+}
+
+type invocationConformanceManifestJSON struct {
+	SchemaVersion *string                          `json:"schemaVersion"`
+	Cases         *[]invocationConformanceCaseJSON `json:"cases"`
+}
+
+type invocationConformanceCaseJSON struct {
+	ID            *string                     `json:"id"`
+	ContractKind  *InvocationContractKind     `json:"contractKind"`
+	File          *string                     `json:"file"`
+	ExpectedValid *bool                       `json:"expectedValid"`
+	ViolatedRules *[]InvocationSemanticRuleID `json:"violatedRules"`
+}
+
+func loadInvocationConformanceManifest() (invocationConformanceManifest, error) {
+	data, err := invocationContractFiles.ReadFile("invocation/v1/conformance/manifest.json")
+	if err != nil {
+		return invocationConformanceManifest{}, fmt.Errorf("read Invocation conformance manifest: %w", err)
+	}
+	manifest, err := decodeInvocationConformanceManifest(data)
+	if err != nil {
+		return invocationConformanceManifest{}, err
+	}
+	for _, manifestCase := range manifest.Cases {
+		fixturePath := path.Join("invocation/v1/conformance", manifestCase.File)
+		info, err := fs.Stat(invocationContractFiles, fixturePath)
+		if err != nil {
+			return invocationConformanceManifest{}, fmt.Errorf("Invocation conformance case %q fixture: %w", manifestCase.ID, err)
+		}
+		if !info.Mode().IsRegular() {
+			return invocationConformanceManifest{}, fmt.Errorf("Invocation conformance case %q fixture is not a regular file", manifestCase.ID)
+		}
+	}
+	return manifest, nil
+}
+
+func decodeInvocationConformanceManifest(data []byte) (invocationConformanceManifest, error) {
+	if err := rejectDuplicateJSONMemberNames(data); err != nil {
+		return invocationConformanceManifest{}, fmt.Errorf("decode Invocation conformance manifest: %w", err)
+	}
+	var document invocationConformanceManifestJSON
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&document); err != nil {
+		return invocationConformanceManifest{}, fmt.Errorf("decode Invocation conformance manifest: %w", err)
+	}
+	if err := requireJSONEOF(decoder); err != nil {
+		return invocationConformanceManifest{}, fmt.Errorf("decode Invocation conformance manifest: %w", err)
+	}
+	if document.SchemaVersion == nil || *document.SchemaVersion != invocationConformanceSchemaVersion {
+		return invocationConformanceManifest{}, fmt.Errorf("Invocation conformance manifest requires schemaVersion %q", invocationConformanceSchemaVersion)
+	}
+	if document.Cases == nil || len(*document.Cases) == 0 {
+		return invocationConformanceManifest{}, errors.New("Invocation conformance manifest requires non-empty cases")
+	}
+
+	manifest := invocationConformanceManifest{
+		SchemaVersion: *document.SchemaVersion,
+		Cases:         make([]invocationConformanceCase, 0, len(*document.Cases)),
+	}
+	caseIDs := make(map[string]struct{}, len(*document.Cases))
+	fixtureFiles := make(map[string]struct{}, len(*document.Cases))
+	for index, wireCase := range *document.Cases {
+		manifestCase, err := decodeInvocationConformanceCase(index, wireCase)
+		if err != nil {
+			return invocationConformanceManifest{}, err
+		}
+		if _, exists := caseIDs[manifestCase.ID]; exists {
+			return invocationConformanceManifest{}, fmt.Errorf("Invocation conformance manifest repeats case id %q", manifestCase.ID)
+		}
+		if _, exists := fixtureFiles[manifestCase.File]; exists {
+			return invocationConformanceManifest{}, fmt.Errorf("Invocation conformance manifest repeats fixture file %q", manifestCase.File)
+		}
+		caseIDs[manifestCase.ID] = struct{}{}
+		fixtureFiles[manifestCase.File] = struct{}{}
+		manifest.Cases = append(manifest.Cases, manifestCase)
+	}
+	return manifest, nil
+}
+
+func decodeInvocationConformanceCase(index int, wireCase invocationConformanceCaseJSON) (invocationConformanceCase, error) {
+	if wireCase.ID == nil || *wireCase.ID == "" {
+		return invocationConformanceCase{}, fmt.Errorf("Invocation conformance case %d requires a non-empty id", index)
+	}
+	if !safeIdentifierPattern.MatchString(*wireCase.ID) {
+		return invocationConformanceCase{}, fmt.Errorf("Invocation conformance case %d has invalid id", index)
+	}
+	if wireCase.ContractKind == nil || !isInvocationContractKind(*wireCase.ContractKind) {
+		return invocationConformanceCase{}, fmt.Errorf("Invocation conformance case %q has invalid contractKind", *wireCase.ID)
+	}
+	if wireCase.File == nil {
+		return invocationConformanceCase{}, fmt.Errorf("Invocation conformance case %q is missing file", *wireCase.ID)
+	}
+	if err := validateInvocationConformanceFixturePath(*wireCase.File); err != nil {
+		return invocationConformanceCase{}, fmt.Errorf("Invocation conformance case %q file: %w", *wireCase.ID, err)
+	}
+	if wireCase.ExpectedValid == nil {
+		return invocationConformanceCase{}, fmt.Errorf("Invocation conformance case %q is missing expectedValid", *wireCase.ID)
+	}
+	if wireCase.ViolatedRules == nil {
+		return invocationConformanceCase{}, fmt.Errorf("Invocation conformance case %q is missing violatedRules", *wireCase.ID)
+	}
+	if *wireCase.ExpectedValid && len(*wireCase.ViolatedRules) != 0 {
+		return invocationConformanceCase{}, fmt.Errorf("valid Invocation conformance case %q declares violated rules", *wireCase.ID)
+	}
+	if !*wireCase.ExpectedValid && len(*wireCase.ViolatedRules) != 1 {
+		return invocationConformanceCase{}, fmt.Errorf("invalid Invocation conformance case %q must declare exactly one violated rule", *wireCase.ID)
+	}
+	for _, ruleID := range *wireCase.ViolatedRules {
+		if ruleID != InvocationRuleCorrelationMatches {
+			return invocationConformanceCase{}, fmt.Errorf("Invocation conformance case %q declares unknown rule %q", *wireCase.ID, ruleID)
+		}
+	}
+	return invocationConformanceCase{
+		ID:            *wireCase.ID,
+		ContractKind:  *wireCase.ContractKind,
+		File:          *wireCase.File,
+		ExpectedValid: *wireCase.ExpectedValid,
+		ViolatedRules: *wireCase.ViolatedRules,
+	}, nil
+}
+
+func readInvocationConformanceFixture(manifestCase invocationConformanceCase) ([]byte, error) {
+	fixturePath := path.Join("invocation/v1/conformance", manifestCase.File)
+	data, err := invocationContractFiles.ReadFile(fixturePath)
+	if err != nil {
+		return nil, fmt.Errorf("read Invocation conformance case %q: %w", manifestCase.ID, err)
+	}
+	return data, nil
+}
+
+func evaluateInvocationCorrelationFixture(
+	contractKind InvocationContractKind,
+	data []byte,
+) ([]InvocationSemanticRuleID, error) {
+	if err := rejectDuplicateJSONMemberNames(data); err != nil {
+		return nil, fmt.Errorf("decode Invocation conformance fixture: %w", err)
+	}
+	validator, err := resultContractDecodeValidator()
+	if err != nil {
+		return nil, err
+	}
+	document, err := jsonschema.UnmarshalJSON(bytes.NewReader(data))
+	if err != nil {
+		return nil, fmt.Errorf("decode Invocation conformance fixture: %w", err)
+	}
+
+	var schema *jsonschema.Schema
+	switch contractKind {
+	case InvocationContractEventV02:
+		schema = validator.invocationEvent
+	case InvocationContractStreamEventV1:
+		schema = validator.invocationResultStreamEvent
+	default:
+		return nil, fmt.Errorf("unsupported Invocation contract kind %q", contractKind)
+	}
+	if err := schema.Validate(document); err != nil {
+		return nil, fmt.Errorf("validate Invocation conformance fixture schema: %w", err)
+	}
+
+	var envelope struct {
+		InvocationID string           `json:"invocationId"`
+		RootTaskID   string           `json:"rootTaskId"`
+		TraceID      TraceID          `json:"traceId"`
+		Error        *PlatformErrorV2 `json:"error"`
+	}
+	if err := json.Unmarshal(data, &envelope); err != nil {
+		return nil, fmt.Errorf("decode Invocation conformance fixture correlation: %w", err)
+	}
+	if err := validateNestedPlatformErrorCorrelation(envelope.InvocationID, envelope.RootTaskID, envelope.TraceID, envelope.Error); err != nil {
+		return []InvocationSemanticRuleID{InvocationRuleCorrelationMatches}, nil
+	}
+	return []InvocationSemanticRuleID{}, nil
+}
+
+func isInvocationContractKind(contractKind InvocationContractKind) bool {
+	return contractKind == InvocationContractEventV02 || contractKind == InvocationContractStreamEventV1
+}
+
+func validateInvocationConformanceFixturePath(fixturePath string) error {
+	if fixturePath == "" || !fs.ValidPath(fixturePath) {
+		return errors.New("fixture path must be a non-empty canonical relative path")
+	}
+	if strings.Contains(fixturePath, "\\") {
+		return errors.New("fixture path must use forward slashes")
+	}
+	if strings.ContainsAny(fixturePath, "%?#<>\"|*:") {
+		return errors.New("fixture path contains a nonportable character")
+	}
+	for _, character := range fixturePath {
+		if character <= 0x1f || character == 0x7f {
+			return errors.New("fixture path contains an ASCII control character")
+		}
+	}
+	for _, segment := range strings.Split(fixturePath, "/") {
+		if strings.TrimRight(segment, " .") != segment {
+			return errors.New("fixture path contains a platform-equivalent segment")
+		}
+		baseName := strings.ToUpper(strings.SplitN(segment, ".", 2)[0])
+		switch baseName {
+		case "CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9":
+			return errors.New("fixture path contains a Windows reserved basename")
+		}
+	}
+	if path.Ext(fixturePath) != ".json" || fixturePath == "manifest.json" {
+		return errors.New("fixture path must name a JSON fixture")
+	}
+	return nil
 }

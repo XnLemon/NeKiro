@@ -74,7 +74,7 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
         "503":
-          $ref: "#/components/responses/Unavailable"
+          $ref: "#/components/responses/ReadDependencyUnavailable"
   /internal/v2/invocations/{invocationId}/events:
     get:
       operationId: streamRouterInvocationEvents
@@ -97,7 +97,7 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
         "503":
-          $ref: "#/components/responses/Unavailable"
+          $ref: "#/components/responses/ReadDependencyUnavailable"
   /internal/v2/traces/{traceId}:
     get:
       operationId: getRouterTrace
@@ -120,7 +120,7 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
         "503":
-          $ref: "#/components/responses/Unavailable"
+          $ref: "#/components/responses/ReadDependencyUnavailable"
 components:
   parameters:
     ResultAccept:
@@ -185,6 +185,13 @@ components:
     Unavailable:
       description: Route, Agent, or required dependency is unavailable
       x-platform-error-codes: [ROUTE_NOT_FOUND, AGENT_UNAVAILABLE, DEPENDENCY_ERROR]
+      content:
+        application/json:
+          schema:
+            $ref: ../schemas/platform-error.v2.schema.json
+    ReadDependencyUnavailable:
+      description: A required Ledger or trace-read dependency failed
+      x-platform-error-codes: [DEPENDENCY_ERROR]
       content:
         application/json:
           schema:

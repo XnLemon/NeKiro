@@ -15,7 +15,10 @@ paths:
       summary: Resolve an authorized exact Agent version
       description: >-
         Resolves Registry and Workspace-owned facts without allowing the Router
-        to read Control Plane storage directly.
+        to read Control Plane storage directly. The invocationId, rootTaskId,
+        and traceId already created for the Invocation are required and every
+        error response MUST repeat those exact request values without replacing
+        or synthesizing correlation.
       requestBody:
         required: true
         content:
@@ -42,37 +45,55 @@ components:
     BadRequest:
       description: Invalid resolution request
       x-platform-error-codes: [VALIDATION_ERROR]
+      x-platform-error-correlation:
+        source: request
+        exactFields: [invocationId, rootTaskId, traceId]
       content:
         application/json:
           schema:
-            $ref: ../schemas/platform-error.v2.schema.json
+            $ref: "#/components/schemas/CorrelatedPlatformError"
     Forbidden:
       description: Installation or Agent version is disabled or capability is forbidden
       x-platform-error-codes: [FORBIDDEN, AGENT_DISABLED, CAPABILITY_NOT_ALLOWED]
+      x-platform-error-correlation:
+        source: request
+        exactFields: [invocationId, rootTaskId, traceId]
       content:
         application/json:
           schema:
-            $ref: ../schemas/platform-error.v2.schema.json
+            $ref: "#/components/schemas/CorrelatedPlatformError"
     NotFound:
       description: Requested Agent, version, or Installation was not found
       x-platform-error-codes: [NOT_FOUND, AGENT_NOT_INSTALLED]
+      x-platform-error-correlation:
+        source: request
+        exactFields: [invocationId, rootTaskId, traceId]
       content:
         application/json:
           schema:
-            $ref: ../schemas/platform-error.v2.schema.json
+            $ref: "#/components/schemas/CorrelatedPlatformError"
     DependencyUnavailable:
       description: A required Control Plane dependency failed
       x-platform-error-codes: [DEPENDENCY_ERROR]
+      x-platform-error-correlation:
+        source: request
+        exactFields: [invocationId, rootTaskId, traceId]
       content:
         application/json:
           schema:
-            $ref: ../schemas/platform-error.v2.schema.json
+            $ref: "#/components/schemas/CorrelatedPlatformError"
   schemas:
     ResolveAgentRequest:
       type: object
       additionalProperties: false
-      required: [workspaceId, agentId, version, capability]
+      required: [invocationId, rootTaskId, traceId, workspaceId, agentId, version, capability]
       properties:
+        invocationId:
+          $ref: ../schemas/common.v1.schema.json#/$defs/invocationId
+        rootTaskId:
+          $ref: ../schemas/common.v1.schema.json#/$defs/taskId
+        traceId:
+          $ref: ../schemas/common.v1.schema.json#/$defs/traceId
         workspaceId:
           $ref: ../schemas/common.v1.schema.json#/$defs/workspaceId
         agentId:
@@ -81,6 +102,11 @@ components:
           $ref: ../schemas/common.v1.schema.json#/$defs/semver
         capability:
           $ref: ../schemas/common.v1.schema.json#/$defs/capabilityId
+    CorrelatedPlatformError:
+      allOf:
+        - $ref: ../schemas/platform-error.v2.schema.json
+        - type: object
+          required: [invocationId, rootTaskId, traceId]
     ResolveAgentResponse:
       type: object
       additionalProperties: false

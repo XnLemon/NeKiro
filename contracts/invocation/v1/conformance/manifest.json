@@ -1,0 +1,61 @@
+{
+  "schemaVersion": "1",
+  "cases": [
+    {
+      "id": "event-matching-correlation",
+      "contractKind": "invocation-event-v0.2",
+      "file": "event-matching-correlation.json",
+      "expectedValid": true,
+      "violatedRules": []
+    },
+    {
+      "id": "event-mismatched-invocation-id",
+      "contractKind": "invocation-event-v0.2",
+      "file": "event-mismatched-invocation-id.json",
+      "expectedValid": false,
+      "violatedRules": ["INV-CORR-001"]
+    },
+    {
+      "id": "event-mismatched-root-task-id",
+      "contractKind": "invocation-event-v0.2",
+      "file": "event-mismatched-root-task-id.json",
+      "expectedValid": false,
+      "violatedRules": ["INV-CORR-001"]
+    },
+    {
+      "id": "event-mismatched-trace-id",
+      "contractKind": "invocation-event-v0.2",
+      "file": "event-mismatched-trace-id.json",
+      "expectedValid": false,
+      "violatedRules": ["INV-CORR-001"]
+    },
+    {
+      "id": "stream-matching-correlation",
+      "contractKind": "invocation-result-stream-event-v1",
+      "file": "stream-matching-correlation.json",
+      "expectedValid": true,
+      "violatedRules": []
+    },
+    {
+      "id": "stream-mismatched-invocation-id",
+      "contractKind": "invocation-result-stream-event-v1",
+      "file": "stream-mismatched-invocation-id.json",
+      "expectedValid": false,
+      "violatedRules": ["INV-CORR-001"]
+    },
+    {
+      "id": "stream-mismatched-root-task-id",
+      "contractKind": "invocation-result-stream-event-v1",
+      "file": "stream-mismatched-root-task-id.json",
+      "expectedValid": false,
+      "violatedRules": ["INV-CORR-001"]
+    },
+    {
+      "id": "stream-mismatched-trace-id",
+      "contractKind": "invocation-result-stream-event-v1",
+      "file": "stream-mismatched-trace-id.json",
+      "expectedValid": false,
+      "violatedRules": ["INV-CORR-001"]
+    }
+  ]
+}

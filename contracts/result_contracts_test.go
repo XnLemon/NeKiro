@@ -117,6 +117,15 @@ func TestStrictResultContractDecodingRejectsMissingNullAndUnknownFields(t *testi
 		Result:        json.RawMessage(`{"ok":true}`),
 	}
 	routerEnvelope := RouterEventEnvelopeV02{Event: ledgerStartedEvent}
+	resolveRequest := ResolveAgentRequestV1{
+		InvocationID: "inv-resolve",
+		RootTaskID:   "task-resolve",
+		TraceID:      "trace-resolve",
+		WorkspaceID:  "workspace-resolve",
+		AgentID:      "agent-resolve",
+		Version:      "1.2.3",
+		Capability:   "answer",
+	}
 
 	testCases := []struct {
 		name        string
@@ -287,12 +296,206 @@ func TestStrictResultContractDecodingRejectsMissingNullAndUnknownFields(t *testi
 			data:        appendTrailingJSONObject(t, routerEnvelope),
 			destination: func() any { return &RouterEventEnvelopeV02{} },
 		},
+		{
+			name: "Resolve Agent Request missing invocationId",
+			data: mutateContractJSON(t, resolveRequest, func(document map[string]any) {
+				delete(document, "invocationId")
+			}),
+			destination: func() any { return &ResolveAgentRequestV1{} },
+		},
+		{
+			name: "Resolve Agent Request null traceId",
+			data: mutateContractJSON(t, resolveRequest, func(document map[string]any) {
+				document["traceId"] = nil
+			}),
+			destination: func() any { return &ResolveAgentRequestV1{} },
+		},
+		{
+			name: "Resolve Agent Request unknown field",
+			data: mutateContractJSON(t, resolveRequest, func(document map[string]any) {
+				document["replacementInvocationId"] = "inv-replacement"
+			}),
+			destination: func() any { return &ResolveAgentRequestV1{} },
+		},
+		{
+			name:        "Resolve Agent Request trailing JSON",
+			data:        appendTrailingJSONObject(t, resolveRequest),
+			destination: func() any { return &ResolveAgentRequestV1{} },
+		},
 	}
 
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {
 			if err := json.Unmarshal(testCase.data, testCase.destination()); err == nil {
 				t.Fatalf("strict decode accepted invalid document: %s", testCase.data)
+			}
+		})
+	}
+}
+
+func TestResolveAgentRequestV1PreservesExistingCorrelation(t *testing.T) {
+	document := []byte(`{
+		"invocationId":"inv-resolve",
+		"rootTaskId":"task-root",
+		"traceId":"trace-resolve",
+		"workspaceId":"workspace-resolve",
+		"agentId":"agent-resolve",
+		"version":"1.2.3",
+		"capability":"answer"
+	}`)
+	var request ResolveAgentRequestV1
+	if err := json.Unmarshal(document, &request); err != nil {
+		t.Fatalf("decode Resolve Agent Request v1: %v", err)
+	}
+	if request.InvocationID != "inv-resolve" || request.RootTaskID != "task-root" || request.TraceID != "trace-resolve" {
+		t.Fatalf(
+			"decoded Resolve Agent correlation = invocation %q root %q trace %q",
+			request.InvocationID,
+			request.RootTaskID,
+			request.TraceID,
+		)
+	}
+	if err := ValidateResolveAgentRequestV1(request); err != nil {
+		t.Fatalf("validate Resolve Agent Request v1: %v", err)
+	}
+}
+
+func TestResolveAgentErrorRequiresExactRequestCorrelation(t *testing.T) {
+	validator := mustResultContractValidator(t)
+	request := ResolveAgentRequestV1{
+		InvocationID: "inv-resolve",
+		RootTaskID:   "task-root",
+		TraceID:      "trace-resolve",
+		WorkspaceID:  "workspace-resolve",
+		AgentID:      "agent-resolve",
+		Version:      "1.2.3",
+		Capability:   "answer",
+	}
+	platformError, err := NewCorrelatedPlatformErrorV2(
+		ErrorCodeDependency,
+		request.TraceID,
+		request.InvocationID,
+		request.RootTaskID,
+	)
+	if err != nil {
+		t.Fatalf("create Resolve Agent error: %v", err)
+	}
+	if err := validator.ValidateResolveAgentErrorCorrelation(request, platformError); err != nil {
+		t.Fatalf("matching Resolve Agent error rejected: %v", err)
+	}
+
+	testCases := []struct {
+		name   string
+		mutate func(*PlatformErrorV2)
+	}{
+		{name: "invocation id", mutate: func(value *PlatformErrorV2) { value.InvocationID = "inv-other" }},
+		{name: "root task id", mutate: func(value *PlatformErrorV2) { value.RootTaskID = "task-other" }},
+		{name: "trace id", mutate: func(value *PlatformErrorV2) { value.TraceID = "trace-other" }},
+	}
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			mismatched := platformError
+			testCase.mutate(&mismatched)
+			if err := validator.ValidateResolveAgentErrorCorrelation(request, mismatched); err == nil || !strings.Contains(err.Error(), "correlation changed") {
+				t.Fatalf("mismatched %s error = %v, want exact-correlation rejection", testCase.name, err)
+			}
+		})
+	}
+}
+
+func TestInvocationCorrelationConformanceCorpus(t *testing.T) {
+	manifest, err := loadInvocationConformanceManifest()
+	if err != nil {
+		t.Fatalf("load Invocation conformance manifest: %v", err)
+	}
+	if len(manifest.Cases) != 8 {
+		t.Fatalf("Invocation conformance cases = %d, want 8", len(manifest.Cases))
+	}
+	validator := mustResultContractValidator(t)
+	validCases := 0
+	invalidCases := 0
+
+	for _, manifestCase := range manifest.Cases {
+		t.Run(manifestCase.ID, func(t *testing.T) {
+			data, err := readInvocationConformanceFixture(manifestCase)
+			if err != nil {
+				t.Fatalf("read fixture: %v", err)
+			}
+			violatedRules, err := evaluateInvocationCorrelationFixture(manifestCase.ContractKind, data)
+			if err != nil {
+				t.Fatalf("evaluate fixture: %v", err)
+			}
+			if !reflect.DeepEqual(violatedRules, manifestCase.ViolatedRules) {
+				t.Fatalf("violated rules = %v, want %v", violatedRules, manifestCase.ViolatedRules)
+			}
+
+			var decodeErr error
+			switch manifestCase.ContractKind {
+			case InvocationContractEventV02:
+				var event InvocationEventV02
+				decodeErr = json.Unmarshal(data, &event)
+				if decodeErr == nil {
+					decodeErr = validator.ValidateInvocationEvent(event)
+				}
+			case InvocationContractStreamEventV1:
+				var event InvocationResultStreamEvent
+				decodeErr = json.Unmarshal(data, &event)
+				if decodeErr == nil {
+					decodeErr = validator.ValidateInvocationResultStreamEvent(event)
+				}
+			default:
+				t.Fatalf("unsupported contract kind %q", manifestCase.ContractKind)
+			}
+
+			if manifestCase.ExpectedValid {
+				validCases++
+				if decodeErr != nil {
+					t.Fatalf("valid fixture rejected by Go DTO validation: %v", decodeErr)
+				}
+				return
+			}
+			invalidCases++
+			var semanticError *InvocationSemanticValidationError
+			if !errors.As(decodeErr, &semanticError) {
+				t.Fatalf("invalid fixture error = %v, want Invocation semantic validation error", decodeErr)
+			}
+			if semanticError.RuleID != InvocationRuleCorrelationMatches {
+				t.Fatalf("semantic rule = %q, want %q", semanticError.RuleID, InvocationRuleCorrelationMatches)
+			}
+		})
+	}
+	if validCases != 2 || invalidCases != 6 {
+		t.Fatalf("Invocation conformance corpus has %d valid and %d invalid cases, want 2 and 6", validCases, invalidCases)
+	}
+}
+
+func TestInvocationConformanceManifestStrictDecoding(t *testing.T) {
+	validCase := `{"id":"case-one","contractKind":"invocation-event-v0.2","file":"case-one.json","expectedValid":true,"violatedRules":[]}`
+	testCases := []struct {
+		name string
+		data string
+	}{
+		{name: "missing schema version", data: `{"cases":[` + validCase + `]}`},
+		{name: "null cases", data: `{"schemaVersion":"1","cases":null}`},
+		{name: "unknown manifest field", data: `{"schemaVersion":"1","cases":[` + validCase + `],"fallbackCases":[]}`},
+		{name: "duplicate manifest member", data: `{"schemaVersion":"1","schemaVersion":"1","cases":[` + validCase + `]}`},
+		{name: "missing case id", data: `{"schemaVersion":"1","cases":[{"contractKind":"invocation-event-v0.2","file":"case-one.json","expectedValid":true,"violatedRules":[]}]}`},
+		{name: "null expected validity", data: `{"schemaVersion":"1","cases":[{"id":"case-one","contractKind":"invocation-event-v0.2","file":"case-one.json","expectedValid":null,"violatedRules":[]}]}`},
+		{name: "unknown case field", data: `{"schemaVersion":"1","cases":[{"id":"case-one","contractKind":"invocation-event-v0.2","file":"case-one.json","expectedValid":true,"violatedRules":[],"legacyFile":"old.json"}]}`},
+		{name: "duplicate case member", data: `{"schemaVersion":"1","cases":[{"id":"case-one","id":"case-two","contractKind":"invocation-event-v0.2","file":"case-one.json","expectedValid":true,"violatedRules":[]}]}`},
+		{name: "unknown contract kind", data: `{"schemaVersion":"1","cases":[{"id":"case-one","contractKind":"invocation-event-v0.1","file":"case-one.json","expectedValid":true,"violatedRules":[]}]}`},
+		{name: "unsafe fixture path", data: `{"schemaVersion":"1","cases":[{"id":"case-one","contractKind":"invocation-event-v0.2","file":"../case-one.json","expectedValid":true,"violatedRules":[]}]}`},
+		{name: "duplicate case id", data: `{"schemaVersion":"1","cases":[` + validCase + `,{"id":"case-one","contractKind":"invocation-result-stream-event-v1","file":"case-two.json","expectedValid":true,"violatedRules":[]}]}`},
+		{name: "duplicate fixture file", data: `{"schemaVersion":"1","cases":[` + validCase + `,{"id":"case-two","contractKind":"invocation-result-stream-event-v1","file":"case-one.json","expectedValid":true,"violatedRules":[]}]}`},
+		{name: "unknown rule", data: `{"schemaVersion":"1","cases":[{"id":"case-one","contractKind":"invocation-event-v0.2","file":"case-one.json","expectedValid":false,"violatedRules":["INV-CORR-999"]}]}`},
+		{name: "valid case with violation", data: `{"schemaVersion":"1","cases":[{"id":"case-one","contractKind":"invocation-event-v0.2","file":"case-one.json","expectedValid":true,"violatedRules":["INV-CORR-001"]}]}`},
+		{name: "invalid case without violation", data: `{"schemaVersion":"1","cases":[{"id":"case-one","contractKind":"invocation-event-v0.2","file":"case-one.json","expectedValid":false,"violatedRules":[]}]}`},
+		{name: "trailing JSON", data: `{"schemaVersion":"1","cases":[` + validCase + `]} {}`},
+	}
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			if _, err := decodeInvocationConformanceManifest([]byte(testCase.data)); err == nil {
+				t.Fatal("invalid Invocation conformance manifest was accepted")
 			}
 		})
 	}
