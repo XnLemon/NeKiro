@@ -86,4 +86,7 @@ jobs:
           POSTGRES_PASSWORD: compose-config-check-only
           POSTGRES_DB: compose_config_check
           POSTGRES_PORT: "55432"
+          NEKIRO_COMPOSE_DATABASE_URL: postgresql://compose_config_check:compose-config-check-only@postgres:5432/compose_config_check?sslmode=disable
+          NEKIRO_DEV_AUTH_PRINCIPALS_JSON: '[{"id":"compose-check","tokenSha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}]'
+          CONTROL_PLANE_PORT: "18080"
         run: docker compose --file deploy/compose.yaml config --quiet
