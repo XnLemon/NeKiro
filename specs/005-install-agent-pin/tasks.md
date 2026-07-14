@@ -68,9 +68,9 @@ scope.
   unresolved High/Medium findings.
 - [X] T014 Run Converge and append/resolve any remaining traceable work before
   delivery.
-- [ ] T015 Update `docs/handoffs/CURRENT.md`, check every Issue #5 acceptance
+- [X] T015 Update `docs/handoffs/CURRENT.md`, check every Issue #5 acceptance
   checkbox, commit with `Nene7ko_ <1604009816@qq.com>`, push to `origin`, and
-create a ready PR targeting `main`.
+  create a ready PR targeting `main`.
 
 ## Dependency and Write Scope
 
@@ -142,3 +142,9 @@ The post-review Converge audit found no remaining implementation gap against
 the #5 Spec, Plan, Tasks, active contracts, or constitution. There are no
 clarification markers, missing runtime paths, or untracked acceptance
 requirements. No Convergence task was appended.
+
+## Delivery Evidence
+
+- Implementation commit: `274b8a0`
+- Ready PR: [NeKiro-project/NeKiro#12](https://github.com/NeKiro-project/NeKiro/pull/12)
+- Issue #5 acceptance criteria: all checked on GitHub.
