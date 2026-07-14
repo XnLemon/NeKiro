@@ -1,8 +1,8 @@
 # Local development
 
-This runbook covers the runnable Catalog slice in the Go Control Plane, the
-frontend tooling baseline, and local PostgreSQL. It is not a production
-deployment configuration.
+This runbook covers the runnable Catalog and Workspace/Installation slices in
+the Go Control Plane, the frontend tooling baseline, and local PostgreSQL. It
+is not a production deployment configuration.
 
 ## Requirements
 
@@ -31,6 +31,8 @@ Every current variable is required:
 | `POSTGRES_PORT` | Available host port bound to container port 5432 |
 | `NEKIRO_COMPOSE_DATABASE_URL` | Explicit PostgreSQL URL used inside Compose; its host is normally `postgres` |
 | `NEKIRO_DEV_AUTH_PRINCIPALS_JSON` | Strict local principal array containing `id` and lowercase SHA-256 `tokenSha256` only |
+| `NEKIRO_INTERNAL_AUTH_MODE` | Explicit internal service authentication mode; currently `development-static` |
+| `NEKIRO_INTERNAL_DEV_AUTH_PRINCIPALS_JSON` | Separate strict principal array for Router/internal callers |
 | `CONTROL_PLANE_PORT` | Available host loopback port for the Control Plane |
 
 Choose non-empty values locally. Do not commit `.env`, reuse these credentials
@@ -77,6 +79,8 @@ $env:NEKIRO_DATABASE_URL = 'postgresql://<user>:<url-encoded-password>@127.0.0.1
 $env:NEKIRO_LISTEN_ADDRESS = '127.0.0.1:18080'
 $env:NEKIRO_AUTH_MODE = 'development-static'
 $env:NEKIRO_DEV_AUTH_PRINCIPALS_JSON = '<strict principal JSON from .env>'
+$env:NEKIRO_INTERNAL_AUTH_MODE = 'development-static'
+$env:NEKIRO_INTERNAL_DEV_AUTH_PRINCIPALS_JSON = '<separate strict internal principal JSON from .env>'
 go run ./apps/control-plane/cmd/control-plane migrate up
 go run ./apps/control-plane/cmd/control-plane serve
 ```
@@ -84,8 +88,10 @@ go run ./apps/control-plane/cmd/control-plane serve
 `serve` verifies schema version and dependency readiness but never creates or
 upgrades schema. `migrate up` is the sole migration command; `migrate down` is
 rejected before schema or data changes. The process exposes
-`/livez` and `/readyz`; the five authenticated Catalog operations are under
-`/v2/agents`.
+`/livez` and `/readyz`; the authenticated Catalog operations are under
+`/v2/agents`, Workspace/Installation operations are under `/v3/workspaces`,
+and exact internal resolution is under `/internal/v2/resolve-agent`. The
+internal route accepts only the separately configured internal principal.
 
 To run the containerized local deployment, Compose executes the distinct
 `control-plane-migrate` one-shot service before `control-plane`:
@@ -102,11 +108,12 @@ digests, Card bodies, schemas, SQL, DSNs, and raw dependency details.
 ## Integration acceptance
 
 Use only a dedicated database whose name ends in `_test`. The suite drops the
-Catalog schema, applies migrations, and owns all data in that database:
+owned schemas, applies migrations, and owns all data in that database:
 
 ```powershell
 $env:NEKIRO_TEST_DATABASE_URL = 'postgresql://<user>:<url-encoded-password>@127.0.0.1:<port>/<database>_test?sslmode=disable'
 go test -tags=integration -count=1 ./tests/integration/catalog
+go test -tags=integration -count=1 ./apps/control-plane/internal/workspace/postgres
 ```
 
 The suffix guard is mandatory and prevents accidental execution against a

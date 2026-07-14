@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
+	"strings"
 	"time"
 
 	semver "github.com/Masterminds/semver/v3"
@@ -65,6 +67,68 @@ func (service *Service) Get(ctx context.Context, caller AuthenticatedCaller, age
 		return contracts.CatalogEntry{}, ErrForbidden
 	}
 	return entry.CatalogEntry(), nil
+}
+
+// GetVersion is the controlled Catalog read used by Workspace and future
+// dispatch code. It returns the current exact Registry state without applying
+// Northbound owner visibility rules.
+func (service *Service) GetVersion(ctx context.Context, agentID, version string) (AgentVersion, error) {
+	if !validAgentVersionIdentity(agentID, version) {
+		return AgentVersion{}, ErrInvalid
+	}
+	return service.store.Get(ctx, agentID, version)
+}
+
+// SelectPublished applies Catalog-owned SemVer selection and returns the exact
+// Card fact selected at this call's linearization point.
+func (service *Service) SelectPublished(ctx context.Context, agentID, constraint string) (AgentVersion, error) {
+	if !ValidIdentifier(agentID) {
+		return AgentVersion{}, ErrInvalid
+	}
+	parsedConstraint, err := semver.NewConstraint(constraint)
+	if err != nil || strings.TrimSpace(constraint) == "" {
+		return AgentVersion{}, ErrInvalid
+	}
+	candidates, err := service.store.Published(ctx, agentID)
+	if err != nil {
+		return AgentVersion{}, err
+	}
+	var selected AgentVersion
+	var selectedVersion *semver.Version
+	for _, candidate := range candidates {
+		parsedVersion, err := semver.StrictNewVersion(candidate.Card.Version)
+		if err != nil {
+			return AgentVersion{}, fmt.Errorf("parse stored Agent version: %w", ErrDependency)
+		}
+		if !parsedConstraint.Check(parsedVersion) || !constraintBranchAllowsVersion(constraint, parsedVersion) {
+			continue
+		}
+		if selectedVersion == nil || parsedVersion.GreaterThan(selectedVersion) ||
+			(parsedVersion.Equal(selectedVersion) && candidate.Card.Version > selected.Card.Version) {
+			selected = candidate
+			selectedVersion = parsedVersion
+		}
+	}
+	if selectedVersion == nil {
+		return AgentVersion{}, ErrNotFound
+	}
+	return selected, nil
+}
+
+var prereleaseComparator = regexp.MustCompile(`(?:^|[<>=~^*xX\s])v?\d+\.\d+\.\d+-[0-9A-Za-z-]+`)
+
+func constraintBranchAllowsVersion(constraint string, version *semver.Version) bool {
+	if version.Prerelease() == "" {
+		return true
+	}
+	for _, branch := range strings.Split(constraint, "||") {
+		branch = strings.TrimSpace(branch)
+		parsed, err := semver.NewConstraint(branch)
+		if err == nil && parsed.Check(version) && prereleaseComparator.MatchString(branch) {
+			return true
+		}
+	}
+	return false
 }
 
 func (service *Service) Publish(ctx context.Context, caller AuthenticatedCaller, agentID, version string) (contracts.CatalogEntry, error) {

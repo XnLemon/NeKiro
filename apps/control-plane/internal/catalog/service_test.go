@@ -11,22 +11,24 @@ import (
 )
 
 type fakeStore struct {
-	registered  AgentVersion
-	registerErr error
-	getEntry    AgentVersion
-	getErr      error
-	publish     AgentVersion
-	publishErr  error
-	publishID   string
-	publishTime time.Time
-	disable     AgentVersion
-	disableErr  error
-	disableID   string
-	disableTime time.Time
-	snapshot    int64
-	discovery   DiscoveryResult
-	discoverErr error
-	registers   int
+	registered   AgentVersion
+	registerErr  error
+	getEntry     AgentVersion
+	getErr       error
+	published    []AgentVersion
+	publishedErr error
+	publish      AgentVersion
+	publishErr   error
+	publishID    string
+	publishTime  time.Time
+	disable      AgentVersion
+	disableErr   error
+	disableID    string
+	disableTime  time.Time
+	snapshot     int64
+	discovery    DiscoveryResult
+	discoverErr  error
+	registers    int
 }
 
 func (store *fakeStore) Register(_ context.Context, version AgentVersion) (AgentVersion, error) {
@@ -36,6 +38,9 @@ func (store *fakeStore) Register(_ context.Context, version AgentVersion) (Agent
 }
 func (store *fakeStore) Get(context.Context, string, string) (AgentVersion, error) {
 	return store.getEntry, store.getErr
+}
+func (store *fakeStore) Published(context.Context, string) ([]AgentVersion, error) {
+	return store.published, store.publishedErr
 }
 func (store *fakeStore) Publish(_ context.Context, _, _ string, callerID string, at time.Time) (AgentVersion, error) {
 	store.publishID = callerID

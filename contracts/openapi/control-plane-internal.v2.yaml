@@ -173,6 +173,11 @@ components:
         - type: object
           required: [invocationId, rootTaskId, traceId]
     ResolveAgentResponse:
+      description: >-
+        The response is an exact authorization result. `card.agentId` and
+        `installation.agentId` MUST equal the request `agentId`; `card.version`
+        and `installation.installedVersion` MUST equal the request `version`;
+        and `installation.workspaceId` MUST equal the request `workspaceId`.
       type: object
       additionalProperties: false
       required: [card, installation]

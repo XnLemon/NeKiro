@@ -474,6 +474,8 @@ paths:
         MUST repeat the exact invocationId, rootTaskId, and traceId from the
         Invocation context created for this request. Results are not persisted
         or replayed.
+      security:
+        - bearerAuth: []
       parameters:
         - $ref: "#/components/parameters/WorkspaceId"
         - $ref: "#/components/parameters/ResultAccept"
@@ -517,6 +519,8 @@ paths:
     get:
       operationId: getInvocation
       summary: Read an Invocation and metadata-only Ledger facts
+      security:
+        - bearerAuth: []
       parameters:
         - $ref: "#/components/parameters/InvocationId"
       responses:
@@ -537,12 +541,18 @@ paths:
                       $ref: ../schemas/invocation-event.v0.2.schema.json
         "404":
           $ref: "#/components/responses/ResourceNotFound"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "503":
           $ref: "#/components/responses/DependencyUnavailable"
   /v3/traces/{traceId}:
     get:
       operationId: getTrace
       summary: Read metadata-only Invocation lineage
+      security:
+        - bearerAuth: []
       parameters:
         - in: path
           name: traceId
@@ -567,6 +577,10 @@ paths:
                       $ref: "#/components/schemas/InvocationRecord"
         "404":
           $ref: "#/components/responses/ResourceNotFound"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "503":
           $ref: "#/components/responses/DependencyUnavailable"
 components:

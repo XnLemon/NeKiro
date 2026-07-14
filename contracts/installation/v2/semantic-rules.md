@@ -27,3 +27,10 @@ installation-time facts. Lifecycle responses MUST NOT change them.
 Implementations MUST report semantic violations as validation failures. They
 MUST NOT sort, trim, coerce, or fill values while validating a received
 Installation response.
+
+## INST-SEM-005: Pinned Version Satisfies Constraint
+
+`installedVersion` MUST be a strict SemVer version accepted by the submitted
+`versionConstraint`, including the constraint's normal pre-release rules. A
+structurally valid Installation with an incompatible exact pin is not
+conformant.

@@ -69,11 +69,11 @@ func TestWorkspaceAndInstallationV2Schemas(t *testing.T) {
 	if err := ValidateInstallationImmutablePin(unchanged, changed); err == nil {
 		t.Fatal("Installation immutable pin mutation was accepted")
 	}
-	installation.VersionConstraint = "=1.0.0+" + strings.Repeat("a", 249)
+	installation.VersionConstraint = ">=1.0.0+" + strings.Repeat("a", 249)
 	if err := validator.ValidateInstallation(installation); err != nil {
 		t.Fatalf("long version constraint rejected: %v", err)
 	}
-	installation.VersionConstraint = "=1.0.0+" + strings.Repeat("a", 250)
+	installation.VersionConstraint = ">=1.0.0+" + strings.Repeat("a", 250)
 	if err := validator.ValidateInstallation(installation); err != nil {
 		t.Fatalf("parser-valid version constraint was rejected: %v", err)
 	}
@@ -135,6 +135,20 @@ func TestWorkspaceV3OperationsDeclareSecurityTraceAndExactErrors(t *testing.T) {
 				assertTraceHeader(t, operation, status)
 			}
 		})
+	}
+}
+
+func TestResolveAgentResponsePreservesExactRequestIdentity(t *testing.T) {
+	validator := mustValidator(t)
+	card := validAgentCard()
+	request := ResolveAgentRequest{InvocationID: "inv-resolve", RootTaskID: "task-resolve", TraceID: "trace-resolve", WorkspaceID: "workspace-resolve", AgentID: card.AgentID, Version: card.Version, Capability: "contract.review"}
+	response := ResolveAgentResponse{Card: card, Installation: ResolvedInstallation{InstallationID: "installation-resolve", WorkspaceID: request.WorkspaceID, AgentID: request.AgentID, InstalledVersion: request.Version, AcceptedPermissions: []string{"document.read"}, Status: "enabled"}}
+	if err := validator.ValidateResolveAgentResponseForRequest(request, response); err != nil {
+		t.Fatalf("valid exact resolution response rejected: %v", err)
+	}
+	response.Card.Version = "2.0.0"
+	if err := validator.ValidateResolveAgentResponseForRequest(request, response); err == nil {
+		t.Fatal("resolution response with mismatched Card version was accepted")
 	}
 }
 

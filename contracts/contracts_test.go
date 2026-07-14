@@ -333,6 +333,11 @@ func TestInstallationContract(t *testing.T) {
 	if err := validator.ValidateInstallation(installation); err != nil {
 		t.Fatalf("valid installation rejected: %v", err)
 	}
+	installation.InstalledVersion = "2.0.0"
+	if err := validator.ValidateInstallation(installation); err == nil {
+		t.Fatal("Installation with an incompatible pinned version was accepted")
+	}
+	installation.InstalledVersion = "1.2.0"
 	installation.VersionConstraint = "not a range"
 	if err := validator.ValidateInstallation(installation); err == nil {
 		t.Fatal("invalid version range was accepted")

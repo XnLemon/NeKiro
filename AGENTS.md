@@ -178,7 +178,7 @@ agent-platform/
 
 当前仓库已将跨边界契约事实来源迁移为语言无关的 JSON Schema、OpenAPI 和 A2A Profile。当前活动契约集为 Agent Card `0.2`、Workspace `1`、Installation `2`、Northbound API `v3`、Control Plane Internal API `v2`、Router Internal API `v2`、Invocation Event `0.2`、Platform Error `v2`（Catalog/Invocation）与 `v3`（Workspace/Installation/内部解析）、Invocation Result / Result Stream Event `v1`，以及 A2A Profile Schema `0.2` / protocol `0.3.0`；历史工件仅作为迁移证据保留，不提供运行时双读 fallback。
 
-当前仓库已完成 Spec 002 的 Control Plane Catalog slice：Catalog 已提供持久化的 Agent Card 注册、版本读取、发布、禁用和 Discovery，并通过 PostgreSQL/HTTP 验收与独立 Review。Spec 003 已完成 Minimal Workspace 与 Installation 的契约门禁，但对应运行时尚未实现。Frontend 开发保持暂停；Control Plane 中的 Workspace Installation runtime、Invocation Dispatch，以及 A2A Router、SDK、Sample Agents 和完整 E2E 闭环尚未实现，不得因契约已就绪而宣称这些后续能力存在。
+当前仓库已完成 Spec 002 的 Control Plane Catalog slice，并实现了 Spec 003 的 Minimal Workspace 与 Installation runtime：Workspace 持久化、owner policy、Installation pin/lifecycle/inspection、内部精确解析和独立 internal auth 已落地。Frontend 开发保持暂停；Invocation Dispatch、A2A Router、Ledger、SDK、Sample Agents 和完整 E2E 闭环尚未实现，不得因 Workspace runtime 已存在而宣称这些后续能力存在。本次状态更新原因是 Spec 003 已从契约门禁进入实现阶段，影响是后续实现必须复用现有 Workspace/Catalog ports 和 active v3/v2 contracts。
 
 Go 的 HTTP Router、数据库访问、A2A SDK 和代码生成工具应通过独立 ADR 选择。可以评估 `trpc-agent-go` 及成熟 A2A Go 实现，但完整 Agent Framework 不得成为 Control Plane 或 A2A Router 的核心依赖。外部 Framework 只能作为 Agent Runtime、示例实现或隔离的协议适配器，不能取代本项目的 Control Plane / Data Plane 架构边界。
 

@@ -1,0 +1,273 @@
+package workspace
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"sort"
+	"testing"
+	"time"
+
+	"github.com/Nene7ko/NeKiro/apps/control-plane/internal/catalog"
+	"github.com/Nene7ko/NeKiro/contracts"
+)
+
+type memoryStore struct {
+	workspaces    map[string]contracts.Workspace
+	installations map[string]contracts.Installation
+}
+
+func newMemoryStore() *memoryStore {
+	return &memoryStore{workspaces: map[string]contracts.Workspace{}, installations: map[string]contracts.Installation{}}
+}
+
+func (store *memoryStore) CreateWorkspace(_ context.Context, value contracts.Workspace) (contracts.Workspace, error) {
+	if _, exists := store.workspaces[value.WorkspaceID]; exists {
+		return contracts.Workspace{}, ErrConflict
+	}
+	store.workspaces[value.WorkspaceID] = value
+	return value, nil
+}
+func (store *memoryStore) GetWorkspace(_ context.Context, id string) (contracts.Workspace, error) {
+	value, exists := store.workspaces[id]
+	if !exists {
+		return contracts.Workspace{}, ErrNotFound
+	}
+	return value, nil
+}
+func (store *memoryStore) HasCurrentInstallation(_ context.Context, workspaceID, agentID string) (bool, error) {
+	for _, value := range store.installations {
+		if value.WorkspaceID == workspaceID && value.AgentID == agentID && value.Status != "uninstalled" {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+func (store *memoryStore) CreateInstallation(_ context.Context, callerID string, value contracts.Installation) (contracts.Installation, error) {
+	workspace, exists := store.workspaces[value.WorkspaceID]
+	if !exists {
+		return contracts.Installation{}, ErrNotFound
+	}
+	if workspace.OwnerID != callerID {
+		return contracts.Installation{}, ErrForbidden
+	}
+	current, _ := store.HasCurrentInstallation(context.Background(), value.WorkspaceID, value.AgentID)
+	if current {
+		return contracts.Installation{}, ErrConflict
+	}
+	store.installations[value.InstallationID] = value
+	return value, nil
+}
+func (store *memoryStore) GetInstallation(_ context.Context, workspaceID, installationID string) (contracts.Installation, error) {
+	value, exists := store.installations[installationID]
+	if !exists || value.WorkspaceID != workspaceID {
+		return contracts.Installation{}, ErrNotFound
+	}
+	return value, nil
+}
+func (store *memoryStore) GetCurrentInstallation(_ context.Context, workspaceID, agentID string) (contracts.Installation, error) {
+	for _, value := range store.installations {
+		if value.WorkspaceID == workspaceID && value.AgentID == agentID && value.Status != "uninstalled" {
+			return value, nil
+		}
+	}
+	return contracts.Installation{}, ErrNotFound
+}
+func (store *memoryStore) ListInstallations(_ context.Context, workspaceID string, limit int, after *InstallationPosition) ([]contracts.Installation, bool, error) {
+	items := make([]contracts.Installation, 0)
+	for _, value := range store.installations {
+		if value.WorkspaceID == workspaceID && (after == nil || value.InstalledAt.After(after.InstalledAt) || value.InstalledAt.Equal(after.InstalledAt) && value.InstallationID > after.InstallationID) {
+			items = append(items, value)
+		}
+	}
+	sort.Slice(items, func(i, j int) bool {
+		if items[i].InstalledAt.Equal(items[j].InstalledAt) {
+			return items[i].InstallationID < items[j].InstallationID
+		}
+		return items[i].InstalledAt.Before(items[j].InstalledAt)
+	})
+	hasMore := len(items) > limit
+	if hasMore {
+		items = items[:limit]
+	}
+	return items, hasMore, nil
+}
+func (store *memoryStore) ChangeInstallationStatus(_ context.Context, workspaceID, installationID, status string, at time.Time) (contracts.Installation, error) {
+	value, err := store.GetInstallation(context.Background(), workspaceID, installationID)
+	if err != nil {
+		return contracts.Installation{}, err
+	}
+	if value.Status == "uninstalled" || value.Status == status || value.Status == "enabled" && status != "disabled" || value.Status == "disabled" && status != "enabled" {
+		return contracts.Installation{}, ErrConflict
+	}
+	value.Status, value.UpdatedAt = status, at
+	store.installations[installationID] = value
+	return value, nil
+}
+func (store *memoryStore) UninstallInstallation(_ context.Context, workspaceID, installationID string, at time.Time) (contracts.Installation, error) {
+	value, err := store.GetInstallation(context.Background(), workspaceID, installationID)
+	if err != nil {
+		return contracts.Installation{}, err
+	}
+	if value.Status != "disabled" {
+		return contracts.Installation{}, ErrConflict
+	}
+	value.Status, value.UpdatedAt, value.UninstalledAt = "uninstalled", at, &at
+	store.installations[installationID] = value
+	return value, nil
+}
+func (store *memoryStore) Check(context.Context) error { return nil }
+
+type memoryCatalog struct {
+	candidates []catalog.AgentVersion
+	versions   map[string]catalog.AgentVersion
+}
+
+func (reader *memoryCatalog) SelectPublished(_ context.Context, agentID, constraint string) (catalog.AgentVersion, error) {
+	validator, err := contracts.NewValidator()
+	if err != nil {
+		return catalog.AgentVersion{}, err
+	}
+	service, err := catalog.NewService(&selectionStore{reader: reader}, validator, time.Now)
+	if err != nil {
+		return catalog.AgentVersion{}, err
+	}
+	return service.SelectPublished(context.Background(), agentID, constraint)
+}
+func (reader *memoryCatalog) GetVersion(_ context.Context, agentID, version string) (catalog.AgentVersion, error) {
+	value, exists := reader.versions[agentID+"/"+version]
+	if !exists {
+		return catalog.AgentVersion{}, catalog.ErrNotFound
+	}
+	return value, nil
+}
+
+type selectionStore struct{ reader *memoryCatalog }
+
+func (store *selectionStore) Register(context.Context, catalog.AgentVersion) (catalog.AgentVersion, error) {
+	return catalog.AgentVersion{}, nil
+}
+func (store *selectionStore) Get(_ context.Context, agentID, version string) (catalog.AgentVersion, error) {
+	return store.reader.GetVersion(context.Background(), agentID, version)
+}
+func (store *selectionStore) Published(context.Context, string) ([]catalog.AgentVersion, error) {
+	return store.reader.candidates, nil
+}
+func (store *selectionStore) Publish(context.Context, string, string, string, time.Time) (catalog.AgentVersion, error) {
+	return catalog.AgentVersion{}, nil
+}
+func (store *selectionStore) Disable(context.Context, string, string, string, time.Time) (catalog.AgentVersion, error) {
+	return catalog.AgentVersion{}, nil
+}
+func (store *selectionStore) DiscoverFirstPage(context.Context, catalog.DiscoveryFilter) (int64, catalog.DiscoveryResult, error) {
+	return 0, catalog.DiscoveryResult{}, nil
+}
+func (store *selectionStore) Discover(context.Context, catalog.DiscoveryQuery) (catalog.DiscoveryResult, error) {
+	return catalog.DiscoveryResult{}, nil
+}
+func (store *selectionStore) Check(context.Context) error { return nil }
+
+func TestInstallPinsHighestVersionAndCanonicalPermissions(t *testing.T) {
+	card := testWorkspaceCard("agent-a", "1.0.0", []string{"read", "write"}, []string{"read"})
+	cardBuildA := testWorkspaceCard("agent-a", "1.0.1+a", []string{"read", "write"}, []string{"read"})
+	cardBuildZ := testWorkspaceCard("agent-a", "1.0.1+z", []string{"read", "write"}, []string{"read"})
+	reader := &memoryCatalog{candidates: []catalog.AgentVersion{{Card: card, Status: catalog.PublicationPublished}, {Card: cardBuildA, Status: catalog.PublicationPublished}, {Card: cardBuildZ, Status: catalog.PublicationPublished}}, versions: map[string]catalog.AgentVersion{"agent-a/1.0.1+z": {Card: cardBuildZ, Status: catalog.PublicationPublished}}}
+	store := newMemoryStore()
+	service := newWorkspaceTestService(t, store, reader)
+	if _, err := service.CreateWorkspace(context.Background(), AuthenticatedCaller{ID: "owner-a"}, contracts.CreateWorkspaceRequest{WorkspaceID: "workspace-a"}); err != nil {
+		t.Fatal(err)
+	}
+	installation, err := service.Install(context.Background(), AuthenticatedCaller{ID: "owner-a"}, "workspace-a", contracts.InstallAgentRequest{AgentID: "agent-a", VersionConstraint: ">=1.0.0", AcceptedPermissions: []string{"write", "read"}})
+	if err != nil {
+		t.Fatalf("install: %v", err)
+	}
+	if installation.InstalledVersion != "1.0.1+z" || installation.AcceptedPermissions[0] != "read" || installation.AcceptedPermissions[1] != "write" {
+		t.Fatalf("installation pin = %#v", installation)
+	}
+	if _, err := service.Install(context.Background(), AuthenticatedCaller{ID: "owner-b"}, "workspace-a", contracts.InstallAgentRequest{AgentID: "agent-a", VersionConstraint: "^1.0.0"}); !errors.Is(err, ErrForbidden) {
+		t.Fatalf("non-owner install = %v", err)
+	}
+}
+
+func TestLifecycleResolutionAndReinstall(t *testing.T) {
+	card := testWorkspaceCard("agent-a", "1.0.0", []string{"read"}, []string{"read"})
+	reader := &memoryCatalog{candidates: []catalog.AgentVersion{{Card: card, Status: catalog.PublicationPublished}}, versions: map[string]catalog.AgentVersion{"agent-a/1.0.0": {Card: card, Status: catalog.PublicationPublished}}}
+	store := newMemoryStore()
+	service := newWorkspaceTestService(t, store, reader)
+	caller := AuthenticatedCaller{ID: "owner-a"}
+	_, _ = service.CreateWorkspace(context.Background(), caller, contracts.CreateWorkspaceRequest{WorkspaceID: "workspace-a"})
+	installation, err := service.Install(context.Background(), caller, "workspace-a", contracts.InstallAgentRequest{AgentID: "agent-a", VersionConstraint: "^1.0.0", AcceptedPermissions: []string{"read"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := contracts.ResolveAgentRequest{InvocationID: "inv-a", RootTaskID: "task-a", TraceID: "trace-a", WorkspaceID: "workspace-a", AgentID: "agent-a", Version: "1.0.0", Capability: "capability.read"}
+	if _, err := service.Resolve(context.Background(), request); err != nil {
+		t.Fatalf("resolve enabled: %v", err)
+	}
+	if _, err := service.Uninstall(context.Background(), caller, "workspace-a", installation.InstallationID); !errors.Is(err, ErrConflict) {
+		t.Fatalf("enabled uninstall = %v", err)
+	}
+	if _, err := service.UpdateInstallation(context.Background(), caller, "workspace-a", installation.InstallationID, "disabled"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.Resolve(context.Background(), request); !errors.Is(err, ErrInstallationDisabled) {
+		t.Fatalf("disabled resolve = %v", err)
+	}
+	terminal, err := service.Uninstall(context.Background(), caller, "workspace-a", installation.InstallationID)
+	if err != nil || terminal.Status != "uninstalled" || terminal.UninstalledAt == nil {
+		t.Fatalf("uninstall = %#v, %v", terminal, err)
+	}
+	second, err := service.Install(context.Background(), caller, "workspace-a", contracts.InstallAgentRequest{AgentID: "agent-a", VersionConstraint: "^1.0.0", AcceptedPermissions: []string{"read"}})
+	if err != nil || second.InstallationID == installation.InstallationID {
+		t.Fatalf("reinstall = %#v, %v", second, err)
+	}
+}
+
+func TestListCursorBindsWorkspaceAndLimit(t *testing.T) {
+	reader := &memoryCatalog{versions: map[string]catalog.AgentVersion{}}
+	store := newMemoryStore()
+	service := newWorkspaceTestService(t, store, reader)
+	caller := AuthenticatedCaller{ID: "owner-a"}
+	_, _ = service.CreateWorkspace(context.Background(), caller, contracts.CreateWorkspaceRequest{WorkspaceID: "workspace-a"})
+	for _, id := range []string{"installation-a", "installation-b"} {
+		store.installations[id] = contracts.Installation{InstallationID: id, WorkspaceID: "workspace-a", AgentID: id, VersionConstraint: "^1.0.0", InstalledVersion: "1.0.0", Status: "enabled", InstalledAt: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), UpdatedAt: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)}
+	}
+	first, err := service.ListInstallations(context.Background(), caller, "workspace-a", 1, nil)
+	if err != nil || len(first.Items) != 1 || first.NextCursor == nil {
+		t.Fatalf("first page = %#v, %v", first, err)
+	}
+	second, err := service.ListInstallations(context.Background(), caller, "workspace-a", 1, first.NextCursor)
+	if err != nil || len(second.Items) != 1 || second.Items[0].InstallationID != "installation-b" {
+		t.Fatalf("second page = %#v, %v", second, err)
+	}
+	if _, err := service.ListInstallations(context.Background(), caller, "workspace-a", 2, first.NextCursor); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("mismatched page size = %v", err)
+	}
+}
+
+func newWorkspaceTestService(t *testing.T, store Store, reader CatalogReader) *Service {
+	t.Helper()
+	validator, err := contracts.NewValidator()
+	if err != nil {
+		t.Fatal(err)
+	}
+	clock := time.Date(2026, 7, 14, 12, 0, 0, 0, time.UTC)
+	sequence := 0
+	service, err := NewService(store, reader, OwnerPolicy{}, validator, func() time.Time { return clock }, func() (string, error) {
+		sequence++
+		return fmt.Sprintf("installation-generated-%d", sequence), nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return service
+}
+
+func testWorkspaceCard(agentID, version string, permissions, required []string) contracts.AgentCard {
+	declared := make([]contracts.PermissionDeclaration, 0, len(permissions))
+	for _, permission := range permissions {
+		declared = append(declared, contracts.PermissionDeclaration{ID: permission, Description: permission})
+	}
+	return contracts.AgentCard{SchemaVersion: "0.2", AgentID: agentID, Name: "Workspace Agent", Description: "Workspace test agent", Owner: contracts.AgentOwner{ID: "owner-a", DisplayName: "Owner"}, Version: version, Protocol: contracts.AgentProtocol{Type: "a2a", Version: "0.3.0", Transport: "JSONRPC", Endpoint: "https://agent.example.test/a2a"}, Skills: []contracts.AgentSkill{{ID: "capability.read", Name: "Read", Description: "Read", InputSchema: contracts.JSONSchema{"type": "object"}, OutputSchema: contracts.JSONSchema{"type": "object"}, RequiredPermissions: required}}, Authentication: contracts.AgentAuthentication{Type: "none"}, Permissions: declared, Limits: contracts.AgentLimits{TimeoutMS: 1000, MaxInputBytes: json.Number("1000"), MaxOutputBytes: json.Number("1000"), Streaming: false}}
+}

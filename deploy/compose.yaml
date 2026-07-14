@@ -46,6 +46,8 @@ services:
       NEKIRO_LISTEN_ADDRESS: "0.0.0.0:8080"
       NEKIRO_AUTH_MODE: "development-static"
       NEKIRO_DEV_AUTH_PRINCIPALS_JSON: "${NEKIRO_DEV_AUTH_PRINCIPALS_JSON:?NEKIRO_DEV_AUTH_PRINCIPALS_JSON must be set and non-empty}"
+      NEKIRO_INTERNAL_AUTH_MODE: "development-static"
+      NEKIRO_INTERNAL_DEV_AUTH_PRINCIPALS_JSON: "${NEKIRO_INTERNAL_DEV_AUTH_PRINCIPALS_JSON:?NEKIRO_INTERNAL_DEV_AUTH_PRINCIPALS_JSON must be set and non-empty}"
     ports:
       - "127.0.0.1:${CONTROL_PLANE_PORT:?CONTROL_PLANE_PORT must be set and non-empty}:8080"
     depends_on:

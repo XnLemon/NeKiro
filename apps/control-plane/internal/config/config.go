@@ -24,10 +24,12 @@ type StaticPrincipal struct {
 }
 
 type Config struct {
-	DatabaseURL   string
-	ListenAddress string
-	AuthMode      string
-	Principals    []StaticPrincipal
+	DatabaseURL        string
+	ListenAddress      string
+	AuthMode           string
+	Principals         []StaticPrincipal
+	InternalAuthMode   string
+	InternalPrincipals []StaticPrincipal
 }
 
 type jsonFrame struct {
@@ -66,12 +68,25 @@ func Load() (Config, error) {
 	if err != nil {
 		return Config{}, fmt.Errorf("NEKIRO_DEV_AUTH_PRINCIPALS_JSON is invalid: %w", err)
 	}
+	internalAuthMode, err := requiredEnv("NEKIRO_INTERNAL_AUTH_MODE")
+	if err != nil {
+		return Config{}, err
+	}
+	if internalAuthMode != DevelopmentStaticAuthMode {
+		return Config{}, fmt.Errorf("NEKIRO_INTERNAL_AUTH_MODE %q is unsupported", internalAuthMode)
+	}
+	internalPrincipalsJSON, err := requiredEnv("NEKIRO_INTERNAL_DEV_AUTH_PRINCIPALS_JSON")
+	if err != nil {
+		return Config{}, err
+	}
+	internalPrincipals, err := decodePrincipals([]byte(internalPrincipalsJSON))
+	if err != nil {
+		return Config{}, fmt.Errorf("NEKIRO_INTERNAL_DEV_AUTH_PRINCIPALS_JSON is invalid: %w", err)
+	}
 
 	return Config{
-		DatabaseURL:   databaseURL,
-		ListenAddress: listenAddress,
-		AuthMode:      authMode,
-		Principals:    principals,
+		DatabaseURL: databaseURL, ListenAddress: listenAddress, AuthMode: authMode,
+		Principals: principals, InternalAuthMode: internalAuthMode, InternalPrincipals: internalPrincipals,
 	}, nil
 }
 

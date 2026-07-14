@@ -118,6 +118,28 @@ WHERE v.agent_id = $1 AND v.version = $2`, agentID, version)
 	return entry, nil
 }
 
+func (store *Store) Published(ctx context.Context, agentID string) ([]catalog.AgentVersion, error) {
+	rows, err := store.pool.Query(ctx, selectVersionSQL+`
+WHERE v.agent_id = $1 AND v.publication_status = 'published'
+ORDER BY v.version COLLATE "C" ASC`, agentID)
+	if err != nil {
+		return nil, dependencyError("list published Agent versions", err)
+	}
+	defer rows.Close()
+	versions := make([]catalog.AgentVersion, 0)
+	for rows.Next() {
+		version, _, err := scanVersion(rows)
+		if err != nil {
+			return nil, dependencyError("scan published Agent version", err)
+		}
+		versions = append(versions, version)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, dependencyError("read published Agent versions", err)
+	}
+	return versions, nil
+}
+
 func (store *Store) Publish(ctx context.Context, agentID, version, callerID string, at time.Time) (catalog.AgentVersion, error) {
 	return store.transition(ctx, agentID, version, callerID, at, true)
 }

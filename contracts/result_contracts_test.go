@@ -610,6 +610,52 @@ func TestResolveAgentErrorRequiresExactRequestCorrelation(t *testing.T) {
 	}
 }
 
+func TestPlatformErrorV3StrictDecodingAndResolveCorrelation(t *testing.T) {
+	validator := mustResultContractValidator(t)
+	base, err := NewCorrelatedPlatformErrorV3(ErrorCodeInstallationDisabled, "trace-v3", "inv-v3", "task-v3")
+	if err != nil {
+		t.Fatalf("create Platform Error v3: %v", err)
+	}
+	encoded, err := json.Marshal(base)
+	if err != nil {
+		t.Fatalf("marshal Platform Error v3: %v", err)
+	}
+	var decoded PlatformErrorV3
+	if err := json.Unmarshal(encoded, &decoded); err != nil {
+		t.Fatalf("decode valid Platform Error v3: %v", err)
+	}
+	for _, mutate := range []func(map[string]any){
+		func(document map[string]any) { delete(document, "traceId") },
+		func(document map[string]any) { document["unsupported"] = true },
+		func(document map[string]any) { document["code"] = "DEPENDENCY_ERROR" },
+	} {
+		data := mutateContractJSON(t, base, mutate)
+		if err := json.Unmarshal(data, &decoded); err == nil {
+			t.Fatalf("invalid Platform Error v3 was accepted: %s", data)
+		}
+	}
+	for _, data := range [][]byte{
+		[]byte(`{"code":"INSTALLATION_DISABLED","message":"The Agent installation is disabled.","traceId":"trace-v3","traceId":"trace-v3"}`),
+		[]byte(`{"code":"INSTALLATION_DISABLED","message":"The Agent installation is disabled.","traceId":"trace-v3","invocationId":"inv-v3"}`),
+	} {
+		if err := json.Unmarshal(data, &decoded); err == nil {
+			t.Fatalf("invalid Platform Error v3 correlation/duplicate value was accepted: %s", data)
+		}
+	}
+
+	request := ResolveAgentRequestV2{
+		InvocationID: "inv-v3", RootTaskID: "task-v3", TraceID: "trace-v3",
+		WorkspaceID: "workspace-v3", AgentID: "agent-v3", Version: "1.2.3", Capability: "capability-v3",
+	}
+	if err := validator.ValidateResolveAgentErrorCorrelationV3(request, base); err != nil {
+		t.Fatalf("matching v3 correlation rejected: %v", err)
+	}
+	base.TraceID = "trace-other"
+	if err := validator.ValidateResolveAgentErrorCorrelationV3(request, base); err == nil || !strings.Contains(err.Error(), "correlation changed") {
+		t.Fatalf("mismatched v3 correlation error = %v", err)
+	}
+}
+
 func TestInvocationCorrelationConformanceCorpus(t *testing.T) {
 	manifest, err := loadInvocationConformanceManifest()
 	if err != nil {

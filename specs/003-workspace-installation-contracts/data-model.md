@@ -75,7 +75,8 @@ Partial unique key: `(workspace_id, agent_id)` where
   to the exact version or a normalized range.
 - `installed_version` equals the exact version from the Card selected by the
   successful Catalog operation. It never changes on enable, disable, Catalog
-  disable, or publication of newer versions.
+  disable, or publication of newer versions, and it MUST satisfy the submitted
+  `version_constraint` under the strict SemVer parser.
 - `accepted_permissions` is validated against the selected exact Card before
   insert. The stored array is sorted after exact case-sensitive validation; it
   is never expanded from later Card versions.
@@ -231,6 +232,9 @@ facts needed by the Router:
 The response pairs this value with the exact currently published Agent Card
 0.2. No success response exists for disabled, uninstalled, capability-denied,
 Catalog-disabled, or dependency-failed state.
+The Card and Installation form an exact tuple: request and response
+`agentId`/`version` values must match, and the response `workspaceId` must
+match the request Workspace.
 
 ## Capability Authorization
 

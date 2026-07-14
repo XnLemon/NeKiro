@@ -385,6 +385,38 @@ func (v *Validator) ValidateWorkspace(workspace Workspace) error {
 	return validateMappedValue(v.workspace, workspace)
 }
 
+func (v *Validator) ValidateResolveAgentResponseForRequest(request ResolveAgentRequestV2, response ResolveAgentResponse) error {
+	if err := ValidateResolveAgentRequestV1(request); err != nil {
+		return err
+	}
+	if err := v.ValidateAgentCard(response.Card); err != nil {
+		return err
+	}
+	if response.Card.AgentID != request.AgentID || response.Card.Version != request.Version {
+		return errors.New("resolved Card identity does not match request")
+	}
+	if err := validateSafeContractIdentifier("installation id", response.Installation.InstallationID); err != nil {
+		return err
+	}
+	if response.Installation.WorkspaceID != request.WorkspaceID ||
+		response.Installation.AgentID != request.AgentID ||
+		response.Installation.InstalledVersion != request.Version ||
+		response.Installation.Status != "enabled" {
+		return errors.New("resolved Installation identity does not match request")
+	}
+	for index := 1; index < len(response.Installation.AcceptedPermissions); index++ {
+		if response.Installation.AcceptedPermissions[index-1] >= response.Installation.AcceptedPermissions[index] {
+			return errors.New("resolved Installation permissions are not canonical")
+		}
+	}
+	for _, permission := range response.Installation.AcceptedPermissions {
+		if err := validateSafeContractIdentifier("accepted permission", permission); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (v *Validator) ValidateInvocationEvent(event InvocationEvent) error {
 	return v.resultContracts.ValidateInvocationEvent(event)
 }

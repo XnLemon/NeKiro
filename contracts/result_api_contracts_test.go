@@ -304,6 +304,19 @@ func TestInvocationOpenAPIsExposeOnlyMetadataLedgerReads(t *testing.T) {
 	northbound := loadResultOpenAPIDocument(t, filepath.Join("openapi", "control-plane.v3.yaml"))
 	router := loadResultOpenAPIDocument(t, filepath.Join("openapi", "router-internal.v2.yaml"))
 
+	for _, operation := range []*openapi3.Operation{
+		northbound.Paths.Find("/v3/workspaces/{workspaceId}/invocations").Post,
+		northbound.Paths.Find("/v3/invocations/{invocationId}").Get,
+		northbound.Paths.Find("/v3/traces/{traceId}").Get,
+	} {
+		if operation == nil || operation.Security == nil || len(*operation.Security) != 1 {
+			t.Fatal("Northbound invocation operation is missing Bearer security")
+		}
+		if _, exists := (*operation.Security)[0]["bearerAuth"]; !exists {
+			t.Fatalf("Northbound invocation security = %#v, want bearerAuth", *operation.Security)
+		}
+	}
+
 	for _, document := range []*openapi3.T{northbound, router} {
 		for _, path := range document.Paths.Keys() {
 			lowerPath := strings.ToLower(path)
@@ -365,8 +378,12 @@ func TestActiveOpenAPIErrorMappingsAreCompleteAndDeterministic(t *testing.T) {
 		{path: "/v3/workspaces/{workspaceId}/invocations", method: "POST", status: 502, codes: []string{"AGENT_EXECUTION_FAILED", "A2A_PROTOCOL_ERROR"}},
 		{path: "/v3/workspaces/{workspaceId}/invocations", method: "POST", status: 503, codes: []string{"ROUTE_NOT_FOUND", "AGENT_UNAVAILABLE", "DEPENDENCY_ERROR"}},
 		{path: "/v3/workspaces/{workspaceId}/invocations", method: "POST", status: 504, codes: []string{"TIMEOUT"}},
+		{path: "/v3/invocations/{invocationId}", method: "GET", status: 401, codes: []string{"UNAUTHENTICATED"}},
+		{path: "/v3/invocations/{invocationId}", method: "GET", status: 403, codes: []string{"FORBIDDEN", "AGENT_DISABLED", "CAPABILITY_NOT_ALLOWED"}},
 		{path: "/v3/invocations/{invocationId}", method: "GET", status: 404, codes: []string{"NOT_FOUND"}},
 		{path: "/v3/invocations/{invocationId}", method: "GET", status: 503, codes: []string{"DEPENDENCY_ERROR"}},
+		{path: "/v3/traces/{traceId}", method: "GET", status: 401, codes: []string{"UNAUTHENTICATED"}},
+		{path: "/v3/traces/{traceId}", method: "GET", status: 403, codes: []string{"FORBIDDEN", "AGENT_DISABLED", "CAPABILITY_NOT_ALLOWED"}},
 		{path: "/v3/traces/{traceId}", method: "GET", status: 404, codes: []string{"NOT_FOUND"}},
 		{path: "/v3/traces/{traceId}", method: "GET", status: 503, codes: []string{"DEPENDENCY_ERROR"}},
 	}

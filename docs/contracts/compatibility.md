@@ -66,7 +66,8 @@ before their first runtime implementation:
   `workspaceId`, immutable trusted `ownerId`, `createdAt`, and `updatedAt`.
 - Installation v2 keeps the submitted constraint, exact installed version,
   accepted permission snapshot, state, and timestamps; it additionally freezes
-  canonical permission order and timestamp relationships. `uninstalledAt` is
+  canonical permission order, constraint-compatible exact pins, and timestamp
+  relationships. `uninstalledAt` is
   required only for terminal uninstalled history.
 - Northbound v2 remains byte-unchanged migration evidence. Northbound v3
   completes Workspace create/read and Installation create/read/list/lifecycle

@@ -35,19 +35,20 @@ Event `0.2`, Platform Error `v2` / `v3`, Invocation Result and Result Stream Eve
 `0.1` artifacts remain readable migration evidence; the runtime does not add
 speculative dual-read behavior for them.
 
-The first runnable Control Plane Catalog slice now implements durable,
+The first runnable Control Plane Catalog slice implements durable,
 authenticated `Register -> Publish -> Discover -> Disable` behavior with
 PostgreSQL, immutable Agent Card versions, exact reads, stable cursor
 pagination, readiness, fixed errors, container wiring, and real
-HTTP/PostgreSQL acceptance. The cross-Runtime fixtures prove metadata
-portability only; no Agent endpoint is invoked. The Catalog slice is complete
-under Spec 002. Spec 003 completes the Minimal Workspace and Installation
-contract gate, including exact version, permission, lifecycle, ownership, and
-internal resolution semantics, before runtime implementation.
+HTTP/PostgreSQL acceptance. Spec 003 now adds the durable owner-controlled
+Workspace and Installation runtime: exact published SemVer selection,
+permission snapshots, inspection pagination, lifecycle history, internal exact
+resolution, separate internal authentication, migrations, and unit/HTTP
+coverage. The cross-Runtime fixtures still prove metadata portability only; no
+Agent endpoint is invoked.
 
-Frontend work remains paused. Workspace Installation runtime, Invocation
-Dispatch, the A2A Router, Ledger, SDKs, live sample Agents, and the complete
-end-to-end loop remain unimplemented.
+Frontend work remains paused. Invocation Dispatch, the A2A Router, Ledger,
+SDKs, live sample Agents, and the complete end-to-end loop remain
+unimplemented.
 
 The first-stage architecture keeps these boundaries:
 

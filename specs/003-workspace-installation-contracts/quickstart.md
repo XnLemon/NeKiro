@@ -102,7 +102,7 @@ Expected outcomes:
 ## 5. Run PostgreSQL and HTTP Acceptance
 
 ```powershell
-go test -tags=integration -count=1 ./apps/control-plane/internal/workspace/postgres ./tests/integration/workspace
+go test -tags=integration -count=1 ./apps/control-plane/internal/catalog/postgres ./apps/control-plane/internal/workspace/postgres ./apps/control-plane/internal/workspace/integration
 ```
 
 Expected outcomes:

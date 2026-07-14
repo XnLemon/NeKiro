@@ -1,6 +1,10 @@
 package contracts
 
-import "fmt"
+import (
+	"fmt"
+
+	semver "github.com/Masterminds/semver/v3"
+)
 
 type InstallationSemanticRuleID string
 
@@ -9,6 +13,7 @@ const (
 	InstallationRuleMonotonicUpdate      InstallationSemanticRuleID = "INST-SEM-002"
 	InstallationRuleTerminalTimestamp    InstallationSemanticRuleID = "INST-SEM-003"
 	InstallationRuleImmutablePin         InstallationSemanticRuleID = "INST-SEM-004"
+	InstallationRulePinnedVersionMatches InstallationSemanticRuleID = "INST-SEM-005"
 )
 
 type InstallationSemanticValidationError struct {
@@ -32,6 +37,14 @@ func validateInstallationV2Semantics(installation Installation) error {
 		if installation.UninstalledAt == nil || !installation.UninstalledAt.Equal(installation.UpdatedAt) {
 			return &InstallationSemanticValidationError{RuleID: InstallationRuleTerminalTimestamp}
 		}
+	}
+	constraint, err := semver.NewConstraint(installation.VersionConstraint)
+	if err != nil {
+		return &InstallationSemanticValidationError{RuleID: InstallationRulePinnedVersionMatches}
+	}
+	version, err := semver.StrictNewVersion(installation.InstalledVersion)
+	if err != nil || !constraint.Check(version) {
+		return &InstallationSemanticValidationError{RuleID: InstallationRulePinnedVersionMatches}
 	}
 	return nil
 }

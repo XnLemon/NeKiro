@@ -13,12 +13,17 @@ func TestLoadRequiresExplicitValidConfiguration(t *testing.T) {
 	t.Setenv("NEKIRO_LISTEN_ADDRESS", "127.0.0.1:18080")
 	t.Setenv("NEKIRO_AUTH_MODE", DevelopmentStaticAuthMode)
 	t.Setenv("NEKIRO_DEV_AUTH_PRINCIPALS_JSON", `[{"id":"owner-a","tokenSha256":"`+hex.EncodeToString(digest[:])+`"}]`)
+	t.Setenv("NEKIRO_INTERNAL_AUTH_MODE", DevelopmentStaticAuthMode)
+	t.Setenv("NEKIRO_INTERNAL_DEV_AUTH_PRINCIPALS_JSON", `[{"id":"router-a","tokenSha256":"`+hex.EncodeToString(digest[:])+`"}]`)
 	loaded, err := Load()
 	if err != nil {
 		t.Fatalf("load valid config: %v", err)
 	}
 	if loaded.ListenAddress != "127.0.0.1:18080" || len(loaded.Principals) != 1 {
 		t.Fatalf("loaded config = %#v", loaded)
+	}
+	if loaded.InternalAuthMode != DevelopmentStaticAuthMode || len(loaded.InternalPrincipals) != 1 {
+		t.Fatalf("loaded internal auth config = %#v", loaded)
 	}
 }
 
@@ -70,6 +75,19 @@ func TestLoadRejectsMissingRequiredVariable(t *testing.T) {
 	})
 	if _, err := LoadDatabaseURL(); err == nil {
 		t.Fatal("missing database URL was accepted")
+	}
+}
+
+func TestLoadRejectsMissingInternalAuthenticationConfiguration(t *testing.T) {
+	digest := sha256.Sum256([]byte("token"))
+	t.Setenv("NEKIRO_DATABASE_URL", "postgresql://user:password@127.0.0.1:5432/catalog_test?sslmode=disable")
+	t.Setenv("NEKIRO_LISTEN_ADDRESS", "127.0.0.1:18080")
+	t.Setenv("NEKIRO_AUTH_MODE", DevelopmentStaticAuthMode)
+	t.Setenv("NEKIRO_DEV_AUTH_PRINCIPALS_JSON", `[{"id":"owner-a","tokenSha256":"`+hex.EncodeToString(digest[:])+`"}]`)
+	t.Setenv("NEKIRO_INTERNAL_AUTH_MODE", "")
+	t.Setenv("NEKIRO_INTERNAL_DEV_AUTH_PRINCIPALS_JSON", "")
+	if _, err := Load(); err == nil {
+		t.Fatal("missing internal authentication configuration was accepted")
 	}
 }
 

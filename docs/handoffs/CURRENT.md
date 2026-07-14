@@ -1,9 +1,10 @@
-# Current Handoff: Spec 003 Workspace and Installation Contract Gate
+# Current Handoff: Spec 003 Workspace and Installation Runtime
 
 **Updated**: 2026-07-14 (Asia/Hong_Kong)
 
-**State**: Issue #3 contract gate is complete on the feature branch. Runtime
-implementation has not started.
+**State**: Issue #3 contract gate and the Minimal Workspace/Installation
+runtime are implemented on the feature branch. Invocation Dispatch, Router,
+Ledger, SDK, Sample Agents, and the complete E2E loop remain future scope.
 
 ## Repository State
 
@@ -20,8 +21,8 @@ assume a previous Windows path exists.
 
 ## Delivered Contract Gate
 
-Spec 003 freezes the complete SDD gate for Minimal Workspace and Agent
-Installation before runtime implementation:
+Spec 003 freezes and implements the Minimal Workspace and Agent Installation
+boundary:
 
 - `spec.md` defines Workspace create/read, Installation
   create/read/list/lifecycle, and internal exact-resolution user scenarios,
@@ -32,11 +33,10 @@ Installation before runtime implementation:
 - `plan.md`, `research.md`, `data-model.md`, the API contract guide, and
   `quickstart.md` define module ownership, controlled Catalog access,
   PostgreSQL transactions, extension boundaries, validation, and operations.
-- `tasks.md` contains 55 dependency-ordered future implementation tasks plus
-  six completed contract-gate remediation tasks (T056-T061). After
-  Workspace root and install/pin, inspection, lifecycle, and exact resolution
-  have three disjoint write ranges. Tests follow implementation; independent
-  Review and Converge are mandatory.
+- `tasks.md` records the dependency-ordered implementation and the completed
+  contract-gate remediation tasks. Workspace root and install/pin, inspection,
+  lifecycle, and exact resolution now share one Workspace-owned persistence
+  boundary. Invocation runtime remains outside this feature.
 - ADR 0005 records the infrastructure-independent Workspace and Installation
   boundary.
 
@@ -46,7 +46,7 @@ Installation before runtime implementation:
   `createdAt`, and `updatedAt`.
 - Installation v2 preserves exact pin, accepted permission snapshot, lifecycle,
   and terminal `uninstalledAt` coherence, with canonical permission and
-  timestamp semantic validation.
+  timestamp and constraint-compatible pin semantic validation.
 - Northbound v3 now declares seven Workspace/Installation operations with
   Bearer security, Trace headers, success DTOs, exact per-operation errors, and
   bounded opaque-cursor Installation inspection.
@@ -57,8 +57,13 @@ Installation before runtime implementation:
   resolution with fixed public message while Platform Error v2 remains the
   Catalog/Invocation contract.
 - Go DTOs, validators, and mapping tests consume these language-neutral facts.
-- Northbound v2 and the other historical contract artifacts remain unchanged; no compatibility fallback
-  or dual route is introduced.
+- Northbound v2 and the other historical contract artifacts remain unchanged;
+  no compatibility fallback or dual route is introduced.
+- Northbound invocation POST and Ledger reads explicitly require Bearer
+  security; Ledger reads expose authentication failures in the active mapping.
+- Control Plane configuration requires a separate internal auth mode and
+  principal digest set; Northbound credentials are not implicitly trusted for
+  internal resolution.
 
 ## Key Policies
 
@@ -80,24 +85,27 @@ Installation before runtime implementation:
 
 ## Verification
 
-The contract gate passed:
+The contract, unit, race, static, and real PostgreSQL gates passed:
 
 ```powershell
 go test -count=1 ./contracts
 go test -count=1 ./...
-go test -race -count=1 ./contracts
+go test -race -count=1 ./...
 go vet ./...
 go mod tidy -diff
 git diff --check
+go test -tags=integration -count=1 ./apps/control-plane/internal/catalog/postgres ./apps/control-plane/internal/workspace/postgres ./apps/control-plane/internal/workspace/integration
 ```
 
-No Workspace PostgreSQL or HTTP integration suite exists yet; those tests are
-future tasks and must not be claimed as completed by this documentation PR.
+Workspace domain, Gateway, migration, and contract tests are present. The real
+PostgreSQL run passed migrations, exact resolution, lifecycle history,
+reinstall, and the 100-request current-install uniqueness race against a
+dedicated `_test` database.
 
 Spec Kit analysis result for the completed gate:
 
 - Requirements: 30 functional plus 7 measurable outcomes
-- Tasks: 61 total; 55 future implementation tasks and 6 completed remediation tasks
+- Tasks: 61 total; all implementation and remediation tasks are recorded complete
 - Requirement coverage: 100%
 - Ambiguity, duplication, constitution conflict, and Critical findings: 0
 
@@ -106,22 +114,35 @@ Added fallback evidence: none. The retained behaviors are the approved genuine
 empty Installation list and the unchanged Spec 002 Discovery page-size policy,
 not degraded dependency handling.
 
+Independent closure Review used `open-code-review` v1.7.9 session `71946`.
+The actual pin-validation and V3 test-coverage findings were remediated. Two
+security comments repeated Bearer declarations already present in the active
+OpenAPI document, and the suggestion to replace the approved SemVer range with
+an exact version was rejected against FR-005 through FR-009. No blocking
+finding remains after the final contract and test updates.
+
 ## Runtime Boundary
 
-Implemented runtime remains the completed Spec 002 Catalog slice only:
+Implemented Control Plane runtime currently covers the Catalog and Workspace
+boundaries:
 
 ```text
 Register -> Publish -> Discover -> Disable
 ```
 
-Workspace persistence, owner policy, Installation selection/lifecycle, internal
-resolution handler, Invocation Dispatch, A2A Router, Ledger, SDK/runtime
-behavior, live sample Agents, Frontend, and the complete E2E loop remain
-unimplemented.
+Workspace adds `Create/Read -> Install -> Inspect -> Disable/Enable ->
+Uninstall -> Reinstall` and internal exact resolution over the controlled
+Catalog port.
 
-Do not infer runtime availability from active schemas or OpenAPI paths. Begin
-implementation only from `specs/003-workspace-installation-contracts/tasks.md`
-after this gate is accepted.
+Workspace persistence, owner policy, Installation selection/lifecycle, and
+internal exact resolution are implemented. Invocation Dispatch, A2A Router,
+Ledger, SDK/runtime behavior, live sample Agents, Frontend, and the complete
+E2E loop remain unimplemented.
+
+Do not infer Invocation/Router runtime availability from active schemas or
+OpenAPI paths. Continue future implementation only from
+`specs/003-workspace-installation-contracts/tasks.md` after this boundary is
+accepted.
 
 ## Recovery
 

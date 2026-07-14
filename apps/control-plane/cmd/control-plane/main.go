@@ -12,9 +12,11 @@ import (
 	"time"
 
 	"github.com/Nene7ko/NeKiro/apps/control-plane/internal/catalog"
-	"github.com/Nene7ko/NeKiro/apps/control-plane/internal/catalog/postgres"
+	catalogpostgres "github.com/Nene7ko/NeKiro/apps/control-plane/internal/catalog/postgres"
 	"github.com/Nene7ko/NeKiro/apps/control-plane/internal/config"
 	"github.com/Nene7ko/NeKiro/apps/control-plane/internal/gateway"
+	"github.com/Nene7ko/NeKiro/apps/control-plane/internal/workspace"
+	workspacepostgres "github.com/Nene7ko/NeKiro/apps/control-plane/internal/workspace/postgres"
 	"github.com/Nene7ko/NeKiro/contracts"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -71,18 +73,33 @@ func serve(ctx context.Context, logger *slog.Logger) error {
 	if err := pool.Ping(ctx); err != nil {
 		return errors.New("connect database dependency")
 	}
-	store, err := postgres.NewStore(pool)
+	catalogStore, err := catalogpostgres.NewStore(pool)
 	if err != nil {
 		return err
 	}
-	if err := store.Check(ctx); err != nil {
+	workspaceStore, err := workspacepostgres.NewStore(pool)
+	if err != nil {
+		return err
+	}
+	if err := catalogStore.Check(ctx); err != nil {
 		return errors.New("catalog schema is not ready")
+	}
+	if err := workspaceStore.Check(ctx); err != nil {
+		return errors.New("workspace schema is not ready")
 	}
 	validator, err := contracts.NewValidator()
 	if err != nil {
 		return errors.New("initialize contract validator")
 	}
-	catalogService, err := catalog.NewService(store, validator, time.Now)
+	catalogService, err := catalog.NewService(catalogStore, validator, time.Now)
+	if err != nil {
+		return err
+	}
+	internalAuthenticator, err := gateway.NewDevelopmentStaticAuthenticator(cfg.InternalPrincipals)
+	if err != nil {
+		return fmt.Errorf("initialize internal authenticator: %w", err)
+	}
+	workspaceService, err := workspace.NewService(workspaceStore, catalogService, workspace.NewOwnerPolicy(), validator, time.Now, workspace.NewRandomID)
 	if err != nil {
 		return err
 	}
@@ -90,14 +107,24 @@ func serve(ctx context.Context, logger *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-	handler, err := gateway.NewHandler(authenticator, catalogService, store, traces, logger)
+	readiness := combinedReadiness{catalog: catalogStore, workspace: workspaceStore}
+	catalogHandler, err := gateway.NewHandler(authenticator, catalogService, readiness, traces, logger)
 	if err != nil {
 		return err
 	}
+	workspaceHandler, err := gateway.NewWorkspaceHandler(authenticator, internalAuthenticator, workspaceService, traces, logger)
+	if err != nil {
+		return err
+	}
+	mux := http.NewServeMux()
+	workspaceRoutes := workspaceHandler.Routes()
+	mux.Handle("/v3/", workspaceRoutes)
+	mux.Handle("/internal/v2/", workspaceRoutes)
+	mux.Handle("/", catalogHandler.Routes())
 
 	server := &http.Server{
 		Addr:              cfg.ListenAddress,
-		Handler:           handler.Routes(),
+		Handler:           mux,
 		ReadHeaderTimeout: 5 * time.Second,
 		IdleTimeout:       60 * time.Second,
 	}
@@ -139,10 +166,25 @@ func migrate(ctx context.Context, direction string) (returnErr error) {
 			returnErr = errors.Join(returnErr, fmt.Errorf("close migration database: %w", closeErr))
 		}
 	}()
-	if err := postgres.Migrate(ctx, connection, direction); err != nil {
+	if err := catalogpostgres.Migrate(ctx, connection, direction); err != nil {
 		return errors.New("catalog migration failed")
 	}
+	if err := workspacepostgres.Migrate(ctx, connection, direction); err != nil {
+		return errors.New("workspace migration failed")
+	}
 	return nil
+}
+
+type combinedReadiness struct {
+	catalog   gateway.ReadinessChecker
+	workspace gateway.ReadinessChecker
+}
+
+func (readiness combinedReadiness) Check(ctx context.Context) error {
+	if err := readiness.catalog.Check(ctx); err != nil {
+		return err
+	}
+	return readiness.workspace.Check(ctx)
 }
 
 func healthcheck(ctx context.Context, url string) (returnErr error) {

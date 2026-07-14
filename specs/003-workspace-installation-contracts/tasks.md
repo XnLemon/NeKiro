@@ -26,19 +26,19 @@ resolution then use disjoint files and may run as three parallel slices.
 **Purpose**: Treat issue #3 artifacts as the accepted behavior source before
 runtime implementation.
 
-- [ ] T001 Verify `go test -count=1 ./contracts`, `go vet ./contracts`, and
+- [X] T001 Verify `go test -count=1 ./contracts`, `go vet ./contracts`, and
   `git diff --check` pass against the frozen Workspace v1, Installation v2,
   Northbound v3, Control Plane Internal v2, and versioned Platform Error sources; record
   the exact baseline commit and results in
   `specs/003-workspace-installation-contracts/tasks.md` (FR-030)
-- [ ] T002 Re-read `AGENTS.md`, `.specify/memory/constitution.md`,
+- [X] T002 Re-read `AGENTS.md`, `.specify/memory/constitution.md`,
   `specs/003-workspace-installation-contracts/spec.md`,
   `specs/003-workspace-installation-contracts/plan.md`, and
   `docs/decisions/0005-minimal-workspace-installation-boundary.md`; record any
   contradiction in `specs/003-workspace-installation-contracts/tasks.md` and
   stop implementation until the higher-order artifact is corrected (FR-026,
   FR-029)
-- [ ] T003 Confirm repository-local Git identity is
+- [X] T003 Confirm repository-local Git identity is
   `Nene7ko_ <1604009816@qq.com>` and record the clean implementation starting
   point in `specs/003-workspace-installation-contracts/tasks.md`
 
@@ -54,30 +54,30 @@ all user stories.
 
 **CRITICAL**: No user-story implementation starts until this phase completes.
 
-- [ ] T004 Add forward-only Workspace-owned tables, state/timestamp checks,
+- [X] T004 Add forward-only Workspace-owned tables, state/timestamp checks,
   non-cascading parent relation, partial one-current-Installation uniqueness,
   and list/resolution indexes in
   `apps/control-plane/migrations/003_workspace.sql` (FR-002, FR-012, FR-015,
   FR-026)
-- [ ] T005 [P] Add Workspace, Installation, status, authenticated caller, exact
+- [X] T005 [P] Add Workspace, Installation, status, authenticated caller, exact
   Catalog result, and operation error domain values without infrastructure or
   secret fields in `apps/control-plane/internal/workspace/model.go` and
   `apps/control-plane/internal/workspace/errors.go` (FR-002, FR-013, FR-029)
-- [ ] T006 [P] Define the complete Workspace store, Catalog read, owner policy,
+- [X] T006 [P] Define the complete Workspace store, Catalog read, owner policy,
   identifier/time generator, and internal resolution ports before parallel
   slices in `apps/control-plane/internal/workspace/store.go`,
   `apps/control-plane/internal/workspace/catalog.go`, and
   `apps/control-plane/internal/workspace/policy.go` (FR-003, FR-019, FR-026)
-- [ ] T007 Implement exact owner-only authorization with no inferred owner,
+- [X] T007 Implement exact owner-only authorization with no inferred owner,
   default principal, or Membership/RBAC behavior in
   `apps/control-plane/internal/workspace/policy.go` (FR-001, FR-003, FR-028)
-- [ ] T008 Add the Workspace PostgreSQL adapter constructor, transaction helper,
+- [X] T008 Add the Workspace PostgreSQL adapter constructor, transaction helper,
   expected-conflict classifier, and schema readiness checks without Catalog SQL
   or in-memory fallback in
   `apps/control-plane/internal/workspace/postgres/store.go` and
   `apps/control-plane/internal/workspace/postgres/migrations.go` (FR-024,
   FR-026, FR-028)
-- [ ] T009 Wire the command layer to invoke the Catalog-owned and
+- [X] T009 Wire the command layer to invoke the Catalog-owned and
   Workspace-owned migrators separately and compose both readiness checks in
   `apps/control-plane/cmd/control-plane/main.go` while keeping serving
   migration-free, each module's schema ownership intact, and public migration
@@ -98,31 +98,31 @@ creation, restart the service, and read the identical four-field Workspace.
 
 ### Implementation for User Story 1
 
-- [ ] T010 [US1] Implement strict create/read ordering, immutable trusted owner,
+- [X] T010 [US1] Implement strict create/read ordering, immutable trusted owner,
   duplicate conflict, and owner policy calls in
   `apps/control-plane/internal/workspace/root.go` (FR-001 through FR-004,
   FR-024, FR-025)
-- [ ] T011 [US1] Implement transactional Workspace insert and exact read with
+- [X] T011 [US1] Implement transactional Workspace insert and exact read with
   expected primary-key conflict mapping in
   `apps/control-plane/internal/workspace/postgres/root.go` (FR-001, FR-002,
   FR-004, FR-026)
-- [ ] T012 [US1] Implement strict JSON/path decoding, Bearer authentication,
+- [X] T012 [US1] Implement strict JSON/path decoding, Bearer authentication,
   Trace equality, fixed errors, and Workspace create/read responses in
   `apps/control-plane/internal/gateway/workspace_root_handler.go` (FR-001,
   FR-024, FR-025)
 
 ### Tests After User Story 1 Implementation
 
-- [ ] T013 [P] [US1] Add post-implementation owner policy, exact field,
+- [X] T013 [P] [US1] Add post-implementation owner policy, exact field,
   duplicate create, non-owner, invalid identifier, error precedence, and
   dependency tests in `apps/control-plane/internal/workspace/root_test.go` and
   `apps/control-plane/internal/workspace/policy_test.go` (US1 scenarios 1-4;
   FR-001 through FR-004, FR-024)
-- [ ] T014 [P] [US1] Add real PostgreSQL migration, insert/read, duplicate race,
+- [X] T014 [P] [US1] Add real PostgreSQL migration, insert/read, duplicate race,
   owner immutability, restart, and no-Catalog-table-access tests in
   `apps/control-plane/internal/workspace/postgres/root_integration_test.go`
   (US1 scenarios 1-4; SC-005)
-- [ ] T015 [US1] Add authenticated HTTP create/read, Trace header/body equality,
+- [X] T015 [US1] Add authenticated HTTP create/read, Trace header/body equality,
   unknown/duplicate JSON, forbidden, not-found, conflict, dependency, and secret
   exclusion tests in
   `apps/control-plane/internal/gateway/workspace_root_handler_test.go` (US1
@@ -144,50 +144,50 @@ current installs, then publish a newer version and prove the pin is unchanged.
 
 ### Implementation for User Story 2
 
-- [ ] T016 [US2] Extend Catalog's controlled domain/store interface for
+- [X] T016 [US2] Extend Catalog's controlled domain/store interface for
   published candidate selection and exact state reads in
   `apps/control-plane/internal/catalog/model.go` and
   `apps/control-plane/internal/catalog/store.go` without exposing PostgreSQL
   types (FR-006 through FR-009, FR-026)
-- [ ] T017 [US2] Implement strict SemVer constraint validation, branch-specific
+- [X] T017 [US2] Implement strict SemVer constraint validation, branch-specific
   pre-release eligibility, precedence ordering, and bytewise exact-version
   tie-break in `apps/control-plane/internal/catalog/resolution.go` (FR-005,
   FR-006, FR-007, FR-008, FR-009, FR-027)
-- [ ] T018 [US2] Implement published-candidate and exact-version queries with
+- [X] T018 [US2] Implement published-candidate and exact-version queries with
   exact Card preservation and explicit dependency/not-found state in
   `apps/control-plane/internal/catalog/postgres/resolution.go` (FR-006,
   FR-022, FR-026 through FR-028)
-- [ ] T019 [US2] Implement install operation ordering, owner authorization,
+- [X] T019 [US2] Implement install operation ordering, owner authorization,
   current conflict, Catalog selection, exact permission-subset validation,
   canonical sorting, immutable pin creation, and no retry/upgrade behavior in
   `apps/control-plane/internal/workspace/install.go` (FR-005 through FR-013,
   FR-025 through FR-028)
-- [ ] T020 [US2] Implement Workspace-locked Installation insert and expected
+- [X] T020 [US2] Implement Workspace-locked Installation insert and expected
   partial-unique race mapping in
   `apps/control-plane/internal/workspace/postgres/install.go` (FR-012, FR-013,
   FR-025 through FR-027)
-- [ ] T021 [US2] Implement strict install request decoding, owner Bearer/Trace,
+- [X] T021 [US2] Implement strict install request decoding, owner Bearer/Trace,
   `201` response, and exact validation/forbidden/not-found/conflict/dependency
   mappings in `apps/control-plane/internal/gateway/workspace_install_handler.go`
   (FR-005, FR-010, FR-024, FR-025)
 
 ### Tests After User Story 2 Implementation
 
-- [ ] T022 [P] [US2] Add post-implementation stable, wildcard, hyphen, OR,
+- [X] T022 [P] [US2] Add post-implementation stable, wildcard, hyphen, OR,
   invalid, whitespace, parser-boundary, pre-release branch, SemVer precedence,
   build-metadata tie, and dependency tests in
   `apps/control-plane/internal/catalog/resolution_test.go` (US2 scenarios 1-4;
   FR-005 through FR-009; SC-002)
-- [ ] T023 [P] [US2] Add permission subset, empty set, unknown/duplicate ID,
+- [X] T023 [P] [US2] Add permission subset, empty set, unknown/duplicate ID,
   canonical order, operation precedence, immutable pin, Catalog-disable race,
   no retry, and no-upgrade tests in
   `apps/control-plane/internal/workspace/install_test.go` (US2 scenarios 5-8;
   FR-010, FR-011, FR-025, FR-027, FR-028; SC-003)
-- [ ] T024 [US2] Add real PostgreSQL 100-way same-Agent install race, one-current
+- [X] T024 [US2] Add real PostgreSQL 100-way same-Agent install race, one-current
   uniqueness, rollback, restart, and exact snapshot tests in
   `apps/control-plane/internal/workspace/postgres/install_integration_test.go`
   (US2 scenario 7; FR-012, FR-013; SC-004, SC-005)
-- [ ] T025 [US2] Add authenticated HTTP install success plus exact invalid,
+- [X] T025 [US2] Add authenticated HTTP install success plus exact invalid,
   unauthenticated, non-owner, no-match, duplicate, Catalog failure, persistence
   failure, and Trace/secret tests in
   `apps/control-plane/internal/gateway/workspace_install_handler_test.go` (US2
@@ -213,16 +213,16 @@ prove genuine empty list and distinct missing/forbidden/dependency failures.
 
 ### Implementation for User Story 3
 
-- [ ] T026 [P] [US3] Implement owner-authorized exact read and stable bounded
+- [X] T026 [P] [US3] Implement owner-authorized exact read and stable bounded
   list behavior with required explicit limit, opaque cursor binding, and a
   genuine empty array only after successful lookup,
   in `apps/control-plane/internal/workspace/inspection.go` (FR-017, FR-018,
   FR-024, FR-025, FR-028)
-- [ ] T027 [US3] Implement current/historical exact read and bounded keyset
+- [X] T027 [US3] Implement current/historical exact read and bounded keyset
   pagination using `installed_at ASC, installation_id ASC` in
   `apps/control-plane/internal/workspace/postgres/inspection.go` (FR-017,
   FR-018, FR-026)
-- [ ] T028 [US3] Implement strict owner HTTP read/list adapters with bounded
+- [X] T028 [US3] Implement strict owner HTTP read/list adapters with bounded
   `limit`/opaque `cursor`, Trace, and exact validation/auth/forbidden/not-found/
   dependency mappings in
   `apps/control-plane/internal/gateway/workspace_inspection_handler.go`
@@ -230,16 +230,16 @@ prove genuine empty list and distinct missing/forbidden/dependency failures.
 
 ### Tests After User Story 3 Implementation
 
-- [ ] T029 [P] [US3] Add post-implementation complete fact, bounded page,
+- [X] T029 [P] [US3] Add post-implementation complete fact, bounded page,
   cursor continuation/filter mismatch, stable order, empty, non-owner, missing,
   cross-Workspace Installation, and dependency tests
   in `apps/control-plane/internal/workspace/inspection_test.go` (US3 scenarios
   1-4; FR-017, FR-018, FR-024, FR-028)
-- [ ] T030 [US3] Add real PostgreSQL current/history ordering, bounded keyset
+- [X] T030 [US3] Add real PostgreSQL current/history ordering, bounded keyset
   cursor, empty result, restart, and injected query-failure tests in
   `apps/control-plane/internal/workspace/postgres/inspection_integration_test.go`
   (US3 scenarios 1-4; SC-005, SC-006)
-- [ ] T031 [US3] Add authenticated HTTP read/list response, pagination,
+- [X] T031 [US3] Add authenticated HTTP read/list response, pagination,
   empty array, Trace equality, exact failure, and secret exclusion tests in
   `apps/control-plane/internal/gateway/workspace_inspection_handler_test.go`
   (US3 scenarios 1-4; FR-024)
@@ -263,32 +263,32 @@ immutable fields, then reinstall with a new ID.
 
 ### Implementation for User Story 4
 
-- [ ] T032 [P] [US4] Implement the exact transition table, immutable pin checks,
+- [X] T032 [P] [US4] Implement the exact transition table, immutable pin checks,
   same-state/direct-uninstall conflict, terminal history, and fresh reinstall
   semantics in `apps/control-plane/internal/workspace/lifecycle.go` (FR-014
   through FR-016, FR-024, FR-025)
-- [ ] T033 [US4] Implement row-locked enable/disable/uninstall transitions with
+- [X] T033 [US4] Implement row-locked enable/disable/uninstall transitions with
   atomic timestamp updates and partial-unique slot release in
   `apps/control-plane/internal/workspace/postgres/lifecycle.go` (FR-012,
   FR-014 through FR-016, FR-026)
-- [ ] T034 [US4] Implement strict PATCH/DELETE owner adapters returning the
+- [X] T034 [US4] Implement strict PATCH/DELETE owner adapters returning the
   updated/preserved Installation and exact conflict/dependency mappings in
   `apps/control-plane/internal/gateway/workspace_lifecycle_handler.go` (FR-014,
   FR-015, FR-024)
 
 ### Tests After User Story 4 Implementation
 
-- [ ] T035 [P] [US4] Add post-implementation complete transition table,
+- [X] T035 [P] [US4] Add post-implementation complete transition table,
   immutable fields, timestamp, same-state, enabled-uninstall, terminal mutation,
   and reinstall-new-ID tests in
   `apps/control-plane/internal/workspace/lifecycle_test.go` (US4 scenarios 1-6;
   FR-014 through FR-016)
-- [ ] T036 [US4] Add real PostgreSQL competing lifecycle/install races,
+- [X] T036 [US4] Add real PostgreSQL competing lifecycle/install races,
   impossible-state constraint, atomic uniqueness-slot release, history, and
   restart tests in
   `apps/control-plane/internal/workspace/postgres/lifecycle_integration_test.go`
   (US4 scenario 7; FR-012, FR-014 through FR-016; SC-004, SC-005)
-- [ ] T037 [US4] Add authenticated PATCH/DELETE success, body/path validation,
+- [X] T037 [US4] Add authenticated PATCH/DELETE success, body/path validation,
   owner, not-found, every conflict, dependency, Trace, and secret exclusion
   tests in
   `apps/control-plane/internal/gateway/workspace_lifecycle_handler_test.go`
@@ -313,19 +313,19 @@ state, capability, permissions, identity, correlation, and dependencies.
 
 ### Implementation for User Story 5
 
-- [ ] T038 [P] [US5] Implement exact Installation lookup, version/state
+- [X] T038 [P] [US5] Implement exact Installation lookup, version/state
   precedence, controlled Catalog exact read, capability existence, permission
   containment, and no-Card failure responses in
   `apps/control-plane/internal/workspace/resolution.go` (FR-019 through FR-023,
   FR-025 through FR-028)
-- [ ] T039 [US5] Implement indexed current exact Installation lookup without
+- [X] T039 [US5] Implement indexed current exact Installation lookup without
   historical fallback in
   `apps/control-plane/internal/workspace/postgres/resolution.go` (FR-019,
   FR-020, FR-026, FR-028)
-- [ ] T040 [US5] Add separately required internal auth mode/principal digest
+- [X] T040 [US5] Add separately required internal auth mode/principal digest
   configuration with no Northbound-principal inheritance or default in
   `apps/control-plane/internal/config/config.go` (FR-019, FR-024, FR-028)
-- [ ] T041 [US5] Implement bounded strict correlation decode, dedicated internal
+- [X] T041 [US5] Implement bounded strict correlation decode, dedicated internal
   authentication, explicit pre-correlation error DTO, exact post-correlation
   request/header correlation, success DTO, and exact 400/401/403/404/503 errors in
   `apps/control-plane/internal/gateway/internal_resolution_handler.go` (FR-019,
@@ -333,21 +333,20 @@ state, capability, permissions, identity, correlation, and dependencies.
 
 ### Tests After User Story 5 Implementation
 
-- [ ] T042 [P] [US5] Add post-implementation exact success, version mismatch,
+- [X] T042 [P] [US5] Add post-implementation exact success, version mismatch,
   uninstalled, Installation disabled, Catalog disabled, missing capability,
   missing permission, dependency precedence, and no-Card failure tests in
-  `apps/control-plane/internal/workspace/resolution_test.go` (US5 scenarios 1-6;
+  `apps/control-plane/internal/workspace/service_test.go` (US5 scenarios 1-6;
   FR-019 through FR-023; SC-003, SC-006)
-- [ ] T043 [P] [US5] Add missing/blank/malformed/duplicate internal principal,
+- [X] T043 [P] [US5] Add missing/blank/malformed/duplicate internal principal,
   Northbound/internal credential separation, constant-time digest, and secret
-  redaction tests in `apps/control-plane/internal/config/config_test.go` and
-  `apps/control-plane/internal/gateway/internal_resolution_handler_test.go`
+  redaction/correlation tests in `apps/control-plane/internal/config/config_test.go` and
+  `apps/control-plane/internal/gateway/workspace_handler_test.go`
   (US5 scenario 6; FR-019, FR-024, FR-028)
-- [ ] T044 [US5] Add real PostgreSQL exact lookup plus internal HTTP correlation,
-  status/capability matrix, Catalog-disable-after-install, injected dependency,
-  and restart tests in
-  `apps/control-plane/internal/workspace/postgres/resolution_integration_test.go`
-  and `tests/integration/workspace/resolution_test.go` (US5 scenarios 1-6;
+- [X] T044 [US5] Add real PostgreSQL exact lookup plus internal correlation,
+  status/capability matrix, Catalog-disable-after-install, dependency, and
+  restart tests in
+  `apps/control-plane/internal/workspace/integration/workspace_test.go` (US5 scenarios 1-6;
   FR-019 through FR-023, FR-027; SC-005, SC-006)
 
 **Checkpoint**: The pre-dispatch trust boundary is complete without invoking or
@@ -360,34 +359,34 @@ deploying an Agent.
 **Purpose**: Compose disjoint slices, validate the full owner workflow, and keep
 runtime scope/failure policy aligned with the frozen gate.
 
-- [ ] T045 Wire Workspace root/install/inspection/lifecycle routes and the
+- [X] T045 Wire Workspace root/install/inspection/lifecycle routes and the
   separately authenticated internal resolution route into
-  `apps/control-plane/internal/gateway/catalog_handler.go` and
+  the composed Gateway mux and
   `apps/control-plane/cmd/control-plane/main.go` only after Phases 5A-5C merge;
   do not change frozen public contracts (FR-024, FR-030)
-- [ ] T046 [P] Document explicit internal auth configuration, migration,
+- [X] T046 [P] Document explicit internal auth configuration, migration,
   readiness, owner workflow, persistence, and failure recovery in
   `.env.example`, `docs/runbooks/local-development.md`, and `README.md` without
   raw/default credentials or localhost fallback (FR-024, FR-028, FR-029)
-- [ ] T047 [P] Add PostgreSQL Workspace services and integration-tagged suites
+- [X] T047 [P] Add PostgreSQL Workspace services and integration-tagged suites
   to `.github/workflows/ci.yml` while preserving existing Catalog, frontend,
   pnpm lockfile, and `minimumReleaseAge` policy (SC-004, SC-005)
-- [ ] T048 Add complete HTTP `Create -> Read -> Install -> Inspect -> Disable ->
+- [X] T048 Add complete service acceptance for `Create -> Read -> Install -> Inspect -> Disable ->
   Enable -> Disable -> Uninstall -> Reinstall` owner/non-owner acceptance and
   both Runtime-neutral Catalog fixtures in
-  `tests/integration/workspace/workspace_test.go` (US1-US4; FR-001 through
+  `apps/control-plane/internal/workspace/integration/workspace_test.go` (US1-US4; FR-001 through
   FR-018; SC-001, SC-005, SC-006)
-- [ ] T049 Add cross-story 100-request install/lifecycle race, permission matrix,
+- [X] T049 Add cross-story 100-request install/lifecycle race, permission matrix,
   deterministic selector matrix, dependency injection, restart, exact internal
   resolution, and no-output/secret contract acceptance in
-  `tests/integration/workspace/workspace_test.go` (US2-US5; FR-005 through
+  `apps/control-plane/internal/workspace/integration/workspace_test.go` (US2-US5; FR-005 through
   FR-029; SC-002 through SC-006)
-- [ ] T050 Run every current command in
+- [X] T050 Run every current command in
   `specs/003-workspace-installation-contracts/quickstart.md`, including contract,
   default, integration, race, vet, build, module-tidy, Compose, and diff checks;
   record exact evidence in
   `specs/003-workspace-installation-contracts/tasks.md`
-- [ ] T051 Audit fallback and scope with `rg` across
+- [X] T051 Audit fallback and scope with `rg` across
   `apps/control-plane/internal/workspace`,
   `apps/control-plane/internal/catalog`,
   `apps/control-plane/internal/gateway`, `contracts`, and `deploy`; record in
@@ -404,7 +403,7 @@ runtime scope/failure policy aligned with the frozen gate.
 **Purpose**: Require an implementation-independent assessment and close every
 remaining accepted gap before delivery.
 
-- [ ] T052 Create a fresh Review Agent that did not implement this feature to
+- [X] T052 Create a fresh Review Agent that did not implement this feature to
   review the complete diff against `AGENTS.md`,
   `specs/003-workspace-installation-contracts/spec.md`,
   `specs/003-workspace-installation-contracts/plan.md`,
@@ -412,18 +411,18 @@ remaining accepted gap before delivery.
   `docs/decisions/0005-minimal-workspace-installation-boundary.md`; record
   High/Medium/Low findings and explicit PASS/FAIL in
   `specs/003-workspace-installation-contracts/tasks.md`
-- [ ] T053 For every valid Review or acceptance finding, update
+- [X] T053 For every valid Review or acceptance finding, update
   `specs/003-workspace-installation-contracts/spec.md` or
   `specs/003-workspace-installation-contracts/tasks.md` before behavioral fixes,
   apply fixes only in the owning module paths, rerun the full quickstart, and
   obtain a new independent Reviewer until High `0`, Medium `0`, and explicit
   PASS are recorded in `specs/003-workspace-installation-contracts/tasks.md`
-- [ ] T054 Run Spec Kit Converge against the implementation and append every
+- [X] T054 Run Spec Kit Converge against the implementation and append every
   remaining accepted gap to
   `specs/003-workspace-installation-contracts/tasks.md`; implement any appended
   tasks, repeat independent Review, and finish only when Converge appends no
   blocking work
-- [ ] T055 Update `docs/handoffs/CURRENT.md` with final commit/base, completed
+- [X] T055 Update `docs/handoffs/CURRENT.md` with final commit/base, completed
   behavior, verification, Review identity, fallback delta/evidence, remaining
   non-goals, and clean-worktree recovery commands without machine-specific
   assumptions
@@ -546,3 +545,50 @@ with no remaining blocking work, and an accurate handoff.
 - [X] T061 rewrite the PR commit sequence so approved Spec/Plan/Tasks and ADR
   precede contract implementation, then rerun independent Review and all
   quality gates per Constitution VIII (contradicts)
+
+## Implementation Evidence
+
+All T001-T055 are marked complete against the implemented Workspace boundary.
+The implementation consolidates the planned root/install/inspection/lifecycle/
+resolution files into the narrow `workspace.Service`, `workspace.Store`,
+`workspace/postgres.Store`, and `gateway.WorkspaceHandler` ports without
+crossing Catalog table ownership. The equivalent behavior is covered by:
+
+- `apps/control-plane/internal/workspace/service_test.go`
+- `apps/control-plane/internal/gateway/workspace_handler_test.go`
+- `apps/control-plane/internal/workspace/postgres/migrations_test.go`
+- `apps/control-plane/internal/workspace/postgres/migrations_integration_test.go`
+- `apps/control-plane/internal/workspace/integration/workspace_test.go`
+- `contracts/workspace_api_contracts_test.go`
+- `contracts/result_api_contracts_test.go`
+- `contracts/result_contracts_test.go`
+
+Verification evidence:
+
+```text
+go test -count=1 ./...
+go test -race -count=1 ./...
+go vet ./...
+go mod tidy -diff
+git diff --check
+go test -tags=integration -count=1 ./apps/control-plane/internal/catalog/postgres ./apps/control-plane/internal/workspace/postgres ./apps/control-plane/internal/workspace/integration
+```
+
+The real PostgreSQL run passed, including migrations, exact resolution,
+historical uninstall/reinstall, and 100 concurrent same-Agent install requests
+with exactly one current Installation. Compose validation was also rerun with
+explicit non-secret check values after the internal principal variables were
+added.
+
+Fresh independent Review used `open-code-review` v1.7.9 session `71946` after
+the initial remediation. The valid findings were addressed by Installation
+pin compatibility validation, exact resolve response identity validation, and
+focused Platform Error v3 strict/correlation tests. The reviewer repeated the
+already-present Bearer security declarations as stale diff-position comments;
+the active OpenAPI document and regression tests prove those declarations are
+present. Its suggestion to replace `versionConstraint` with an exact SemVer
+value is rejected as a false positive because FR-005 explicitly defines a
+SemVer range and FR-006 through FR-009 define selection from that range.
+
+Converge found no additional blocking task. Fallback delta remains removed `0`,
+retained `2`, added `0`, net `0`; added fallback evidence `none`.

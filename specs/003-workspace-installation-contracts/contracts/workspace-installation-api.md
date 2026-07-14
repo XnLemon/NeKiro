@@ -232,7 +232,13 @@ Request remains:
 }
 ```
 
-Success returns exact Agent Card 0.2 plus:
+Success returns the exact Agent Card 0.2 and Installation authorization facts.
+Card and Installation identities are cross-checked: Card and Installation
+`agentId` equal the request `agentId`, Card `version` and Installation
+`installedVersion` equal the request `version`, and Installation `workspaceId`
+equals the request `workspaceId`.
+
+The response contains:
 
 ```json
 {
