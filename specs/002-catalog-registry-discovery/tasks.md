@@ -366,8 +366,10 @@ and require a fresh independent Review before convergence.
   branch without force onto that remote base, rerun the full quickstart, and
   record the exact base in `specs/002-catalog-registry-discovery/tasks.md`
   - Evidence: fetched and pruned `origin`, resolved `origin/HEAD` to
-    `origin/main` at `3bcb844`, and rebased without force; the branch was already
-    current with that base. Post-rebase verification is recorded with T041.
+    `origin/main` at `0d24f2b`, and rebased without force. The rebase had one
+    `.github/workflows/ci.yml` conflict; it was resolved by preserving the
+    latest split Go/frontend/Compose jobs and adding the Catalog PostgreSQL,
+    readiness, and HTTP integration steps. Post-rebase verification passed.
 - [ ] T044 Create a fresh independent Review Agent for the complete rebased
   Spec 002 diff; fix every High or Medium finding through the original
   implementation Agent, update Spec/Tasks before behavioral fixes, and use a new
@@ -587,6 +589,10 @@ and require a fresh independent Review before convergence.
 - [ ] T073 [Review-R7] Rerun the affected migration and complete verification
   matrix, report fallback delta, and create a fresh non-OCR independent Reviewer
   for the finalized digest canonicalization evidence.
+  - Evidence so far: readiness integration, PostgreSQL/HTTP acceptance, full
+    pinned Linux race, default tests, vet, tidy/diff, pnpm, Compose rendering,
+    and pinned Docker build passed after the rebase. The final Review Agent has
+    not yet returned a report, so this task remains incomplete.
 
 ---
 
