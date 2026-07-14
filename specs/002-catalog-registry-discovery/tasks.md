@@ -450,7 +450,7 @@ and require a fresh independent Review before convergence.
     tidy-diff, formatting, and diff checks pass.
   - Review round 2 remediation fallback delta: removed `0`, retained `3`, added
     `0`, net `0`. Added fallback evidence: none.
-- [ ] T055 [Review-R2] Run default, real PostgreSQL integration, split race,
+- [x] T055 [Review-R2] Run default, real PostgreSQL integration, split race,
   vet, build, Compose, migration, tidy-diff, and diff verification; report
   fallback delta and create a fresh non-OCR independent Reviewer
 
@@ -485,7 +485,7 @@ and require a fresh independent Review before convergence.
     diff checks pass.
   - Review round 3 remediation fallback delta: removed `0`, retained `3`, added
     `0`, net `0`. Added fallback evidence: none.
-- [ ] T060 [Review-R3] Run the complete verification matrix, report fallback
+- [x] T060 [Review-R3] Run the complete verification matrix, report fallback
   delta, and create another fresh non-OCR independent Reviewer
 
 ### Review Round 4 Remediation
@@ -507,23 +507,37 @@ and require a fresh independent Review before convergence.
     tidy-diff, formatting, and diff checks pass.
   - Review round 4 remediation fallback delta: removed `0`, retained `3`, added
     `0`, net `0`. Added fallback evidence: none.
-- [ ] T063 [Review-R4] Run the complete verification matrix, report fallback
+- [x] T063 [Review-R4] Run the complete verification matrix, report fallback
   delta, and create another fresh non-OCR independent Reviewer
 
 ### Review Round 5 Remediation
 
-- [ ] T064 [Review-R5] Implement a bounded-memory lexical validator for the
+- [x] T064 [Review-R5] Implement a bounded-memory lexical validator for the
   active unbounded `maxInputBytes` and `maxOutputBytes` fields that enforces JSON
   number syntax, mathematical integrality, and minimum `1` for arbitrary-length
   exponents without numeric materialization in `contracts/validate.go`
-- [ ] T065 [Review-R5] After exact unbounded-field validation, substitute a
+- [x] T065 [Review-R5] After exact unbounded-field validation, substitute a
   validation-only `1` in a copied Agent Card before invoking the pinned JSON
   Schema engine, preserving all other structural and semantic validation while
   leaving the decoded/persisted Card unchanged in `contracts/validate.go`
-- [ ] T066 [Review-R5] Add contract and real PostgreSQL/HTTP acceptance for
+- [x] T066 [Review-R5] Add contract and real PostgreSQL/HTTP acceptance for
   `1e1000001` round-trip plus zero, negative, fractional, huge-negative-exponent,
   malformed programmatic `json.Number`, and integral exponent forms in
   `contracts/contracts_test.go` and `tests/integration/catalog/catalog_test.go`
+  - Evidence T064-T066: the two active unbounded fields use a linear lexical
+    syntax/integrality/minimum validator with bounded auxiliary memory; only a
+    copied validation value receives the Schema-safe sentinel. Contract tests
+    cover integral decimal/exponent equivalents, arbitrary exponent digits,
+    zero, negative, fractional, malformed, and huge-negative cases without
+    mutating originals. Fresh PostgreSQL/HTTP acceptance proves `1e1000001`
+    survives registration, text storage, publication, Discovery, restart, and
+    exact read. Contract/default tests, affected-package race, vet, tidy-diff,
+    formatting, and diff checks pass.
+  - The assigned implementation Agent ended with an external provider 403 after
+    writing the complete patch. The primary Agent reviewed, verified, and
+    committed it as `7899239`; no generated or uncommitted work remains.
+  - Review round 5 remediation fallback delta: removed `0`, retained `3`, added
+    `0`, net `0`. Added fallback evidence: none.
 - [ ] T067 [Review-R5] Run the complete verification matrix, report fallback
   delta, and create another fresh non-OCR independent Reviewer
 
