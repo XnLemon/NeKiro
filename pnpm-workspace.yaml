@@ -4,5 +4,5 @@ packages:
   - "agents/*"
   - "tests/*"
 
-onlyBuiltDependencies:
-  - esbuild
+allowBuilds:
+  esbuild: true
