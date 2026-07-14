@@ -27,3 +27,6 @@ Thumbs.db
 .agents/*
 !.agents/skills/
 !.agents/skills/**
+
+# Linked worktrees
+.worktrees/
