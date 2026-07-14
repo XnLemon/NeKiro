@@ -3,7 +3,7 @@
 <!-- SPECKIT START -->
 For additional context about technologies to be used, project structure,
 shell commands, and other important information, read the current plan
-at specs/002-catalog-registry-discovery/plan.md
+at specs/003-workspace-installation-contracts/plan.md
 <!-- SPECKIT END -->
 
 本文件是整个仓库的长期项目宪章，适用于所有目录、模块和参与者。它记录稳定的产品目标、领域语言、架构边界和交付标准，不替代具体需求、API 文档或 ADR。
@@ -176,9 +176,9 @@ agent-platform/
 - PostgreSQL 是第一阶段的持久化数据库，逻辑模块即使共用数据库实例也必须保持数据所有权边界。
 - Node.js 只用于前端构建、契约生成和必要的工程工具，不得用于实现 Control Plane、A2A Router 或其他后端核心服务。
 
-当前仓库已将跨边界契约事实来源迁移为语言无关的 JSON Schema、OpenAPI 和 A2A Profile。当前活动契约集为 Agent Card `0.2`、Northbound API `v2`、Control Plane Internal API `v1`、Router Internal API `v2`、Invocation Event `0.2`、Platform Error `v2`、Invocation Result / Result Stream Event `v1`，以及 A2A Profile Schema `0.2` / protocol `0.3.0`；历史 `v1` / `0.1` 工件仅作为迁移证据保留，不提供运行时双读 fallback。
+当前仓库已将跨边界契约事实来源迁移为语言无关的 JSON Schema、OpenAPI 和 A2A Profile。当前活动契约集为 Agent Card `0.2`、Workspace `1`、Installation `2`、Northbound API `v3`、Control Plane Internal API `v2`、Router Internal API `v2`、Invocation Event `0.2`、Platform Error `v2`（Catalog/Invocation）与 `v3`（Workspace/Installation/内部解析）、Invocation Result / Result Stream Event `v1`，以及 A2A Profile Schema `0.2` / protocol `0.3.0`；历史工件仅作为迁移证据保留，不提供运行时双读 fallback。
 
-当前仓库已完成 Spec 002 的 Control Plane Catalog slice：Catalog 已提供持久化的 Agent Card 注册、版本读取、发布、禁用和 Discovery，并通过 PostgreSQL/HTTP 验收与独立 Review。Frontend 开发保持暂停；Control Plane 中的 Workspace Installation、Invocation Dispatch，以及 A2A Router、SDK、Sample Agents 和完整 E2E 闭环尚未实现，不得因 Catalog slice 已完成而宣称这些后续能力存在。下一项 Phase 1 功能入口是 Workspace Installation。
+当前仓库已完成 Spec 002 的 Control Plane Catalog slice：Catalog 已提供持久化的 Agent Card 注册、版本读取、发布、禁用和 Discovery，并通过 PostgreSQL/HTTP 验收与独立 Review。Spec 003 已完成 Minimal Workspace 与 Installation 的契约门禁，但对应运行时尚未实现。Frontend 开发保持暂停；Control Plane 中的 Workspace Installation runtime、Invocation Dispatch，以及 A2A Router、SDK、Sample Agents 和完整 E2E 闭环尚未实现，不得因契约已就绪而宣称这些后续能力存在。
 
 Go 的 HTTP Router、数据库访问、A2A SDK 和代码生成工具应通过独立 ADR 选择。可以评估 `trpc-agent-go` 及成熟 A2A Go 实现，但完整 Agent Framework 不得成为 Control Plane 或 A2A Router 的核心依赖。外部 Framework 只能作为 Agent Runtime、示例实现或隔离的协议适配器，不能取代本项目的 Control Plane / Data Plane 架构边界。
 

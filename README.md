@@ -28,12 +28,12 @@ different Runtime implementations. See
 ## Current status
 
 The repository has an active language-neutral contract set and its tested Go
-mappings: Agent Card `0.2`, Northbound API `v2`, Control Plane
-Internal API `v1`, Router Internal API `v2`, Invocation Event `0.2`, Platform
-Error `v2`, Invocation Result and Result Stream Event `v1`, and A2A Profile
-Schema `0.2` for protocol `0.3.0`. Historical `v1` and `0.1` artifacts remain
-readable migration evidence; the runtime does not add speculative dual-read
-behavior for them.
+mappings: Agent Card `0.2`, Workspace `v1`, Installation `v2`, Northbound API
+`v3`, Control Plane Internal API `v2`, Router Internal API `v2`, Invocation
+Event `0.2`, Platform Error `v2` / `v3`, Invocation Result and Result Stream Event
+`v1`, and A2A Profile Schema `0.2` for protocol `0.3.0`. Historical `v1` and
+`0.1` artifacts remain readable migration evidence; the runtime does not add
+speculative dual-read behavior for them.
 
 The first runnable Control Plane Catalog slice now implements durable,
 authenticated `Register -> Publish -> Discover -> Disable` behavior with
@@ -41,11 +41,13 @@ PostgreSQL, immutable Agent Card versions, exact reads, stable cursor
 pagination, readiness, fixed errors, container wiring, and real
 HTTP/PostgreSQL acceptance. The cross-Runtime fixtures prove metadata
 portability only; no Agent endpoint is invoked. The Catalog slice is complete
-under Spec 002; the next Phase 1 feature is Workspace Installation.
+under Spec 002. Spec 003 completes the Minimal Workspace and Installation
+contract gate, including exact version, permission, lifecycle, ownership, and
+internal resolution semantics, before runtime implementation.
 
-Frontend work remains paused. Workspace Installation, Invocation Dispatch, the
-A2A Router, Ledger, SDKs, live sample Agents, and the complete end-to-end loop
-remain unimplemented.
+Frontend work remains paused. Workspace Installation runtime, Invocation
+Dispatch, the A2A Router, Ledger, SDKs, live sample Agents, and the complete
+end-to-end loop remain unimplemented.
 
 The first-stage architecture keeps these boundaries:
 

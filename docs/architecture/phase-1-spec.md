@@ -55,8 +55,9 @@ Console -> Control Plane -> A2A Router -> Agents
 Cross-language contracts are owned by language-neutral artifacts:
 
 - `contracts/schemas/` contains versioned JSON Schema documents.
-- `contracts/openapi/control-plane.v2.yaml` defines the active Northbound API.
-- `contracts/openapi/control-plane-internal.v1.yaml` defines Router-to-Control Plane exact Agent resolution.
+- `contracts/openapi/control-plane.v3.yaml` defines the active Northbound API;
+  `control-plane.v2.yaml` remains unchanged migration evidence.
+- `contracts/openapi/control-plane-internal.v2.yaml` defines Router-to-Control Plane exact Agent resolution.
 - `contracts/openapi/router-internal.v2.yaml` defines Control Plane-to-Router dispatch, result transport, Ledger reads, and trace reads.
 - `contracts/a2a-profile/v0.3.0/profile.v0.2.json` pins the active supported A2A subset and context headers.
 - `contracts/*.go` maps these contracts into Go and verifies the mapping against the source schemas.
@@ -67,40 +68,46 @@ Historical v1 files remain unchanged as migration evidence. The first backend
 runtime implements only the active versions and does not introduce speculative
 dual-version behavior.
 
-## Northbound API v2
+## Northbound API v3
 
 | Method | Path | Purpose |
 | --- | --- | --- |
-| `POST` | `/v2/agents` | Register a draft Agent Card v0.2 version |
-| `POST` | `/v2/agents/:agentId/versions/:version/publish` | Publish an immutable version |
-| `POST` | `/v2/agents/:agentId/versions/:version/disable` | Disable a version for new resolutions |
-| `GET` | `/v2/agents` | Discover published agents by query/capability/owner |
-| `GET` | `/v2/agents/:agentId/versions/:version` | Read an exact Agent Card version |
-| `POST` | `/v2/workspaces/:workspaceId/installations` | Install and accept declared permissions |
-| `PATCH` | `/v2/workspaces/:workspaceId/installations/:installationId` | Enable or disable an installation |
-| `DELETE` | `/v2/workspaces/:workspaceId/installations/:installationId` | Uninstall an agent |
-| `POST` | `/v2/workspaces/:workspaceId/invocations` | Authorize, dispatch, and return a transient JSON or SSE result |
-| `GET` | `/v2/invocations/:invocationId` | Read one invocation and metadata-only Ledger events |
-| `GET` | `/v2/traces/:traceId` | Read metadata-only parent/child invocation lineage |
+| `POST` | `/v3/agents` | Register a draft Agent Card v0.2 version |
+| `POST` | `/v3/agents/:agentId/versions/:version/publish` | Publish an immutable version |
+| `POST` | `/v3/agents/:agentId/versions/:version/disable` | Disable a version for new resolutions |
+| `GET` | `/v3/agents` | Discover published agents by query/capability/owner |
+| `GET` | `/v3/agents/:agentId/versions/:version` | Read an exact Agent Card version |
+| `POST` | `/v3/workspaces` | Create a minimal owner-controlled Workspace |
+| `GET` | `/v3/workspaces/:workspaceId` | Read an owned Workspace |
+| `POST` | `/v3/workspaces/:workspaceId/installations` | Install and accept declared permissions |
+| `GET` | `/v3/workspaces/:workspaceId/installations` | List current and historical Installations |
+| `GET` | `/v3/workspaces/:workspaceId/installations/:installationId` | Read one exact Installation |
+| `PATCH` | `/v3/workspaces/:workspaceId/installations/:installationId` | Enable or disable an installation |
+| `DELETE` | `/v3/workspaces/:workspaceId/installations/:installationId` | Uninstall and return preserved history |
+| `POST` | `/v3/workspaces/:workspaceId/invocations` | Authorize, dispatch, and return a transient JSON or SSE result |
+| `GET` | `/v3/invocations/:invocationId` | Read one invocation and metadata-only Ledger events |
+| `GET` | `/v3/traces/:traceId` | Read metadata-only parent/child invocation lineage |
 
-The Gateway returns Platform Error v2 for known failures. Public messages are
+The Gateway returns Platform Error v2 for Catalog/Invocation failures and
+Platform Error v3 for Workspace/Installation failures. Public messages are
 fixed by error code and cannot contain internal dependency errors, credentials,
-request payloads, or Agent output. Trace correlation is required; Invocation
-and root Task correlation are present together after Invocation creation.
-Dependency failure must never be represented as not found, an empty list, or
-success.
+request payloads, or Agent output. `INSTALLATION_DISABLED` identifies Workspace
+authorization state while `AGENT_DISABLED` identifies Catalog version state.
+Trace correlation is required; Invocation and root Task correlation are present
+together after Invocation creation. Dependency failure must never be
+represented as not found, an empty list, or success.
 
 ## Directional Internal APIs
 
 | Method | Path | Owner | Purpose |
 | --- | --- | --- | --- |
-| `POST` | `/internal/v1/resolve-agent` | Control Plane | Resolve an authorized installed exact Agent Card v0.2 and capability |
+| `POST` | `/internal/v2/resolve-agent` | Control Plane | Resolve an authorized installed exact Agent Card v0.2 and capability |
 | `POST` | `/internal/v2/invocations` | Router | Execute an authorized invocation and return a transient JSON or SSE result |
 | `GET` | `/internal/v2/invocations/:id` | Router | Read metadata-only Router-owned Ledger facts |
 | `GET` | `/internal/v2/invocations/:id/events` | Router | Stream metadata-only `RouterEventEnvelope` values over SSE |
 | `GET` | `/internal/v2/traces/:traceId` | Router | Read metadata-only invocation lineage |
 
-Control Plane Internal v1 is served by the Control Plane and called by the
+Control Plane Internal v2 is served by the Control Plane and called by the
 Router. Router Internal v2 is served by the Router and called by the Control
 Plane. Their server destinations are distinct and explicitly configured. The
 Router resolves cards through the internal Control Plane API and must not query
@@ -108,7 +115,7 @@ Registry or Workspace tables directly.
 
 ## Invocation Result Delivery
 
-`POST /v2/workspaces/:workspaceId/invocations` is the only Northbound result
+`POST /v3/workspaces/:workspaceId/invocations` is the only Northbound result
 channel. `stream=false` returns one `application/json` Invocation Result v1.
 `stream=true` returns ordered `text/event-stream` Invocation Result Stream
 Event v1 values on the same response. The request mode and `Accept` header must

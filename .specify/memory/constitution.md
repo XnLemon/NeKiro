@@ -13,7 +13,7 @@ Sync Impact Report
   constitution-template.md no change required; commands directory not present
 - Runtime guidance: AGENTS.md, README.md, and
   docs/architecture/phase-1-spec.md updated; docs/handoffs/CURRENT.md updated
-- Active plan: specs/001-complete-invocation-contracts/plan.md re-checked and
+- Active plan: specs/003-workspace-installation-contracts/plan.md re-checked and
   updated
 - Deferred items: none
 -->

@@ -62,7 +62,7 @@ Internal operations are split by service owner and destination:
 
 | Contract | Served by | Called by | Operations |
 | --- | --- | --- | --- |
-| `control-plane-internal.v1.yaml` | Control Plane | A2A Router | Exact authorized Agent resolution |
+| `control-plane-internal.v2.yaml` | Control Plane | A2A Router | Exact authorized Agent resolution with pre/post-correlation errors |
 | `router-internal.v2.yaml` | A2A Router | Control Plane | Dispatch/result delivery, Ledger event reads, trace reads |
 
 The Router resolves through the Control Plane contract and never reads Registry
@@ -72,8 +72,8 @@ contract defines a localhost fallback.
 
 ### Version and failure semantics
 
-Northbound v2, Router Internal v2, Invocation Event v0.2, Platform Error v2,
-and Invocation Result v1 are active contracts. Historical Northbound v1,
+Northbound v3, Router Internal v2, Invocation Event v0.2, Platform Error v2/v3,
+and Invocation Result v1 are active contracts. Historical Northbound v1/v2,
 Router Internal v1, and Invocation Event v0.1 files remain unchanged as
 migration evidence.
 

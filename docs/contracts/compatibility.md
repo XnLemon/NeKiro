@@ -16,11 +16,13 @@ consumers and must not redefine their semantics.
 | Contract | Historical | Active target | Compatibility impact |
 | --- | --- | --- | --- |
 | Agent Card Schema | `0.1` | `0.2` | Breaking: portable semantic rejection rules narrow accepted Cards |
-| Northbound API | `v1` | `v2` | Breaking: invocation changes from `202` acceptance to direct result delivery |
-| Control Plane Internal API | none | `v1` | New directional owner contract |
+| Workspace Schema | none | `v1` | New minimal authorization-root fact |
+| Installation Schema | `v1` | `v2` | Breaking: canonical semantic invariants are frozen |
+| Northbound API | `v1` / `v2` | `v3` | Breaking: v3 completes authenticated Workspace/Installation semantics and body-bearing uninstall |
+| Control Plane Internal API | `v1` | `v2` | Breaking: explicit pre-correlation failures and exact error set |
 | Router Internal API | `v1` | `v2` | Breaking: dispatch returns JSON/SSE results and no longer owns resolution |
 | Invocation Event Schema | `0.1` | `0.2` | Breaking: terminal status and error-code combinations are stricter |
-| Platform Error | `v1` | `v2` | Breaking: trace correlation is required and `NOT_ACCEPTABLE` is added |
+| Platform Error | `v1` | `v2` / `v3` | v2 remains active for Catalog/Invocation; v3 adds Workspace `INSTALLATION_DISABLED` |
 | Invocation Result | none | `v1` | New transient JSON and SSE result contracts |
 | A2A Profile Schema | `0.1` | `0.2` | Breaking profile metadata and conformance requirements |
 | A2A protocol | `0.3.0` | `0.3.0` | Unchanged wire protocol |
@@ -54,6 +56,56 @@ No existing deployed Catalog runtime or generated client consumes the earlier
 underspecified form, so a new API version or compatibility window is not
 required. Northbound v1 and Agent Card 0.1 remain byte-unchanged historical
 evidence and receive no runtime route, decoder, auto-upgrade, or fallback.
+
+## Workspace And Installation Contract Gate
+
+Spec 003 completes the previously partial Workspace/Installation foundations
+before their first runtime implementation:
+
+- Workspace v1 adds the exact four-field logical authorization root:
+  `workspaceId`, immutable trusted `ownerId`, `createdAt`, and `updatedAt`.
+- Installation v2 keeps the submitted constraint, exact installed version,
+  accepted permission snapshot, state, and timestamps; it additionally freezes
+  canonical permission order and timestamp relationships. `uninstalledAt` is
+  required only for terminal uninstalled history.
+- Northbound v2 remains byte-unchanged migration evidence. Northbound v3
+  completes Workspace create/read and Installation create/read/list/lifecycle
+  with Bearer security, Trace headers, Installation v2 responses, and
+  operation-specific fixed errors.
+- Northbound v3 uninstall returns `200` with the preserved terminal
+  Installation v2 fact. Historical v2 retains its original `204` behavior.
+- Installation list inspection in v3 requires an explicit bounded `limit`
+  (range 1-100), stable keyset order, and an opaque continuation cursor.
+- Control Plane Internal v2 requires a separately trusted service Bearer
+  identity, distinguishes missing Installation, Installation disabled, Catalog
+  version disabled, capability denial, and dependency failure, and defines a
+  pre-correlation error shape for malformed/missing IDs.
+- Platform Error v3 adds `INSTALLATION_DISABLED` with fixed message
+  `The Agent installation is disabled.` `AGENT_DISABLED` retains its Catalog
+  Agent-version meaning; existing Platform Error v2 remains unchanged.
+- The previous `common.v1` `semverRange` length tightening is removed; SemVer
+  parser validation remains the sole active range constraint.
+
+Northbound v2 and Installation v1 remain byte-unchanged historical evidence. Installation v1's structural
+shape did not freeze the v2 semantic invariants, so first Workspace consumers
+must adopt Installation v2. Control Plane Internal v1 remains historical and
+must not be dual-read; first Router consumers use v2. Platform Error v2 remains
+the active Catalog/Invocation contract in Northbound v3, while first Workspace and
+internal-resolution consumers use v3. No deployed Workspace or Router
+resolution runtime exists, so these version increments need no compatibility
+runtime window. First runtime consumers implement v3 only; migration impact is
+explicit in the active contract guide.
+
+Historical Northbound v1/v2, Agent Card 0.1, Router Internal v1, and all other
+historical artifacts remain unchanged migration evidence.
+
+## Northbound v3 Migration
+
+- Replace `/v2` Northbound paths with their `/v3` equivalents.
+- Supply an explicit Installation list `limit` from 1 through 100; omission is
+  a validation error and has no default.
+- Consume uninstall as `200 application/json` with an Installation v2 body.
+- Do not run v2 and v3 as a fallback pair. v2 remains contract history only.
 
 ## Compatible Changes
 
@@ -94,7 +146,7 @@ compatibility runtime is justified.
 - Do not poll Ledger APIs for result content. Results are not persisted,
   replayed, or recoverable after disconnect; obtaining output requires a new
   Invocation.
-- Route exact Agent resolution to Control Plane Internal v1. Route dispatch and
+- Route exact Agent resolution to Control Plane Internal v2. Route dispatch and
   Ledger/trace reads to Router Internal v2.
 
 ## Failure And Data Semantics
