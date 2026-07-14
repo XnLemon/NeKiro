@@ -1639,70 +1639,6 @@ func validateResponseEnvelope(data, requestData []byte) (wireEnvelope, error) {
 	return envelope, nil
 }
 
-func validateOperationResult(operation string, result, requestData []byte) error {
-	var typedKind struct {
-		Kind string `json:"kind"`
-	}
-	if err := json.Unmarshal(result, &typedKind); err != nil {
-		return fmt.Errorf("decode result kind: %w", err)
-	}
-
-	switch operation {
-	case "message/send":
-		if typedKind.Kind != "message" && typedKind.Kind != "task" {
-			return fmt.Errorf("message/send result kind = %q", typedKind.Kind)
-		}
-		event, err := a2a.UnmarshalEventJSON(result)
-		if err != nil {
-			return err
-		}
-		switch typed := event.(type) {
-		case *a2a.Message:
-			err = ValidateA2AMessageResult(typed)
-		case *a2a.Task:
-			task := typed
-			_, err = ValidateA2ATask(task)
-		}
-		return err
-	case "tasks/get", "tasks/cancel":
-		if typedKind.Kind != "task" {
-			return fmt.Errorf("%s result kind = %q", operation, typedKind.Kind)
-		}
-		var task a2a.Task
-		if err := json.Unmarshal(result, &task); err != nil {
-			return fmt.Errorf("decode task result: %w", err)
-		}
-		mapping, err := ValidateA2ATask(&task)
-		if err != nil {
-			return err
-		}
-		request, err := decodeWireEnvelope(requestData)
-		if err != nil {
-			return err
-		}
-		if operation == "tasks/get" {
-			var params a2a.TaskQueryParams
-			if err := json.Unmarshal(request.Params, &params); err != nil {
-				return err
-			}
-			if task.ID != params.ID || params.HistoryLength == nil || len(task.History) != *params.HistoryLength {
-				return errors.New("tasks/get result does not preserve task id and requested history length")
-			}
-			return nil
-		}
-		var params a2a.TaskIDParams
-		if err := json.Unmarshal(request.Params, &params); err != nil {
-			return err
-		}
-		if task.ID != params.ID || mapping.State != a2a.TaskStateCanceled {
-			return errors.New("tasks/cancel result is not the same task in canceled state")
-		}
-		return nil
-	default:
-		return fmt.Errorf("operation %q has no result profile", operation)
-	}
-}
-
 func validateExpectedWireError(data json.RawMessage, expected A2AProtocolErrorV02) error {
 	var rpcError wireError
 	if err := json.Unmarshal(data, &rpcError); err != nil {
@@ -2269,22 +2205,4 @@ func callA2AServerFixture(t *testing.T, serverURL, fixture, accept string) ([]by
 		mediaType = mediaType[:separator]
 	}
 	return body, mediaType
-}
-
-func assertJSONRPCErrorCode(t *testing.T, data []byte, want int) {
-	t.Helper()
-	envelope, err := decodeWireEnvelope(data)
-	if err != nil {
-		t.Fatalf("decode JSON-RPC error response: %v", err)
-	}
-	if len(envelope.Result) > 0 || len(envelope.Error) == 0 {
-		t.Fatalf("JSON-RPC error response has result=%s error=%s", envelope.Result, envelope.Error)
-	}
-	var rpcError wireError
-	if err := json.Unmarshal(envelope.Error, &rpcError); err != nil {
-		t.Fatalf("decode JSON-RPC error: %v", err)
-	}
-	if rpcError.Code != want {
-		t.Fatalf("JSON-RPC error code = %d, want %d", rpcError.Code, want)
-	}
 }

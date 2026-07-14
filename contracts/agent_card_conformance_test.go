@@ -40,7 +40,7 @@ func TestAgentCardConformance(t *testing.T) {
 		t.Run(testCase.ID, func(t *testing.T) {
 			caseIDs[testCase.ID] = struct{}{}
 			fixturePath := filepath.Join(filepath.Dir(manifestPath), testCase.File)
-			card, structuralErr, actualRuleIDs := evaluateAgentCardFixture(t, schema, fixturePath)
+			card, actualRuleIDs, structuralErr := evaluateAgentCardFixture(t, schema, fixturePath)
 			if structuralErr != nil && len(testCase.ViolatedRules) > 0 {
 				t.Fatalf("semantic fixture failed structural validation: %v", structuralErr)
 			}
@@ -48,7 +48,7 @@ func TestAgentCardConformance(t *testing.T) {
 			crossVersionReferenceProven := false
 			for _, contextFile := range testCase.ContextFiles {
 				contextPath := filepath.Join(filepath.Dir(manifestPath), contextFile)
-				contextCard, contextStructuralErr, contextRuleIDs := evaluateAgentCardFixture(t, schema, contextPath)
+				contextCard, contextRuleIDs, contextStructuralErr := evaluateAgentCardFixture(t, schema, contextPath)
 				if contextStructuralErr != nil {
 					t.Fatalf("context fixture %q failed structural validation: %v", contextFile, contextStructuralErr)
 				}
@@ -224,7 +224,7 @@ func TestAgentCardConformanceManifestRejectsUnsafeFixturePaths(t *testing.T) {
 func TestAgentCardEndpointRejectsURIUserinfoForms(t *testing.T) {
 	schema := compileAgentCardV02Schema(t)
 	fixturePath := filepath.Join("agent-card", "v0.2", "conformance", "valid-baseline.json")
-	card, structuralErr, ruleIDs := evaluateAgentCardFixture(t, schema, fixturePath)
+	card, ruleIDs, structuralErr := evaluateAgentCardFixture(t, schema, fixturePath)
 	if structuralErr != nil || len(ruleIDs) > 0 {
 		t.Fatalf("baseline fixture is not conformant: structural error %v, rules %v", structuralErr, ruleIDs)
 	}
@@ -326,7 +326,7 @@ func loadAgentCardConformanceManifest(t *testing.T, path string) AgentCardConfor
 	return manifest
 }
 
-func evaluateAgentCardFixture(t *testing.T, schema *jsonschema.Schema, path string) (AgentCard, error, []AgentCardSemanticRuleID) {
+func evaluateAgentCardFixture(t *testing.T, schema *jsonschema.Schema, path string) (AgentCard, []AgentCardSemanticRuleID, error) {
 	t.Helper()
 	fixture := readConformanceFixture(t, path)
 	document, err := jsonschema.UnmarshalJSON(bytes.NewReader(fixture))
@@ -334,7 +334,7 @@ func evaluateAgentCardFixture(t *testing.T, schema *jsonschema.Schema, path stri
 		t.Fatalf("decode raw fixture %q: %v", path, err)
 	}
 	if err := schema.Validate(document); err != nil {
-		return AgentCard{}, err, nil
+		return AgentCard{}, nil, err
 	}
 
 	var card AgentCard
@@ -346,7 +346,7 @@ func evaluateAgentCardFixture(t *testing.T, schema *jsonschema.Schema, path stri
 	if err := requireJSONEOF(decoder); err != nil {
 		t.Fatalf("decode structurally valid fixture %q into Go mapping: %v", path, err)
 	}
-	return card, nil, uniqueSemanticRuleIDs(EvaluateAgentCardSemantics(card))
+	return card, uniqueSemanticRuleIDs(EvaluateAgentCardSemantics(card)), nil
 }
 
 func contextDeclaresMissingPermission(primary AgentCard, context AgentCard) bool {

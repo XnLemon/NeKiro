@@ -502,7 +502,7 @@ func (v *ResultContractValidator) ValidateResolveAgentErrorCorrelation(
 		return err
 	}
 	if platformError.InvocationID != request.InvocationID || platformError.RootTaskID != request.RootTaskID || platformError.TraceID != request.TraceID {
-		return errors.New("Resolve Agent error correlation changed")
+		return errors.New("resolve agent error correlation changed")
 	}
 	return nil
 }
@@ -716,10 +716,10 @@ func loadInvocationConformanceManifest() (invocationConformanceManifest, error) 
 		fixturePath := path.Join("invocation/v1/conformance", manifestCase.File)
 		info, err := fs.Stat(invocationContractFiles, fixturePath)
 		if err != nil {
-			return invocationConformanceManifest{}, fmt.Errorf("Invocation conformance case %q fixture: %w", manifestCase.ID, err)
+			return invocationConformanceManifest{}, fmt.Errorf("invocation conformance case %q fixture: %w", manifestCase.ID, err)
 		}
 		if !info.Mode().IsRegular() {
-			return invocationConformanceManifest{}, fmt.Errorf("Invocation conformance case %q fixture is not a regular file", manifestCase.ID)
+			return invocationConformanceManifest{}, fmt.Errorf("invocation conformance case %q fixture is not a regular file", manifestCase.ID)
 		}
 	}
 	return manifest, nil
@@ -739,10 +739,10 @@ func decodeInvocationConformanceManifest(data []byte) (invocationConformanceMani
 		return invocationConformanceManifest{}, fmt.Errorf("decode Invocation conformance manifest: %w", err)
 	}
 	if document.SchemaVersion == nil || *document.SchemaVersion != invocationConformanceSchemaVersion {
-		return invocationConformanceManifest{}, fmt.Errorf("Invocation conformance manifest requires schemaVersion %q", invocationConformanceSchemaVersion)
+		return invocationConformanceManifest{}, fmt.Errorf("invocation conformance manifest requires schemaVersion %q", invocationConformanceSchemaVersion)
 	}
 	if document.Cases == nil || len(*document.Cases) == 0 {
-		return invocationConformanceManifest{}, errors.New("Invocation conformance manifest requires non-empty cases")
+		return invocationConformanceManifest{}, errors.New("invocation conformance manifest requires non-empty cases")
 	}
 
 	manifest := invocationConformanceManifest{
@@ -757,10 +757,10 @@ func decodeInvocationConformanceManifest(data []byte) (invocationConformanceMani
 			return invocationConformanceManifest{}, err
 		}
 		if _, exists := caseIDs[manifestCase.ID]; exists {
-			return invocationConformanceManifest{}, fmt.Errorf("Invocation conformance manifest repeats case id %q", manifestCase.ID)
+			return invocationConformanceManifest{}, fmt.Errorf("invocation conformance manifest repeats case id %q", manifestCase.ID)
 		}
 		if _, exists := fixtureFiles[manifestCase.File]; exists {
-			return invocationConformanceManifest{}, fmt.Errorf("Invocation conformance manifest repeats fixture file %q", manifestCase.File)
+			return invocationConformanceManifest{}, fmt.Errorf("invocation conformance manifest repeats fixture file %q", manifestCase.File)
 		}
 		caseIDs[manifestCase.ID] = struct{}{}
 		fixtureFiles[manifestCase.File] = struct{}{}
@@ -771,25 +771,25 @@ func decodeInvocationConformanceManifest(data []byte) (invocationConformanceMani
 
 func decodeInvocationConformanceCase(index int, wireCase invocationConformanceCaseJSON) (invocationConformanceCase, error) {
 	if wireCase.ID == nil || *wireCase.ID == "" {
-		return invocationConformanceCase{}, fmt.Errorf("Invocation conformance case %d requires a non-empty id", index)
+		return invocationConformanceCase{}, fmt.Errorf("invocation conformance case %d requires a non-empty id", index)
 	}
 	if !safeIdentifierPattern.MatchString(*wireCase.ID) {
-		return invocationConformanceCase{}, fmt.Errorf("Invocation conformance case %d has invalid id", index)
+		return invocationConformanceCase{}, fmt.Errorf("invocation conformance case %d has invalid id", index)
 	}
 	if wireCase.ContractKind == nil || !isInvocationContractKind(*wireCase.ContractKind) {
-		return invocationConformanceCase{}, fmt.Errorf("Invocation conformance case %q has invalid contractKind", *wireCase.ID)
+		return invocationConformanceCase{}, fmt.Errorf("invocation conformance case %q has invalid contractKind", *wireCase.ID)
 	}
 	if wireCase.File == nil {
-		return invocationConformanceCase{}, fmt.Errorf("Invocation conformance case %q is missing file", *wireCase.ID)
+		return invocationConformanceCase{}, fmt.Errorf("invocation conformance case %q is missing file", *wireCase.ID)
 	}
 	if err := validateInvocationConformanceFixturePath(*wireCase.File); err != nil {
-		return invocationConformanceCase{}, fmt.Errorf("Invocation conformance case %q file: %w", *wireCase.ID, err)
+		return invocationConformanceCase{}, fmt.Errorf("invocation conformance case %q file: %w", *wireCase.ID, err)
 	}
 	if wireCase.ExpectedValid == nil {
-		return invocationConformanceCase{}, fmt.Errorf("Invocation conformance case %q is missing expectedValid", *wireCase.ID)
+		return invocationConformanceCase{}, fmt.Errorf("invocation conformance case %q is missing expectedValid", *wireCase.ID)
 	}
 	if wireCase.ViolatedRules == nil {
-		return invocationConformanceCase{}, fmt.Errorf("Invocation conformance case %q is missing violatedRules", *wireCase.ID)
+		return invocationConformanceCase{}, fmt.Errorf("invocation conformance case %q is missing violatedRules", *wireCase.ID)
 	}
 	if *wireCase.ExpectedValid && len(*wireCase.ViolatedRules) != 0 {
 		return invocationConformanceCase{}, fmt.Errorf("valid Invocation conformance case %q declares violated rules", *wireCase.ID)
@@ -799,7 +799,7 @@ func decodeInvocationConformanceCase(index int, wireCase invocationConformanceCa
 	}
 	for _, ruleID := range *wireCase.ViolatedRules {
 		if ruleID != InvocationRuleCorrelationMatches {
-			return invocationConformanceCase{}, fmt.Errorf("Invocation conformance case %q declares unknown rule %q", *wireCase.ID, ruleID)
+			return invocationConformanceCase{}, fmt.Errorf("invocation conformance case %q declares unknown rule %q", *wireCase.ID, ruleID)
 		}
 	}
 	return invocationConformanceCase{

@@ -161,11 +161,11 @@ func TestActiveOpenAPIToGoMappings(t *testing.T) {
 	validateOpenAPIValue(t, dispatchOperation.Responses.Status(200).Value.Content["application/json"].Schema, result)
 	validateOpenAPIValue(t, router.Components.Schemas["RouterEventEnvelope"], RouterEventEnvelope{Event: event})
 
-	var _ PlatformError = PlatformErrorV2{}
-	var _ InvocationEvent = InvocationEventV02{}
-	var _ RouterEventEnvelope = RouterEventEnvelopeV02{}
-	var _ A2AProfile = A2AProfileV02{}
-	var _ ResolveAgentRequest = ResolveAgentRequestV1{}
+	var _ PlatformError = PlatformErrorV2{}              //nolint:staticcheck // Preserve the explicit interface assertion.
+	var _ InvocationEvent = InvocationEventV02{}         //nolint:staticcheck // Preserve the explicit interface assertion.
+	var _ RouterEventEnvelope = RouterEventEnvelopeV02{} //nolint:staticcheck // Preserve the explicit interface assertion.
+	var _ A2AProfile = A2AProfileV02{}                   //nolint:staticcheck // Preserve the explicit interface assertion.
+	var _ ResolveAgentRequest = ResolveAgentRequestV1{}  //nolint:staticcheck // Preserve the explicit interface assertion.
 }
 
 func TestActiveContractCorporaAreDiscoverable(t *testing.T) {

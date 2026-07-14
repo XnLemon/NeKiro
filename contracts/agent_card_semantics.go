@@ -59,10 +59,10 @@ func DecodeAgentCardConformanceManifest(data []byte) (AgentCardConformanceManife
 		return AgentCardConformanceManifest{}, fmt.Errorf("decode Agent Card conformance manifest: %w", err)
 	}
 	if document.Cases == nil {
-		return AgentCardConformanceManifest{}, fmt.Errorf("Agent Card conformance manifest is missing cases")
+		return AgentCardConformanceManifest{}, fmt.Errorf("agent card conformance manifest is missing cases")
 	}
 	if len(*document.Cases) == 0 {
-		return AgentCardConformanceManifest{}, fmt.Errorf("Agent Card conformance manifest cases must not be empty")
+		return AgentCardConformanceManifest{}, fmt.Errorf("agent card conformance manifest cases must not be empty")
 	}
 
 	manifest := AgentCardConformanceManifest{
@@ -75,7 +75,7 @@ func DecodeAgentCardConformanceManifest(data []byte) (AgentCardConformanceManife
 			return AgentCardConformanceManifest{}, err
 		}
 		if _, exists := caseIDs[manifestCase.ID]; exists {
-			return AgentCardConformanceManifest{}, fmt.Errorf("Agent Card conformance manifest contains duplicate case id %q", manifestCase.ID)
+			return AgentCardConformanceManifest{}, fmt.Errorf("agent card conformance manifest contains duplicate case id %q", manifestCase.ID)
 		}
 		caseIDs[manifestCase.ID] = struct{}{}
 		manifest.Cases = append(manifest.Cases, manifestCase)
@@ -85,28 +85,28 @@ func DecodeAgentCardConformanceManifest(data []byte) (AgentCardConformanceManife
 
 func decodeAgentCardConformanceCase(index int, wireCase agentCardConformanceCaseJSON) (AgentCardConformanceCase, error) {
 	if wireCase.ID == nil {
-		return AgentCardConformanceCase{}, fmt.Errorf("Agent Card conformance case %d is missing id", index)
+		return AgentCardConformanceCase{}, fmt.Errorf("agent card conformance case %d is missing id", index)
 	}
 	if *wireCase.ID == "" {
-		return AgentCardConformanceCase{}, fmt.Errorf("Agent Card conformance case %d id must not be empty", index)
+		return AgentCardConformanceCase{}, fmt.Errorf("agent card conformance case %d id must not be empty", index)
 	}
 	if wireCase.File == nil {
-		return AgentCardConformanceCase{}, fmt.Errorf("Agent Card conformance case %q is missing file", *wireCase.ID)
+		return AgentCardConformanceCase{}, fmt.Errorf("agent card conformance case %q is missing file", *wireCase.ID)
 	}
 	if *wireCase.File == "" {
-		return AgentCardConformanceCase{}, fmt.Errorf("Agent Card conformance case %q file must not be empty", *wireCase.ID)
+		return AgentCardConformanceCase{}, fmt.Errorf("agent card conformance case %q file must not be empty", *wireCase.ID)
 	}
 	if err := validateAgentCardConformanceFixturePath(*wireCase.File); err != nil {
-		return AgentCardConformanceCase{}, fmt.Errorf("Agent Card conformance case %q file: %w", *wireCase.ID, err)
+		return AgentCardConformanceCase{}, fmt.Errorf("agent card conformance case %q file: %w", *wireCase.ID, err)
 	}
 	if wireCase.Valid == nil {
-		return AgentCardConformanceCase{}, fmt.Errorf("Agent Card conformance case %q is missing valid", *wireCase.ID)
+		return AgentCardConformanceCase{}, fmt.Errorf("agent card conformance case %q is missing valid", *wireCase.ID)
 	}
 	if wireCase.ViolatedRules == nil {
-		return AgentCardConformanceCase{}, fmt.Errorf("Agent Card conformance case %q is missing violatedRules", *wireCase.ID)
+		return AgentCardConformanceCase{}, fmt.Errorf("agent card conformance case %q is missing violatedRules", *wireCase.ID)
 	}
 	if wireCase.ContextFiles == nil {
-		return AgentCardConformanceCase{}, fmt.Errorf("Agent Card conformance case %q is missing contextFiles", *wireCase.ID)
+		return AgentCardConformanceCase{}, fmt.Errorf("agent card conformance case %q is missing contextFiles", *wireCase.ID)
 	}
 	if *wireCase.Valid && len(*wireCase.ViolatedRules) > 0 {
 		return AgentCardConformanceCase{}, fmt.Errorf("valid Agent Card conformance case %q must not declare violated rules", *wireCase.ID)
@@ -115,10 +115,10 @@ func decodeAgentCardConformanceCase(index int, wireCase agentCardConformanceCase
 	ruleIDs := make(map[AgentCardSemanticRuleID]struct{}, len(*wireCase.ViolatedRules))
 	for _, ruleID := range *wireCase.ViolatedRules {
 		if !isAgentCardSemanticRuleID(ruleID) {
-			return AgentCardConformanceCase{}, fmt.Errorf("Agent Card conformance case %q contains unknown semantic rule id %q", *wireCase.ID, ruleID)
+			return AgentCardConformanceCase{}, fmt.Errorf("agent card conformance case %q contains unknown semantic rule id %q", *wireCase.ID, ruleID)
 		}
 		if _, exists := ruleIDs[ruleID]; exists {
-			return AgentCardConformanceCase{}, fmt.Errorf("Agent Card conformance case %q repeats semantic rule id %q", *wireCase.ID, ruleID)
+			return AgentCardConformanceCase{}, fmt.Errorf("agent card conformance case %q repeats semantic rule id %q", *wireCase.ID, ruleID)
 		}
 		ruleIDs[ruleID] = struct{}{}
 	}
@@ -126,13 +126,13 @@ func decodeAgentCardConformanceCase(index int, wireCase agentCardConformanceCase
 	contextFiles := make(map[string]struct{}, len(*wireCase.ContextFiles))
 	for _, contextFile := range *wireCase.ContextFiles {
 		if err := validateAgentCardConformanceFixturePath(contextFile); err != nil {
-			return AgentCardConformanceCase{}, fmt.Errorf("Agent Card conformance case %q context file: %w", *wireCase.ID, err)
+			return AgentCardConformanceCase{}, fmt.Errorf("agent card conformance case %q context file: %w", *wireCase.ID, err)
 		}
 		if contextFile == *wireCase.File {
-			return AgentCardConformanceCase{}, fmt.Errorf("Agent Card conformance case %q uses its primary fixture as context", *wireCase.ID)
+			return AgentCardConformanceCase{}, fmt.Errorf("agent card conformance case %q uses its primary fixture as context", *wireCase.ID)
 		}
 		if _, exists := contextFiles[contextFile]; exists {
-			return AgentCardConformanceCase{}, fmt.Errorf("Agent Card conformance case %q repeats context file %q", *wireCase.ID, contextFile)
+			return AgentCardConformanceCase{}, fmt.Errorf("agent card conformance case %q repeats context file %q", *wireCase.ID, contextFile)
 		}
 		contextFiles[contextFile] = struct{}{}
 	}
