@@ -10,8 +10,8 @@ Installation.
 - Repository: <https://github.com/XnLemon/NeKiro.git>
 - Branch: `codex/002-catalog-registry-discovery`
 - Base last verified: `origin/main` at `0d24f2b`
-- Latest implementation line before this closure: `6793440`
-  (`docs(catalog): record latest rebase verification`)
+- Latest implementation/closure line: `f5e6bbb`
+  (`fix(catalog): preserve historical migration digests`)
 - Local Git identity: `Nene7ko_ <1604009816@qq.com>`
 - Expected worktree after the closure commit: clean
 - Frontend remains paused.
@@ -74,9 +74,8 @@ storage, Marketplace, and the remainder of the Phase 1 loop.
 
 ## Review History
 
-The overall T044 Review gate is **PASS**: the final fresh Reviewer
-`019f5ec1-d8f0-7302-a7c1-34eebd6e9c4b` returned `High 0`, `Medium 0`, `Low 1`.
-The Low was stale T073/T074 bookkeeping and is resolved in the closure update.
+The overall T044 Review gate is **PASS**: the post-fix closure Reviewer
+`019f5ef0-8189-7ef1-b677-3f1ef2bd29bf` returned `High 0`, `Medium 0`, `Low 0`.
 
 1. Round 1 found four Medium issues: body bounds, machine-range Card limits,
    Publication Clock readiness, and concurrency coverage. Fixed.
@@ -93,6 +92,8 @@ The Low was stale T073/T074 bookkeeping and is resolved in the closure update.
 6. The final review found no High or Medium issues. Migration tests now cover
    `1e3` and `1.0`, proving PostgreSQL normalization does not rewrite the
    historical digest identity.
+7. The post-fix closure review independently rechecked `f5e6bbb` and returned
+   `PASS` with `High 0`, `Medium 0`, `Low 0`.
 
 Future Review uses a fresh child Agent and a primary-authored boundary prompt.
 Do not use OCR/open-code-review. Test success does not replace Review PASS.
@@ -160,8 +161,8 @@ genuine empty Discovery, and idempotent disablement.
    database named `catalog_test`.
 3. Pinned Linux Go 1.26.4 `go test -race -count=1 ./...` passed. Windows race
    was not runnable because this host has no cgo compiler.
-4. Fresh independent Reviewer `019f5ec1-d8f0-7302-a7c1-34eebd6e9c4b` returned
-   `PASS`, `High 0`, `Medium 0`, `Low 1`; fallback delta is removed `0`,
+4. Fresh post-fix Reviewer `019f5ef0-8189-7ef1-b677-3f1ef2bd29bf` returned
+   `PASS`, `High 0`, `Medium 0`, `Low 0`; fallback delta is removed `0`,
    retained `3`, added `0`, net `0`.
 5. Spec Kit convergence found no remaining implementation gaps and appended no
    tasks. Do not begin Workspace Installation in this branch until the user
