@@ -97,10 +97,52 @@ func Migrate(ctx context.Context, conn *pgx.Conn, direction string) error {
 
 func CheckSchema(ctx context.Context, db RowQuerier) error {
 	var version int32
-	var workspacePresent, installationPresent, currentIndexPresent, orderIndexPresent bool
+	var workspacePresent, workspaceColumnsPresent, workspaceConstraintsPresent, installationPresent, currentIndexPresent, orderIndexPresent bool
 	if err := db.QueryRow(ctx, `
 SELECT version,
        to_regclass('workspace.workspaces') IS NOT NULL,
+       (
+           SELECT COUNT(*) = 4
+           FROM information_schema.columns
+           WHERE table_schema = 'workspace'
+             AND table_name = 'workspaces'
+             AND (
+                 column_name IN ('workspace_id', 'owner_id')
+                 AND data_type = 'character varying'
+                 AND character_maximum_length = 128
+                 AND collation_name = 'C'
+                 AND is_nullable = 'NO'
+                 OR column_name IN ('created_at', 'updated_at')
+                 AND data_type = 'timestamp with time zone'
+                 AND datetime_precision = 6
+                 AND is_nullable = 'NO'
+             )
+       )
+       AND (
+           SELECT COUNT(*) = 4
+           FROM information_schema.columns
+           WHERE table_schema = 'workspace'
+             AND table_name = 'workspaces'
+       ),
+       (
+           SELECT COUNT(*) = 4
+           FROM pg_constraint
+           WHERE conrelid = to_regclass('workspace.workspaces')
+             AND (
+                 conname = 'workspaces_id_format'
+                 AND contype = 'c'
+                 AND pg_get_constraintdef(oid) = 'CHECK (((workspace_id)::text ~ ''^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$''::text))'
+                 OR conname = 'workspaces_owner_format'
+                 AND contype = 'c'
+                 AND pg_get_constraintdef(oid) = 'CHECK (((owner_id)::text ~ ''^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$''::text))'
+                 OR conname = 'workspaces_timestamp_order'
+                 AND contype = 'c'
+                 AND pg_get_constraintdef(oid) = 'CHECK ((created_at <= updated_at))'
+                 OR conname = 'workspaces_pkey'
+                 AND contype = 'p'
+                 AND pg_get_constraintdef(oid) = 'PRIMARY KEY (workspace_id)'
+             )
+       ),
        to_regclass('workspace.installations') IS NOT NULL,
        EXISTS (
            SELECT 1
@@ -114,11 +156,11 @@ SELECT version,
        ),
        to_regclass('workspace.installations_workspace_order_idx') IS NOT NULL
 FROM workspace.schema_version`).Scan(
-		&version, &workspacePresent, &installationPresent, &currentIndexPresent, &orderIndexPresent,
+		&version, &workspacePresent, &workspaceColumnsPresent, &workspaceConstraintsPresent, &installationPresent, &currentIndexPresent, &orderIndexPresent,
 	); err != nil {
 		return fmt.Errorf("read workspace schema version: %w", err)
 	}
-	if version != ExpectedSchemaVersion || !workspacePresent || !installationPresent || !currentIndexPresent || !orderIndexPresent {
+	if version != ExpectedSchemaVersion || !workspacePresent || !workspaceColumnsPresent || !workspaceConstraintsPresent || !installationPresent || !currentIndexPresent || !orderIndexPresent {
 		return ErrSchemaVersionMismatch
 	}
 	return nil

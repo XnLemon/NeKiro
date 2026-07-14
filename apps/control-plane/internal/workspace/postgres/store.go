@@ -30,9 +30,12 @@ func (store *Store) CreateWorkspace(ctx context.Context, value contracts.Workspa
 		return contracts.Workspace{}, dependencyError("begin workspace creation", err)
 	}
 	defer rollback(ctx, tx, &returnErr, "workspace creation")
-	if _, err = tx.Exec(ctx, `
+	if err = tx.QueryRow(ctx, `
 INSERT INTO workspace.workspaces (workspace_id, owner_id, created_at, updated_at)
-VALUES ($1, $2, $3, $4)`, value.WorkspaceID, value.OwnerID, value.CreatedAt, value.UpdatedAt); err != nil {
+VALUES ($1, $2, $3, $4)
+RETURNING workspace_id, owner_id, created_at, updated_at`, value.WorkspaceID, value.OwnerID, value.CreatedAt, value.UpdatedAt).Scan(
+		&result.WorkspaceID, &result.OwnerID, &result.CreatedAt, &result.UpdatedAt,
+	); err != nil {
 		if isUniqueViolation(err) {
 			return contracts.Workspace{}, workspace.ErrConflict
 		}
@@ -41,7 +44,7 @@ VALUES ($1, $2, $3, $4)`, value.WorkspaceID, value.OwnerID, value.CreatedAt, val
 	if err = tx.Commit(ctx); err != nil {
 		return contracts.Workspace{}, dependencyError("commit Workspace", err)
 	}
-	return value, nil
+	return result, nil
 }
 
 func (store *Store) GetWorkspace(ctx context.Context, workspaceID string) (contracts.Workspace, error) {

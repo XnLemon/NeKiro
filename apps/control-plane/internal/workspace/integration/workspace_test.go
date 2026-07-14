@@ -113,15 +113,67 @@ func TestConcurrentInstallLeavesOneCurrentInstallation(t *testing.T) {
 	}
 }
 
+func TestWorkspaceCreateReadSurvivesStoreReconstruction(t *testing.T) {
+	ctx := context.Background()
+	catalogService, workspaceService := integrationServices(t, ctx)
+	owner := workspace.AuthenticatedCaller{ID: "owner-a"}
+	created, err := workspaceService.CreateWorkspace(ctx, owner, contracts.CreateWorkspaceRequest{WorkspaceID: "workspace-root"})
+	if err != nil {
+		t.Fatalf("create Workspace: %v", err)
+	}
+	if _, err := workspaceService.CreateWorkspace(ctx, workspace.AuthenticatedCaller{ID: "owner-b"}, contracts.CreateWorkspaceRequest{WorkspaceID: "workspace-root"}); !errors.Is(err, workspace.ErrConflict) {
+		t.Fatalf("duplicate Workspace = %v, want conflict", err)
+	}
+
+	initial, err := workspaceService.GetWorkspace(ctx, owner, "workspace-root")
+	if err != nil || !sameWorkspace(initial, created) {
+		t.Fatalf("initial Workspace read = %#v, %v", initial, err)
+	}
+	if _, err := workspaceService.GetWorkspace(ctx, workspace.AuthenticatedCaller{ID: "owner-b"}, "workspace-root"); !errors.Is(err, workspace.ErrForbidden) {
+		t.Fatalf("non-owner Workspace read = %v, want forbidden", err)
+	}
+	if _, err := workspaceService.GetWorkspace(ctx, owner, "missing-root"); !errors.Is(err, workspace.ErrNotFound) {
+		t.Fatalf("unknown Workspace read = %v, want not found", err)
+	}
+
+	databaseURL := integrationDatabaseURL(t)
+	reconstructedPool, err := pgxpool.New(ctx, databaseURL)
+	if err != nil {
+		t.Fatalf("reopen Workspace database pool: %v", err)
+	}
+	t.Cleanup(reconstructedPool.Close)
+	reconstructedStore, err := workspacepostgres.NewStore(reconstructedPool)
+	if err != nil {
+		t.Fatal(err)
+	}
+	validator, err := contracts.NewValidator()
+	if err != nil {
+		t.Fatal(err)
+	}
+	reconstructedService, err := workspace.NewService(reconstructedStore, catalogService, workspace.OwnerPolicy{}, validator, time.Now, workspace.NewRandomID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	restarted, err := reconstructedService.GetWorkspace(ctx, owner, "workspace-root")
+	if err != nil {
+		t.Fatalf("reconstructed Workspace read: %v", err)
+	}
+	if !sameWorkspace(restarted, created) {
+		t.Fatalf("reconstructed Workspace = %#v, want %#v", restarted, created)
+	}
+
+	failedContext, cancel := context.WithCancel(ctx)
+	cancel()
+	if _, err := reconstructedService.GetWorkspace(failedContext, owner, "workspace-root"); !errors.Is(err, workspace.ErrDependency) {
+		t.Fatalf("canceled Workspace read = %v, want dependency", err)
+	}
+}
+
 func integrationServices(t *testing.T, ctx context.Context) (*catalog.Service, *workspace.Service) {
 	t.Helper()
-	databaseURL := os.Getenv("NEKIRO_TEST_DATABASE_URL")
-	if strings.TrimSpace(databaseURL) == "" {
-		t.Fatal("NEKIRO_TEST_DATABASE_URL is required")
-	}
-	configuration, err := pgx.ParseConfig(databaseURL)
-	if err != nil || !strings.HasSuffix(configuration.Database, "_test") {
-		t.Fatal("integration database must end in _test")
+	databaseURL := integrationDatabaseURL(t)
+	if _, err := pgx.ParseConfig(databaseURL); err != nil {
+		t.Fatal("integration database URL was rejected")
 	}
 	connection, err := pgx.Connect(ctx, databaseURL)
 	if err != nil {
@@ -178,6 +230,24 @@ func integrationServices(t *testing.T, ctx context.Context) (*catalog.Service, *
 		t.Fatal(err)
 	}
 	return catalogService, workspaceService
+}
+
+func integrationDatabaseURL(t *testing.T) string {
+	t.Helper()
+	databaseURL := os.Getenv("NEKIRO_TEST_DATABASE_URL")
+	if strings.TrimSpace(databaseURL) == "" {
+		t.Fatal("NEKIRO_TEST_DATABASE_URL is required")
+	}
+	configuration, err := pgx.ParseConfig(databaseURL)
+	if err != nil || !strings.HasSuffix(configuration.Database, "_test") {
+		t.Fatal("integration database must end in _test")
+	}
+	return databaseURL
+}
+
+func sameWorkspace(left, right contracts.Workspace) bool {
+	return left.WorkspaceID == right.WorkspaceID && left.OwnerID == right.OwnerID &&
+		left.CreatedAt.Equal(right.CreatedAt) && left.UpdatedAt.Equal(right.UpdatedAt)
 }
 
 func integrationCard() contracts.AgentCard {

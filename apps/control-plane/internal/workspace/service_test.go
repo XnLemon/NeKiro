@@ -168,6 +168,66 @@ func (store *selectionStore) Discover(context.Context, catalog.DiscoveryQuery) (
 }
 func (store *selectionStore) Check(context.Context) error { return nil }
 
+type failingWorkspaceStore struct {
+	Store
+	createErr       error
+	getWorkspaceErr error
+}
+
+func (store *failingWorkspaceStore) CreateWorkspace(context.Context, contracts.Workspace) (contracts.Workspace, error) {
+	return contracts.Workspace{}, store.createErr
+}
+
+func (store *failingWorkspaceStore) GetWorkspace(context.Context, string) (contracts.Workspace, error) {
+	return contracts.Workspace{}, store.getWorkspaceErr
+}
+
+func TestWorkspaceRootTrustsOwnerAndPreservesDuplicate(t *testing.T) {
+	store := newMemoryStore()
+	service := newWorkspaceTestService(t, store, &memoryCatalog{})
+	created, err := service.CreateWorkspace(context.Background(), AuthenticatedCaller{ID: "owner-a"}, contracts.CreateWorkspaceRequest{WorkspaceID: "workspace-a"})
+	if err != nil {
+		t.Fatalf("create Workspace: %v", err)
+	}
+	if created.WorkspaceID != "workspace-a" || created.OwnerID != "owner-a" || created.CreatedAt.IsZero() || !created.CreatedAt.Equal(created.UpdatedAt) {
+		t.Fatalf("created Workspace = %#v", created)
+	}
+
+	if _, err := service.CreateWorkspace(context.Background(), AuthenticatedCaller{ID: "owner-b"}, contracts.CreateWorkspaceRequest{WorkspaceID: "workspace-a"}); !errors.Is(err, ErrConflict) {
+		t.Fatalf("duplicate Workspace = %v, want conflict", err)
+	}
+	read, err := service.GetWorkspace(context.Background(), AuthenticatedCaller{ID: "owner-a"}, "workspace-a")
+	if err != nil {
+		t.Fatalf("read Workspace: %v", err)
+	}
+	if read != created {
+		t.Fatalf("duplicate changed Workspace: created=%#v read=%#v", created, read)
+	}
+	if _, err := service.GetWorkspace(context.Background(), AuthenticatedCaller{ID: "owner-b"}, "workspace-a"); !errors.Is(err, ErrForbidden) {
+		t.Fatalf("non-owner read = %v, want forbidden", err)
+	}
+	if _, err := service.GetWorkspace(context.Background(), AuthenticatedCaller{ID: "owner-a"}, "missing-workspace"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("unknown read = %v, want not found", err)
+	}
+	if _, err := service.CreateWorkspace(context.Background(), AuthenticatedCaller{}, contracts.CreateWorkspaceRequest{WorkspaceID: "workspace-b"}); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("missing owner = %v, want invalid", err)
+	}
+}
+
+func TestWorkspaceRootPropagatesPersistenceFailures(t *testing.T) {
+	createFailure := &failingWorkspaceStore{createErr: ErrDependency}
+	createService := newWorkspaceTestService(t, createFailure, &memoryCatalog{})
+	if _, err := createService.CreateWorkspace(context.Background(), AuthenticatedCaller{ID: "owner-a"}, contracts.CreateWorkspaceRequest{WorkspaceID: "workspace-a"}); !errors.Is(err, ErrDependency) {
+		t.Fatalf("create dependency failure = %v, want dependency", err)
+	}
+
+	readFailure := &failingWorkspaceStore{getWorkspaceErr: ErrDependency}
+	readService := newWorkspaceTestService(t, readFailure, &memoryCatalog{})
+	if _, err := readService.GetWorkspace(context.Background(), AuthenticatedCaller{ID: "owner-a"}, "workspace-a"); !errors.Is(err, ErrDependency) {
+		t.Fatalf("read dependency failure = %v, want dependency", err)
+	}
+}
+
 func TestInstallPinsHighestVersionAndCanonicalPermissions(t *testing.T) {
 	card := testWorkspaceCard("agent-a", "1.0.0", []string{"read", "write"}, []string{"read"})
 	cardBuildA := testWorkspaceCard("agent-a", "1.0.1+a", []string{"read", "write"}, []string{"read"})

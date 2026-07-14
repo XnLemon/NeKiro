@@ -29,15 +29,27 @@ func (auth workspaceTestAuthenticator) Authenticate(*http.Request) (catalog.Auth
 }
 
 type workspaceTestService struct {
-	workspace  contracts.Workspace
-	resolveErr error
+	workspace   contracts.Workspace
+	resolveErr  error
+	createErr   error
+	getErr      error
+	createCalls int
+	getCalls    int
 }
 
 func (service *workspaceTestService) CreateWorkspace(_ context.Context, caller workspace.AuthenticatedCaller, request contracts.CreateWorkspaceRequest) (contracts.Workspace, error) {
+	service.createCalls++
+	if service.createErr != nil {
+		return contracts.Workspace{}, service.createErr
+	}
 	service.workspace = contracts.Workspace{WorkspaceID: request.WorkspaceID, OwnerID: caller.ID, CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()}
 	return service.workspace, nil
 }
 func (service *workspaceTestService) GetWorkspace(context.Context, workspace.AuthenticatedCaller, string) (contracts.Workspace, error) {
+	service.getCalls++
+	if service.getErr != nil {
+		return contracts.Workspace{}, service.getErr
+	}
 	return service.workspace, nil
 }
 func (service *workspaceTestService) Install(context.Context, workspace.AuthenticatedCaller, string, contracts.InstallAgentRequest) (contracts.Installation, error) {
@@ -84,6 +96,77 @@ func TestWorkspaceHandlerRequiresBearerAndRequiredListLimit(t *testing.T) {
 	unauthenticated.Routes().ServeHTTP(response, request)
 	if response.Code != http.StatusUnauthorized {
 		t.Fatalf("unauthenticated status = %d", response.Code)
+	}
+}
+
+func TestWorkspaceHandlerMapsWorkspaceCreateReadOutcomes(t *testing.T) {
+	service := &workspaceTestService{}
+	handler := newWorkspaceTestHandler(t, workspaceTestAuthenticator{caller: catalog.AuthenticatedCaller{ID: "owner-a"}}, service)
+
+	request := httptest.NewRequest(http.MethodPost, "/v3/workspaces", strings.NewReader(`{"workspaceId":"workspace-a"}`))
+	request.Header.Set("Authorization", "Bearer token")
+	response := httptest.NewRecorder()
+	handler.Routes().ServeHTTP(response, request)
+	if response.Code != http.StatusCreated || response.Header().Get(TraceHeader) == "" {
+		t.Fatalf("create response status=%d trace=%q", response.Code, response.Header().Get(TraceHeader))
+	}
+	var created contracts.Workspace
+	if err := json.Unmarshal(response.Body.Bytes(), &created); err != nil {
+		t.Fatal(err)
+	}
+	if created.WorkspaceID != "workspace-a" || created.OwnerID != "owner-a" {
+		t.Fatalf("created Workspace = %#v", created)
+	}
+
+	request = httptest.NewRequest(http.MethodGet, "/v3/workspaces/workspace-a", nil)
+	request.Header.Set("Authorization", "Bearer token")
+	response = httptest.NewRecorder()
+	handler.Routes().ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("read response status = %d", response.Code)
+	}
+	var read contracts.Workspace
+	if err := json.Unmarshal(response.Body.Bytes(), &read); err != nil {
+		t.Fatal(err)
+	}
+	if read != created {
+		t.Fatalf("read Workspace = %#v, want %#v", read, created)
+	}
+
+	service.createErr = workspace.ErrConflict
+	request = httptest.NewRequest(http.MethodPost, "/v3/workspaces", strings.NewReader(`{"workspaceId":"workspace-a"}`))
+	request.Header.Set("Authorization", "Bearer token")
+	response = httptest.NewRecorder()
+	handler.Routes().ServeHTTP(response, request)
+	if response.Code != http.StatusConflict || !strings.Contains(response.Body.String(), `"code":"CONFLICT"`) {
+		t.Fatalf("duplicate response status=%d body=%s", response.Code, response.Body.String())
+	}
+
+	service.getErr = workspace.ErrForbidden
+	request = httptest.NewRequest(http.MethodGet, "/v3/workspaces/workspace-a", nil)
+	request.Header.Set("Authorization", "Bearer token")
+	response = httptest.NewRecorder()
+	handler.Routes().ServeHTTP(response, request)
+	if response.Code != http.StatusForbidden || strings.Contains(response.Body.String(), "owner-a") {
+		t.Fatalf("forbidden read status=%d body=%s", response.Code, response.Body.String())
+	}
+	service.getErr = workspace.ErrNotFound
+	response = httptest.NewRecorder()
+	request = httptest.NewRequest(http.MethodGet, "/v3/workspaces/missing-workspace", nil)
+	request.Header.Set("Authorization", "Bearer token")
+	handler.Routes().ServeHTTP(response, request)
+	if response.Code != http.StatusNotFound || !strings.Contains(response.Body.String(), `"code":"NOT_FOUND"`) {
+		t.Fatalf("unknown read status=%d body=%s", response.Code, response.Body.String())
+	}
+
+	service.getErr = nil
+	createCallsBeforeInvalid := service.createCalls
+	request = httptest.NewRequest(http.MethodPost, "/v3/workspaces", strings.NewReader(`{"workspaceId":"workspace-b","ownerId":"attacker"}`))
+	request.Header.Set("Authorization", "Bearer token")
+	response = httptest.NewRecorder()
+	handler.Routes().ServeHTTP(response, request)
+	if response.Code != http.StatusBadRequest || service.createCalls != createCallsBeforeInvalid {
+		t.Fatalf("owner override status=%d create calls=%d before=%d", response.Code, service.createCalls, createCallsBeforeInvalid)
 	}
 }
 

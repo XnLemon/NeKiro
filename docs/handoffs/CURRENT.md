@@ -1,16 +1,18 @@
-# Current Handoff: Spec 003 Workspace and Installation Runtime
+# Current Handoff: Issue 004 Workspace Create and Read
 
 **Updated**: 2026-07-15 (Asia/Hong_Kong)
 
-**State**: Issue #3 contract gate and the Minimal Workspace/Installation
-runtime are implemented on the feature branch. Invocation Dispatch, Router,
-Ledger, SDK, Sample Agents, and the complete E2E loop remain future scope.
+**State**: Issue #4 Workspace create/read runtime and its independent delivery
+gate are complete on the feature branch. Issue #3 remains the dependent base
+PR; Issue #5 installation delivery is the next slice. Invocation Dispatch,
+Router, Ledger, SDK, Sample Agents, and the complete E2E loop remain future
+scope.
 
 ## Repository State
 
 - Upstream repository: `https://github.com/NeKiro-project/NeKiro.git`
 - Fork remote: `https://github.com/XnLemon/NeKiro.git`
-- Branch: `codex/003-workspace-installation-contracts`
+- Branch: `codex/004-workspace-create-read`
 - Base: `upstream/main` at `f4caf4d`
 - Required local Git identity: `Nene7ko_ <1604009816@qq.com>`
 - Frontend remains paused.
@@ -18,6 +20,27 @@ Ledger, SDK, Sample Agents, and the complete E2E loop remain future scope.
 The handoff commit hash is intentionally not recorded because this file is part
 of that commit. Resolve the repository root on the current machine; do not
 assume a previous Windows path exists.
+
+## Issue #4 Delivery
+
+The active #4 Spec/Plan/Tasks define and verify the first end-to-end Workspace
+root without changing Installation semantics:
+
+- `POST /v3/workspaces` accepts only an explicit safe `workspaceId`; the
+  trusted Gateway caller becomes the immutable owner and the database-returned
+  timestamps are returned to keep create/read facts identical at PostgreSQL
+  microsecond precision.
+- `GET /v3/workspaces/{workspaceId}` returns the exact durable four-field fact
+  only to its owner. Unknown, non-owner, invalid, unauthenticated, conflict,
+  and persistence failure outcomes remain distinct.
+- Workspace readiness verifies the schema version, exact Workspace columns,
+  types, lengths, non-nullability, `COLLATE "C"`, timestamp precision, primary
+  key, identifier checks, timestamp check, Installation tables, and required
+  indexes. Serving never auto-migrates.
+- PostgreSQL integration evidence covers restart-style store reconstruction,
+  duplicate preservation, missing/stale/incomplete/nullable/non-Collation/
+  reduced-precision schema, and canceled dependency behavior.
+- No fallback was added: removed `0`, retained `0`, added `0`, net `0`.
 
 ## Delivered Contract Gate
 
@@ -94,9 +117,10 @@ go test -race -count=1 ./...
 go vet ./...
 go mod tidy -diff
 git diff --check
-  go test -tags=integration -count=1 ./apps/control-plane/internal/catalog/postgres
-  go test -tags=integration -count=1 ./apps/control-plane/internal/workspace/postgres
-  go test -tags=integration -count=1 ./apps/control-plane/internal/workspace/integration
+go test -tags=integration -count=1 ./apps/control-plane/internal/catalog/postgres
+go test -tags=integration -count=1 ./apps/control-plane/internal/workspace/postgres
+go test -tags=integration -count=1 ./apps/control-plane/internal/workspace/integration
+docker compose --file deploy/compose.yaml config --quiet
 ```
 
 Workspace domain, Gateway, migration, and contract tests are present. The real
@@ -116,11 +140,10 @@ Added fallback evidence: none. The retained behaviors are the approved genuine
 empty Installation list and the unchanged Spec 002 Discovery page-size policy,
 not degraded dependency handling.
 
-Independent closure Review used `open-code-review` v1.7.9. The remediation
-review found and fixed active v3 route composition, shared-database CI isolation,
-exact-resolution authorization validation, safe internal-error mapping, bounded
-request bodies, cursor parsing, and PostgreSQL unique-index readiness issues.
-The final 13-file remediation review produced zero comments.
+Independent closure Review used `open-code-review` v1.7.9. Three review passes
+on the #4 change found and fixed Workspace schema readiness gaps for column
+metadata/constraints, identifier collation, and timestamp precision. The final
+review produced zero comments.
 
 ## Runtime Boundary
 
@@ -141,9 +164,8 @@ Ledger, SDK/runtime behavior, live sample Agents, Frontend, and the complete
 E2E loop remain unimplemented.
 
 Do not infer Invocation/Router runtime availability from active schemas or
-OpenAPI paths. Continue future implementation only from
-`specs/003-workspace-installation-contracts/tasks.md` after this boundary is
-accepted.
+OpenAPI paths. Continue future implementation by creating the Issue #5 Spec
+and a fresh worktree after Issue #4 is accepted.
 
 ## Recovery
 
@@ -153,7 +175,7 @@ Set-Location NeKiro
 git remote add upstream https://github.com/NeKiro-project/NeKiro.git
 git fetch origin --prune
 git fetch upstream --prune
-git switch --track origin/codex/003-workspace-installation-contracts
+git switch --track origin/codex/004-workspace-create-read
 git config --local user.name Nene7ko_
 git config --local user.email 1604009816@qq.com
 git status --short --branch
@@ -165,6 +187,7 @@ Before modifying runtime code, read in full:
 - `AGENTS.md`
 - `.specify/memory/constitution.md`
 - this file
+- every artifact under `specs/004-workspace-create-read/`
 - every artifact under `specs/003-workspace-installation-contracts/`
 - `docs/decisions/0005-minimal-workspace-installation-boundary.md`
 - `docs/contracts/compatibility.md`
