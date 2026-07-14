@@ -25,6 +25,11 @@ identity-provider selection is in scope.
   storage prevents PostgreSQL `jsonb` numeric limits from rejecting valid
   unbounded active Card numbers. Discovery reads those Registry-owned facts
   directly and stores no second Card copy.
+- The v1-to-v2 representation migration preserves each existing
+  `card_digest`. It is the digest of the canonical mapped Card fact, not a
+  digest of PostgreSQL's `jsonb::text` formatting, so the representation change
+  must not rewrite historical Card identity. Integration coverage asserts the
+  digest is unchanged across the migration.
 - Publication and disablement use row locking and database constraints.
   Publication additionally increments one Catalog-owned transactional clock
   row whose lock is held until commit, making sequence order equal successful

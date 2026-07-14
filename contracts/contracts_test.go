@@ -199,6 +199,43 @@ func TestDecodeRegisterAgentRequestPreservesUnboundedLimitTokens(t *testing.T) {
 	}
 }
 
+func TestDecodeAgentCardRejectsQuotedUnboundedLimitTokens(t *testing.T) {
+	validator := mustValidator(t)
+	encoded, err := json.Marshal(validAgentCard())
+	if err != nil {
+		t.Fatalf("marshal valid Agent Card: %v", err)
+	}
+	var document map[string]any
+	if err := json.Unmarshal(encoded, &document); err != nil {
+		t.Fatalf("decode valid Agent Card: %v", err)
+	}
+	limits, ok := document["limits"].(map[string]any)
+	if !ok {
+		t.Fatal("limits is not an object")
+	}
+
+	for _, field := range []string{"maxInputBytes", "maxOutputBytes"} {
+		t.Run(field, func(t *testing.T) {
+			limits[field] = "1"
+			candidate, err := json.Marshal(document)
+			if err != nil {
+				t.Fatalf("marshal quoted limit Agent Card: %v", err)
+			}
+			if _, err := validator.DecodeAgentCard(candidate); err == nil {
+				t.Fatalf("quoted %s was accepted", field)
+			}
+			envelope, err := json.Marshal(map[string]json.RawMessage{"card": candidate})
+			if err != nil {
+				t.Fatalf("marshal quoted register envelope: %v", err)
+			}
+			if _, err := validator.DecodeRegisterAgentRequest(envelope); err == nil {
+				t.Fatalf("quoted %s in register envelope was accepted", field)
+			}
+			limits[field] = json.Number("1000000")
+		})
+	}
+}
+
 func TestAgentCardUnboundedLimitAdapterRetainsOtherSchemaValidation(t *testing.T) {
 	validator := mustValidator(t)
 	card := validAgentCard()

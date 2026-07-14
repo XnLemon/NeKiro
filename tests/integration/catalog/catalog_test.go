@@ -235,6 +235,17 @@ WHERE agent_id = 'unbounded-number-agent' AND version = '1.0.0'`).Scan(
 		if firstDisable.status != http.StatusOK || secondDisable.status != http.StatusOK || firstEntry.PublicationStatus != "disabled" || firstEntry.PublishedAt == nil || secondEntry.PublishedAt == nil || !firstEntry.PublishedAt.Equal(*secondEntry.PublishedAt) {
 			t.Fatalf("idempotent disable = %#v / %#v", firstEntry, secondEntry)
 		}
+		disabledOwnerRead := request(t, http.MethodGet, server.baseURL+"/v2/agents/runtime-a/versions/1.0.0", ownerAToken, nil)
+		disabledOwnerEntry := decodeEntry(t, disabledOwnerRead)
+		if disabledOwnerRead.status != http.StatusOK || disabledOwnerEntry.PublicationStatus != "disabled" || disabledOwnerEntry.PublishedAt == nil || !disabledOwnerEntry.PublishedAt.Equal(*firstEntry.PublishedAt) {
+			t.Fatalf("disabled owner read = %d %s %#v", disabledOwnerRead.status, disabledOwnerRead.body, disabledOwnerEntry)
+		}
+		assertPlatformError(t, request(t, http.MethodGet, server.baseURL+"/v2/agents/runtime-a/versions/1.0.0", userToken, nil), http.StatusForbidden, contracts.ErrorCodeForbidden)
+		assertPlatformError(t, request(t, http.MethodPost, server.baseURL+"/v2/agents/runtime-a/versions/1.0.0/publish", ownerAToken, nil), http.StatusConflict, contracts.ErrorCodeConflict)
+		disabledAfterRepublishAttempt := decodeEntry(t, request(t, http.MethodGet, server.baseURL+"/v2/agents/runtime-a/versions/1.0.0", ownerAToken, nil))
+		if disabledAfterRepublishAttempt.PublicationStatus != "disabled" || disabledAfterRepublishAttempt.PublishedAt == nil || !disabledAfterRepublishAttempt.PublishedAt.Equal(*firstEntry.PublishedAt) {
+			t.Fatalf("disabled state changed after republish attempt = %#v", disabledAfterRepublishAttempt)
+		}
 		afterDisable := decodeSearch(t, request(t, http.MethodGet, server.baseURL+"/v2/agents?capability=runtime.echo", userToken, nil))
 		if len(afterDisable.Items) != 1 || afterDisable.Items[0].Card.AgentID != "runtime-b" {
 			t.Fatalf("discovery after disable = %#v", afterDisable)
@@ -568,6 +579,16 @@ WHERE agent_id = 'migration-agent' AND version = '1.0.0'`).Scan(&storedCard, &na
 	}
 	if name != "Migration Agent" || description != "Existing v1 Card" || !strings.Contains(storedCard, `"agentId": "migration-agent"`) {
 		t.Fatalf("migrated v1 Card = %q, %q, %s", name, description, storedCard)
+	}
+	var storedDigest []byte
+	if err := pool.QueryRow(ctx, `
+SELECT card_digest
+FROM catalog.agent_versions
+WHERE agent_id = 'migration-agent' AND version = '1.0.0'`).Scan(&storedDigest); err != nil {
+		t.Fatalf("read migrated v1 Card digest: %v", err)
+	}
+	if !bytes.Equal(storedDigest, cardDigest[:]) {
+		t.Fatalf("migrated v1 Card digest changed: got %x, want %x", storedDigest, cardDigest)
 	}
 	if err := migrator.MigrateTo(ctx, 0); err != nil {
 		t.Fatalf("roll back migration assertion schema: %v", err)

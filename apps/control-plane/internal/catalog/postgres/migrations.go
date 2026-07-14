@@ -169,6 +169,9 @@ func CheckSchema(ctx context.Context, db RowQuerier) error {
 	var clockReady bool
 	var versionsPresent bool
 	var capabilitiesPresent bool
+	var cardTextReady bool
+	var cardNameReady bool
+	var cardDescriptionReady bool
 	err := db.QueryRow(ctx, `
 SELECT version,
        to_regclass('catalog.agent_identities') IS NOT NULL,
@@ -176,8 +179,29 @@ SELECT version,
        to_regclass('catalog.agent_versions') IS NOT NULL,
        to_regclass('catalog.agent_version_capabilities') IS NOT NULL,
        (SELECT count(*) = 1
-        FROM catalog.publication_clock
-        WHERE singleton = true AND last_sequence >= 0)
+         FROM catalog.publication_clock
+         WHERE singleton = true AND last_sequence >= 0),
+       (SELECT count(*) = 1
+        FROM information_schema.columns
+        WHERE table_schema = 'catalog'
+          AND table_name = 'agent_versions'
+          AND column_name = 'card'
+          AND data_type = 'text'
+          AND is_nullable = 'NO'),
+       (SELECT count(*) = 1
+        FROM information_schema.columns
+        WHERE table_schema = 'catalog'
+          AND table_name = 'agent_versions'
+          AND column_name = 'card_name'
+          AND data_type = 'text'
+          AND is_nullable = 'NO'),
+       (SELECT count(*) = 1
+        FROM information_schema.columns
+        WHERE table_schema = 'catalog'
+          AND table_name = 'agent_versions'
+          AND column_name = 'card_description'
+          AND data_type = 'text'
+          AND is_nullable = 'NO')
 FROM catalog.schema_version`).Scan(
 		&version,
 		&identitiesPresent,
@@ -185,11 +209,14 @@ FROM catalog.schema_version`).Scan(
 		&versionsPresent,
 		&capabilitiesPresent,
 		&clockReady,
+		&cardTextReady,
+		&cardNameReady,
+		&cardDescriptionReady,
 	)
 	if err != nil {
 		return fmt.Errorf("read catalog schema version: %w", err)
 	}
-	if version != ExpectedSchemaVersion || !identitiesPresent || !clockPresent || !versionsPresent || !capabilitiesPresent || !clockReady {
+	if version != ExpectedSchemaVersion || !identitiesPresent || !clockPresent || !versionsPresent || !capabilitiesPresent || !clockReady || !cardTextReady || !cardNameReady || !cardDescriptionReady {
 		return ErrSchemaVersionMismatch
 	}
 	return nil

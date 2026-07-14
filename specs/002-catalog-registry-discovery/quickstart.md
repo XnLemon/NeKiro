@@ -71,7 +71,7 @@ Expected outcomes:
 ## 4. Run PostgreSQL and HTTP Acceptance
 
 ```powershell
-go test -tags=integration -count=1 ./tests/integration/catalog
+go test -tags=integration -count=1 ./apps/control-plane/internal/catalog/postgres ./tests/integration/catalog
 ```
 
 Expected outcomes:

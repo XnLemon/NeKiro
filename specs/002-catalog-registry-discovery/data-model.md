@@ -97,6 +97,10 @@ Primary key: `(agent_id, version)`.
 - `card_name`, `card_description`, ownership, and capability rows are derived
   only from the already validated mapped Card and commit with the Card fact.
 - Publication metadata is not inserted into the Card document.
+- The schema-v1 to schema-v2 migration preserves the existing `card_digest`.
+  The digest identifies the historical canonical mapped Card fact, not the
+  PostgreSQL serialization used by the old `jsonb` storage representation;
+  changing the storage representation must not create a new Card identity.
 
 ### State/Timestamp Constraints
 

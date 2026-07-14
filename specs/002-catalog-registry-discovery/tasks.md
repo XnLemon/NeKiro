@@ -538,8 +538,46 @@ and require a fresh independent Review before convergence.
     committed it as `7899239`; no generated or uncommitted work remains.
   - Review round 5 remediation fallback delta: removed `0`, retained `3`, added
     `0`, net `0`. Added fallback evidence: none.
-- [ ] T067 [Review-R5] Run the complete verification matrix, report fallback
+- [x] T067 [Review-R5] Run the complete verification matrix, report fallback
   delta, and create another fresh non-OCR independent Reviewer
+  - Evidence: after rebasing onto `origin/main` at `be10fc3`, default tests,
+    contract tests, Control Plane tests, real PostgreSQL/HTTP acceptance,
+    full race in pinned `golang:1.26.4-bookworm`, vet, binary build, pinned
+    Docker build, Compose rendering, `go mod tidy -diff`, and `git diff --check`
+    all passed. Review Agent `019f5e5e-8197-7e62-abd0-0648940c19bc` returned
+    `High 0`, `Medium 3`, `Low 1`; the quoted-number finding was disproved by
+    the standard `json.Number` decoder behavior, while v2 readiness shape and
+    disabled-version coverage remain actionable. Historical digest preservation
+    is retained as an explicit migration policy and receives direct coverage.
+
+### Review Round 6 Remediation
+
+- [x] T068 [Review-R6] Add contract regression coverage proving quoted
+  `maxInputBytes` and `maxOutputBytes` values are rejected by the existing
+  `json.Number` boundary, without adding a duplicate validator or fallback, in
+  `contracts/contracts_test.go`
+- [x] T069 [Review-R6] Make Catalog readiness verify the active schema-v2
+  `agent_versions.card` text type and non-null `card_name`/
+  `card_description` columns, and add migration/readiness coverage for an
+  incomplete v2 shape in
+  `apps/control-plane/internal/catalog/postgres/migrations.go` and tests
+- [x] T070 [Review-R6] Record that schema-v1 to v2 migration preserves the
+  historical canonical mapped Card digest while changing only the storage
+  representation, then assert the digest remains unchanged across migration
+  in `specs/002-catalog-registry-discovery/data-model.md`,
+  `docs/decisions/0004-catalog-persistence-and-consistency.md`, and
+  `tests/integration/catalog/catalog_test.go`
+- [x] T071 [Review-R6] Add real PostgreSQL/HTTP acceptance proving an owner can
+  read a disabled version, a non-owner cannot, and republish returns conflict
+  without changing historical timestamps in
+  `tests/integration/catalog/catalog_test.go`
+  - Evidence: strict raw-token boundary tests reject quoted numeric strings;
+    readiness rejects non-text Card and nullable v2 derived columns; the v1-v2
+    migration test proves the historical digest is unchanged; and the real
+    HTTP acceptance proves disabled owner read, non-owner forbidden, republish
+    conflict, timestamp preservation, and discovery exclusion.
+- [ ] T072 [Review-R6] Rerun the complete verification matrix, report fallback
+  delta, and create a fresh non-OCR independent Reviewer after T068-T071
 
 ---
 

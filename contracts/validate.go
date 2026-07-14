@@ -285,6 +285,9 @@ func (v *Validator) DecodeAgentCard(data []byte) (AgentCard, error) {
 	if err := rejectDuplicateJSONMemberNames(data); err != nil {
 		return AgentCard{}, fmt.Errorf("decode Agent Card: %w", err)
 	}
+	if err := rejectQuotedAgentCardLimitValues(data); err != nil {
+		return AgentCard{}, fmt.Errorf("decode Agent Card: %w", err)
+	}
 	var card AgentCard
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.UseNumber()
@@ -305,6 +308,9 @@ func (v *Validator) DecodeRegisterAgentRequest(data []byte) (RegisterAgentReques
 	if err := rejectDuplicateJSONMemberNames(data); err != nil {
 		return RegisterAgentRequest{}, fmt.Errorf("decode register Agent request: %w", err)
 	}
+	if err := rejectQuotedRegisterAgentCardLimitValues(data); err != nil {
+		return RegisterAgentRequest{}, fmt.Errorf("decode register Agent request: %w", err)
+	}
 	var request RegisterAgentRequest
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.UseNumber()
@@ -319,6 +325,45 @@ func (v *Validator) DecodeRegisterAgentRequest(data []byte) (RegisterAgentReques
 		return RegisterAgentRequest{}, err
 	}
 	return request, nil
+}
+
+func rejectQuotedAgentCardLimitValues(data []byte) error {
+	var document struct {
+		Limits struct {
+			MaxInputBytes  json.RawMessage `json:"maxInputBytes"`
+			MaxOutputBytes json.RawMessage `json:"maxOutputBytes"`
+		} `json:"limits"`
+	}
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	if err := decoder.Decode(&document); err != nil {
+		return err
+	}
+	for _, field := range []struct {
+		value json.RawMessage
+		path  string
+	}{
+		{value: document.Limits.MaxInputBytes, path: "/limits/maxInputBytes"},
+		{value: document.Limits.MaxOutputBytes, path: "/limits/maxOutputBytes"},
+	} {
+		if trimmed := bytes.TrimSpace(field.value); len(trimmed) > 0 && trimmed[0] == '"' {
+			return agentCardLimitValidationError(field.path, "type")
+		}
+	}
+	return nil
+}
+
+func rejectQuotedRegisterAgentCardLimitValues(data []byte) error {
+	var envelope struct {
+		Card json.RawMessage `json:"card"`
+	}
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	if err := decoder.Decode(&envelope); err != nil {
+		return err
+	}
+	if len(envelope.Card) == 0 {
+		return nil
+	}
+	return rejectQuotedAgentCardLimitValues(envelope.Card)
 }
 
 func (v *Validator) ValidateInstallation(installation Installation) error {
