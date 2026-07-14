@@ -409,12 +409,32 @@ func (v *Validator) ValidateResolveAgentResponseForRequest(request ResolveAgentR
 			return errors.New("resolved Installation permissions are not canonical")
 		}
 	}
+	declaredPermissions := make(map[string]struct{}, len(response.Card.Permissions))
+	for _, permission := range response.Card.Permissions {
+		declaredPermissions[permission.ID] = struct{}{}
+	}
+	acceptedPermissions := make(map[string]struct{}, len(response.Installation.AcceptedPermissions))
 	for _, permission := range response.Installation.AcceptedPermissions {
 		if err := validateSafeContractIdentifier("accepted permission", permission); err != nil {
 			return err
 		}
+		if _, declared := declaredPermissions[permission]; !declared {
+			return errors.New("resolved Installation contains an undeclared permission")
+		}
+		acceptedPermissions[permission] = struct{}{}
 	}
-	return nil
+	for _, skill := range response.Card.Skills {
+		if skill.ID != request.Capability {
+			continue
+		}
+		for _, permission := range skill.RequiredPermissions {
+			if _, accepted := acceptedPermissions[permission]; !accepted {
+				return errors.New("resolved Installation does not authorize requested capability")
+			}
+		}
+		return nil
+	}
+	return errors.New("requested capability is not declared by resolved Card")
 }
 
 func (v *Validator) ValidateInvocationEvent(event InvocationEvent) error {

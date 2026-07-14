@@ -3,6 +3,7 @@ package gateway
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -86,6 +87,21 @@ func TestWorkspaceHandlerRequiresBearerAndRequiredListLimit(t *testing.T) {
 	}
 }
 
+func TestWorkspaceHandlerRejectsOversizedJSONBeforeService(t *testing.T) {
+	service := &workspaceTestService{}
+	handler := newWorkspaceTestHandler(t, workspaceTestAuthenticator{caller: catalog.AuthenticatedCaller{ID: "owner-a"}}, service)
+	request := httptest.NewRequest(http.MethodPost, "/v3/workspaces", strings.NewReader(strings.Repeat("x", contracts.WorkspaceRequestMaximumBodyBytes+1)))
+	request.Header.Set("Authorization", "Bearer token")
+	response := httptest.NewRecorder()
+	handler.Routes().ServeHTTP(response, request)
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("oversized Workspace request status = %d, want 400", response.Code)
+	}
+	if service.workspace.WorkspaceID != "" {
+		t.Fatalf("oversized Workspace request reached service: %#v", service.workspace)
+	}
+}
+
 func TestWorkspaceHandlerSeparatesPreAndPostCorrelationErrors(t *testing.T) {
 	service := &workspaceTestService{resolveErr: workspace.ErrDependency}
 	handler := newWorkspaceTestHandler(t, workspaceTestAuthenticator{caller: catalog.AuthenticatedCaller{ID: "owner-a"}}, service)
@@ -117,6 +133,25 @@ func TestWorkspaceHandlerSeparatesPreAndPostCorrelationErrors(t *testing.T) {
 	}
 	if post.InvocationID != "inv-a" || post.RootTaskID != "task-a" || post.TraceID != "trace-a" {
 		t.Fatalf("post-correlation error = %#v", post)
+	}
+}
+
+func TestWorkspaceHandlerMapsUnexpectedErrorsToInternalServerError(t *testing.T) {
+	service := &workspaceTestService{resolveErr: errors.New("unexpected service failure")}
+	handler := newWorkspaceTestHandler(t, workspaceTestAuthenticator{caller: catalog.AuthenticatedCaller{ID: "router-a"}}, service)
+	request := httptest.NewRequest(http.MethodPost, "/internal/v2/resolve-agent", strings.NewReader(`{"invocationId":"inv-a","rootTaskId":"task-a","traceId":"trace-a","workspaceId":"workspace-a","agentId":"agent-a","version":"1.0.0","capability":"capability-a"}`))
+	request.Header.Set("Authorization", "Bearer internal")
+	response := httptest.NewRecorder()
+	handler.Routes().ServeHTTP(response, request)
+	if response.Code != http.StatusInternalServerError {
+		t.Fatalf("unexpected error status = %d, want 500", response.Code)
+	}
+	var platformError contracts.PlatformErrorV3
+	if err := json.Unmarshal(response.Body.Bytes(), &platformError); err != nil {
+		t.Fatal(err)
+	}
+	if platformError.Code != contracts.ErrorCodeInternal || platformError.TraceID != "trace-a" {
+		t.Fatalf("unexpected internal error = %#v", platformError)
 	}
 }
 

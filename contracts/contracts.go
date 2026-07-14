@@ -25,6 +25,7 @@ const (
 	InstallationMinimumLimit            = 1
 	InstallationMaximumLimit            = 100
 	RegistrationMaximumBodyBytes        = 16 << 20
+	WorkspaceRequestMaximumBodyBytes    = 1 << 20
 )
 
 var safeIdentifierPattern = regexp.MustCompile(`^[A-Za-z0-9](?:[A-Za-z0-9._:-]{0,127})$`)

@@ -72,11 +72,10 @@ jobs:
       - name: Run PostgreSQL integration suites
         env:
           NEKIRO_TEST_DATABASE_URL: postgresql://nekiro:nekiro-integration-only@127.0.0.1:5432/nekiro_test?sslmode=disable
-        run: >-
-          go test -tags=integration -count=1
-          ./apps/control-plane/internal/catalog/postgres
-          ./apps/control-plane/internal/workspace/postgres
-          ./apps/control-plane/internal/workspace/integration
+        run: |
+          go test -tags=integration -count=1 ./apps/control-plane/internal/catalog/postgres
+          go test -tags=integration -count=1 ./apps/control-plane/internal/workspace/postgres
+          go test -tags=integration -count=1 ./apps/control-plane/internal/workspace/integration
 
   frontend:
     runs-on: ubuntu-latest

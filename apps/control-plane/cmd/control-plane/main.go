@@ -117,10 +117,8 @@ func serve(ctx context.Context, logger *slog.Logger) error {
 		return err
 	}
 	mux := http.NewServeMux()
-	workspaceRoutes := workspaceHandler.Routes()
-	mux.Handle("/v3/", workspaceRoutes)
-	mux.Handle("/internal/v2/", workspaceRoutes)
-	mux.Handle("/", catalogHandler.Routes())
+	catalogHandler.RegisterRoutes(mux)
+	workspaceHandler.RegisterRoutes(mux)
 
 	server := &http.Server{
 		Addr:              cfg.ListenAddress,

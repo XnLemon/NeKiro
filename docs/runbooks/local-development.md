@@ -89,7 +89,7 @@ go run ./apps/control-plane/cmd/control-plane serve
 upgrades schema. `migrate up` is the sole migration command; `migrate down` is
 rejected before schema or data changes. The process exposes
 `/livez` and `/readyz`; the authenticated Catalog operations are under
-`/v2/agents`, Workspace/Installation operations are under `/v3/workspaces`,
+`/v3/agents`, Workspace/Installation operations are under `/v3/workspaces`,
 and exact internal resolution is under `/internal/v2/resolve-agent`. The
 internal route accepts only the separately configured internal principal.
 

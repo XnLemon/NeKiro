@@ -1,6 +1,6 @@
 # Current Handoff: Spec 003 Workspace and Installation Runtime
 
-**Updated**: 2026-07-14 (Asia/Hong_Kong)
+**Updated**: 2026-07-15 (Asia/Hong_Kong)
 
 **State**: Issue #3 contract gate and the Minimal Workspace/Installation
 runtime are implemented on the feature branch. Invocation Dispatch, Router,
@@ -94,7 +94,9 @@ go test -race -count=1 ./...
 go vet ./...
 go mod tidy -diff
 git diff --check
-go test -tags=integration -count=1 ./apps/control-plane/internal/catalog/postgres ./apps/control-plane/internal/workspace/postgres ./apps/control-plane/internal/workspace/integration
+  go test -tags=integration -count=1 ./apps/control-plane/internal/catalog/postgres
+  go test -tags=integration -count=1 ./apps/control-plane/internal/workspace/postgres
+  go test -tags=integration -count=1 ./apps/control-plane/internal/workspace/integration
 ```
 
 Workspace domain, Gateway, migration, and contract tests are present. The real
@@ -105,7 +107,7 @@ dedicated `_test` database.
 Spec Kit analysis result for the completed gate:
 
 - Requirements: 30 functional plus 7 measurable outcomes
-- Tasks: 61 total; all implementation and remediation tasks are recorded complete
+- Tasks: 67 total; all implementation and remediation tasks are recorded complete
 - Requirement coverage: 100%
 - Ambiguity, duplication, constitution conflict, and Critical findings: 0
 
@@ -114,12 +116,11 @@ Added fallback evidence: none. The retained behaviors are the approved genuine
 empty Installation list and the unchanged Spec 002 Discovery page-size policy,
 not degraded dependency handling.
 
-Independent closure Review used `open-code-review` v1.7.9 session `71946`.
-The actual pin-validation and V3 test-coverage findings were remediated. Two
-security comments repeated Bearer declarations already present in the active
-OpenAPI document, and the suggestion to replace the approved SemVer range with
-an exact version was rejected against FR-005 through FR-009. No blocking
-finding remains after the final contract and test updates.
+Independent closure Review used `open-code-review` v1.7.9. The remediation
+review found and fixed active v3 route composition, shared-database CI isolation,
+exact-resolution authorization validation, safe internal-error mapping, bounded
+request bodies, cursor parsing, and PostgreSQL unique-index readiness issues.
+The final 13-file remediation review produced zero comments.
 
 ## Runtime Boundary
 

@@ -58,10 +58,6 @@ CREATE UNIQUE INDEX installations_current_agent_idx
 CREATE INDEX installations_workspace_order_idx
     ON workspace.installations (workspace_id, installed_at ASC, installation_id ASC);
 
-CREATE INDEX installations_current_lookup_idx
-    ON workspace.installations (workspace_id, agent_id)
-    WHERE status <> 'uninstalled';
-
 ---- create above / drop below ----
 
 DROP TABLE workspace.installations;
@@ -106,7 +102,16 @@ func CheckSchema(ctx context.Context, db RowQuerier) error {
 SELECT version,
        to_regclass('workspace.workspaces') IS NOT NULL,
        to_regclass('workspace.installations') IS NOT NULL,
-       to_regclass('workspace.installations_current_agent_idx') IS NOT NULL,
+       EXISTS (
+           SELECT 1
+           FROM pg_index index_definition
+           WHERE index_definition.indexrelid = to_regclass('workspace.installations_current_agent_idx')
+             AND index_definition.indrelid = to_regclass('workspace.installations')
+             AND index_definition.indisunique
+             AND index_definition.indisvalid
+             AND index_definition.indkey = '2 3'::int2vector
+             AND pg_get_expr(index_definition.indpred, index_definition.indrelid) = '((status)::text <> ''uninstalled''::text)'
+       ),
        to_regclass('workspace.installations_workspace_order_idx') IS NOT NULL
 FROM workspace.schema_version`).Scan(
 		&version, &workspacePresent, &installationPresent, &currentIndexPresent, &orderIndexPresent,

@@ -44,6 +44,13 @@ func NewWorkspaceHandler(authenticator, internalAuthenticator Authenticator, ser
 
 func (handler *WorkspaceHandler) Routes() http.Handler {
 	mux := http.NewServeMux()
+	handler.RegisterRoutes(mux)
+	return mux
+}
+
+// RegisterRoutes adds Workspace and internal resolution routes to the composed
+// Gateway mux.
+func (handler *WorkspaceHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /v3/workspaces", handler.createWorkspace)
 	mux.HandleFunc("GET /v3/workspaces/{workspaceId}", handler.getWorkspace)
 	mux.HandleFunc("POST /v3/workspaces/{workspaceId}/installations", handler.install)
@@ -52,7 +59,6 @@ func (handler *WorkspaceHandler) Routes() http.Handler {
 	mux.HandleFunc("PATCH /v3/workspaces/{workspaceId}/installations/{installationId}", handler.updateInstallation)
 	mux.HandleFunc("DELETE /v3/workspaces/{workspaceId}/installations/{installationId}", handler.uninstall)
 	mux.HandleFunc("POST /internal/v2/resolve-agent", handler.resolveAgent)
-	return mux
 }
 
 func (handler *WorkspaceHandler) begin(writer http.ResponseWriter, request *http.Request, operation string, authenticator Authenticator) (contracts.TraceID, workspace.AuthenticatedCaller, bool) {
@@ -73,7 +79,7 @@ func (handler *WorkspaceHandler) createWorkspace(writer http.ResponseWriter, req
 		return
 	}
 	var body contracts.CreateWorkspaceRequest
-	if err := readStrictJSON(request, &body); err != nil {
+	if err := readStrictJSON(writer, request, &body); err != nil {
 		handler.fail(writer, request, traceID, "create_workspace", workspace.ErrInvalid, nil)
 		return
 	}
@@ -104,7 +110,7 @@ func (handler *WorkspaceHandler) install(writer http.ResponseWriter, request *ht
 		return
 	}
 	var body contracts.InstallAgentRequest
-	if err := readStrictJSON(request, &body); err != nil {
+	if err := readStrictJSON(writer, request, &body); err != nil {
 		handler.fail(writer, request, traceID, "install", workspace.ErrInvalid, nil)
 		return
 	}
@@ -153,7 +159,7 @@ func (handler *WorkspaceHandler) updateInstallation(writer http.ResponseWriter, 
 		return
 	}
 	var body contracts.UpdateInstallationRequest
-	if err := readStrictJSON(request, &body); err != nil {
+	if err := readStrictJSON(writer, request, &body); err != nil {
 		handler.fail(writer, request, traceID, "update_installation", workspace.ErrInvalid, nil)
 		return
 	}
@@ -199,7 +205,7 @@ func (handler *WorkspaceHandler) resolveAgent(writer http.ResponseWriter, reques
 		Version      string            `json:"version"`
 		Capability   string            `json:"capability"`
 	}
-	if err := readStrictJSON(request, &wire); err != nil {
+	if err := readStrictJSON(writer, request, &wire); err != nil {
 		_ = writeWorkspaceError(writer, generatedTrace, contracts.ErrorCodeValidationError, nil)
 		return
 	}
@@ -263,7 +269,8 @@ func parseInstallationQuery(rawQuery string) (int, *string, error) {
 	return limit, &cursorValue[0], nil
 }
 
-func readStrictJSON(request *http.Request, destination any) error {
+func readStrictJSON(writer http.ResponseWriter, request *http.Request, destination any) error {
+	request.Body = http.MaxBytesReader(writer, request.Body, contracts.WorkspaceRequestMaximumBodyBytes)
 	data, err := io.ReadAll(request.Body)
 	if closeErr := request.Body.Close(); err == nil {
 		err = closeErr
@@ -411,6 +418,8 @@ func workspaceErrorStatus(code contracts.PlatformErrorCode) (int, error) {
 		return http.StatusConflict, nil
 	case contracts.ErrorCodeDependency:
 		return http.StatusServiceUnavailable, nil
+	case contracts.ErrorCodeInternal:
+		return http.StatusInternalServerError, nil
 	default:
 		return 0, fmt.Errorf("unsupported Workspace error code %q", code)
 	}

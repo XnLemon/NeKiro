@@ -53,7 +53,7 @@ func (service *Service) CreateWorkspace(ctx context.Context, caller Authenticate
 }
 
 func (service *Service) GetWorkspace(ctx context.Context, caller AuthenticatedCaller, workspaceID string) (contracts.Workspace, error) {
-	if !ValidIdentifier(workspaceID) || caller.ID == "" {
+	if !ValidIdentifier(workspaceID) || !ValidIdentifier(caller.ID) {
 		return contracts.Workspace{}, ErrInvalid
 	}
 	workspace, err := service.store.GetWorkspace(ctx, workspaceID)
@@ -67,7 +67,7 @@ func (service *Service) GetWorkspace(ctx context.Context, caller AuthenticatedCa
 }
 
 func (service *Service) Install(ctx context.Context, caller AuthenticatedCaller, workspaceID string, request contracts.InstallAgentRequest) (contracts.Installation, error) {
-	if !ValidIdentifier(workspaceID) || !ValidIdentifier(request.AgentID) || !validConstraint(request.VersionConstraint) || !validPermissionInput(request.AcceptedPermissions) {
+	if !ValidIdentifier(workspaceID) || !ValidIdentifier(caller.ID) || !ValidIdentifier(request.AgentID) || !validConstraint(request.VersionConstraint) || !validPermissionInput(request.AcceptedPermissions) {
 		return contracts.Installation{}, ErrInvalid
 	}
 	workspace, err := service.store.GetWorkspace(ctx, workspaceID)
@@ -96,7 +96,10 @@ func (service *Service) Install(ctx context.Context, caller AuthenticatedCaller,
 		return contracts.Installation{}, err
 	}
 	installationID, err := service.newID()
-	if err != nil || !ValidIdentifier(installationID) {
+	if err != nil {
+		return contracts.Installation{}, fmt.Errorf("generate Installation identifier: %w", errors.Join(ErrDependency, err))
+	}
+	if !ValidIdentifier(installationID) {
 		return contracts.Installation{}, fmt.Errorf("generate Installation identifier: %w", ErrDependency)
 	}
 	now := service.clock().UTC()
@@ -112,7 +115,7 @@ func (service *Service) Install(ctx context.Context, caller AuthenticatedCaller,
 }
 
 func (service *Service) GetInstallation(ctx context.Context, caller AuthenticatedCaller, workspaceID, installationID string) (contracts.Installation, error) {
-	if !ValidIdentifier(workspaceID) || !ValidIdentifier(installationID) {
+	if !ValidIdentifier(workspaceID) || !ValidIdentifier(installationID) || !ValidIdentifier(caller.ID) {
 		return contracts.Installation{}, ErrInvalid
 	}
 	workspace, err := service.store.GetWorkspace(ctx, workspaceID)
@@ -126,7 +129,7 @@ func (service *Service) GetInstallation(ctx context.Context, caller Authenticate
 }
 
 func (service *Service) ListInstallations(ctx context.Context, caller AuthenticatedCaller, workspaceID string, limit int, cursor *string) (contracts.InstallationList, error) {
-	if !ValidIdentifier(workspaceID) || limit < contracts.InstallationMinimumLimit || limit > contracts.InstallationMaximumLimit {
+	if !ValidIdentifier(workspaceID) || !ValidIdentifier(caller.ID) || limit < contracts.InstallationMinimumLimit || limit > contracts.InstallationMaximumLimit {
 		return contracts.InstallationList{}, ErrInvalid
 	}
 	var after *InstallationPosition
@@ -161,7 +164,7 @@ func (service *Service) ListInstallations(ctx context.Context, caller Authentica
 }
 
 func (service *Service) UpdateInstallation(ctx context.Context, caller AuthenticatedCaller, workspaceID, installationID, status string) (contracts.Installation, error) {
-	if !ValidIdentifier(workspaceID) || !ValidIdentifier(installationID) || !currentInstallationStatus(status) {
+	if !ValidIdentifier(workspaceID) || !ValidIdentifier(installationID) || !ValidIdentifier(caller.ID) || !currentInstallationStatus(status) {
 		return contracts.Installation{}, ErrInvalid
 	}
 	workspace, err := service.store.GetWorkspace(ctx, workspaceID)
@@ -175,7 +178,7 @@ func (service *Service) UpdateInstallation(ctx context.Context, caller Authentic
 }
 
 func (service *Service) Uninstall(ctx context.Context, caller AuthenticatedCaller, workspaceID, installationID string) (contracts.Installation, error) {
-	if !ValidIdentifier(workspaceID) || !ValidIdentifier(installationID) {
+	if !ValidIdentifier(workspaceID) || !ValidIdentifier(installationID) || !ValidIdentifier(caller.ID) {
 		return contracts.Installation{}, ErrInvalid
 	}
 	workspace, err := service.store.GetWorkspace(ctx, workspaceID)

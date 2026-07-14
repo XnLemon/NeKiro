@@ -24,6 +24,9 @@ Workspace or Installation contract.
   `x-nek-trace-id` equal to the request `traceId`.
 - JSON objects reject unknown and duplicate members, trailing values, null for
   required fields, and values outside active referenced schemas.
+- Workspace and internal JSON request bodies are limited to 1 MiB before strict
+  decoding; oversized bodies return `400 VALIDATION_ERROR` without invoking the
+  owning service.
 - Public messages remain fixed Platform Error messages (v2 for
   Catalog/Invocation and v3 for Workspace/internal resolution). They contain no
   bearer token, Card body, endpoint, permission details, database error, stack,

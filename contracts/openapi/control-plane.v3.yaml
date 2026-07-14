@@ -227,6 +227,7 @@ paths:
         - bearerAuth: []
       requestBody:
         required: true
+        x-nekiro-max-body-bytes: 1048576
         content:
           application/json:
             schema:
@@ -294,6 +295,7 @@ paths:
         - $ref: "#/components/parameters/WorkspaceId"
       requestBody:
         required: true
+        x-nekiro-max-body-bytes: 1048576
         content:
           application/json:
             schema:
@@ -398,6 +400,7 @@ paths:
         - $ref: "#/components/parameters/InstallationId"
       requestBody:
         required: true
+        x-nekiro-max-body-bytes: 1048576
         content:
           application/json:
             schema:

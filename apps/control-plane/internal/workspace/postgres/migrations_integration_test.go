@@ -35,6 +35,33 @@ func TestWorkspaceMigrationAndReadiness(t *testing.T) {
 	if err := CheckSchema(ctx, connection); err != nil {
 		t.Fatalf("valid Workspace schema was not ready: %v", err)
 	}
+	if _, err := connection.Exec(ctx, `DROP INDEX workspace.installations_current_agent_idx`); err != nil {
+		t.Fatalf("drop current-install index: %v", err)
+	}
+	if err := CheckSchema(ctx, connection); err == nil {
+		t.Fatal("missing current-install index was reported ready")
+	}
+	if _, err := connection.Exec(ctx, `CREATE UNIQUE INDEX installations_current_agent_idx ON workspace.installations (workspace_id, agent_id) WHERE status <> 'uninstalled'`); err != nil {
+		t.Fatalf("restore current-install index: %v", err)
+	}
+	if _, err := connection.Exec(ctx, `DROP INDEX workspace.installations_current_agent_idx`); err != nil {
+		t.Fatalf("drop current-install uniqueness index: %v", err)
+	}
+	if _, err := connection.Exec(ctx, `CREATE INDEX installations_current_agent_idx ON workspace.installations (workspace_id, agent_id) WHERE status <> 'uninstalled'`); err != nil {
+		t.Fatalf("create degraded current-install index: %v", err)
+	}
+	if err := CheckSchema(ctx, connection); err == nil {
+		t.Fatal("non-unique current-install index was reported ready")
+	}
+	if _, err := connection.Exec(ctx, `DROP INDEX workspace.installations_current_agent_idx`); err != nil {
+		t.Fatalf("drop degraded current-install index: %v", err)
+	}
+	if _, err := connection.Exec(ctx, `CREATE UNIQUE INDEX installations_current_agent_idx ON workspace.installations (workspace_id, agent_id) WHERE status <> 'uninstalled'`); err != nil {
+		t.Fatalf("restore current-install uniqueness index: %v", err)
+	}
+	if err := CheckSchema(ctx, connection); err != nil {
+		t.Fatalf("restored current-install index was not ready: %v", err)
+	}
 	if _, err := connection.Exec(ctx, `DROP INDEX workspace.installations_workspace_order_idx`); err != nil {
 		t.Fatalf("degrade Workspace schema: %v", err)
 	}

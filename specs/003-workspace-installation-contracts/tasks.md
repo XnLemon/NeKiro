@@ -571,7 +571,9 @@ go test -race -count=1 ./...
 go vet ./...
 go mod tidy -diff
 git diff --check
-go test -tags=integration -count=1 ./apps/control-plane/internal/catalog/postgres ./apps/control-plane/internal/workspace/postgres ./apps/control-plane/internal/workspace/integration
+go test -tags=integration -count=1 ./apps/control-plane/internal/catalog/postgres
+go test -tags=integration -count=1 ./apps/control-plane/internal/workspace/postgres
+go test -tags=integration -count=1 ./apps/control-plane/internal/workspace/integration
 ```
 
 The real PostgreSQL run passed, including migrations, exact resolution,
@@ -592,3 +594,46 @@ SemVer range and FR-006 through FR-009 define selection from that range.
 
 Converge found no additional blocking task. Fallback delta remains removed `0`,
 retained `2`, added `0`, net `0`; added fallback evidence `none`.
+
+## Phase 9: Review Remediation Round 2
+
+- [X] T062 [P1] Align the composed Control Plane runtime with active Northbound
+  v3 by registering Catalog routes on the shared mux, removing the stale v2
+  runtime route, and adding a composed-route regression test for
+  `Register -> Discover -> Install`.
+- [X] T063 [P1] Make PostgreSQL integration CI deterministic by running the
+  schema-resetting Catalog and Workspace suites serially against the dedicated
+  `_test` database.
+- [X] T064 [P1] Enforce requested capability existence and required-permission
+  containment in the exact-resolution response validator, and map unexpected
+  Workspace errors to a validated HTTP 500 response.
+- [X] T065 [P2] Bound strict Workspace/internal JSON request bodies, reject
+  duplicate Installation cursor members, and validate the current-install
+  unique partial index rather than only its name during readiness checks.
+- [X] T066 [P2] Remove the redundant current-install lookup index and add
+  regression coverage for degraded index readiness and bounded request bodies.
+- [X] T067 [P2] Preserve migration and contract documentation consistency,
+  update the handoff evidence, rerun the full verification matrix, and obtain a
+  fresh independent review with no High/Medium findings.
+
+Round 2 implementation evidence:
+
+- Active Northbound v3 Catalog and Workspace routes now register on one composed
+  Gateway mux; historical Northbound v2 has no runtime route.
+- PostgreSQL CI runs schema-resetting Catalog and Workspace integration suites
+  as separate serial commands against the dedicated `_test` database.
+- Exact-resolution response validation now checks capability existence, required
+  permission containment, and declared accepted permissions. Unexpected Gateway
+  errors return Platform Error v3 with HTTP 500.
+- Workspace/internal JSON bodies are bounded at 1 MiB, cursor duplicate members
+  are rejected, and the Workspace partial unique index is verified for table,
+  key columns, predicate, uniqueness, and validity during readiness.
+- The redundant current-install lookup index was removed. Regression coverage
+  covers active v3 composition, historical route absence, oversized requests,
+  duplicate cursors, unauthorized resolution responses, internal errors, and
+  degraded/missing index readiness.
+- Final independent `open-code-review` v1.7.9 remediation review covered 13
+  files and produced zero comments.
+
+Final fallback delta remains removed `0`, retained `2`, added `0`, net `0`;
+added fallback evidence `none`.

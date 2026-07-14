@@ -61,14 +61,19 @@ func NewHandler(
 
 func (handler *Handler) Routes() http.Handler {
 	mux := http.NewServeMux()
+	handler.RegisterRoutes(mux)
+	return mux
+}
+
+// RegisterRoutes adds the Catalog-owned routes to the composed Gateway mux.
+func (handler *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /livez", handler.liveness)
 	mux.HandleFunc("GET /readyz", handler.readinessCheck)
-	mux.HandleFunc("POST /v2/agents", handler.register)
-	mux.HandleFunc("GET /v2/agents", handler.search)
-	mux.HandleFunc("GET /v2/agents/{agentId}/versions/{version}", handler.get)
-	mux.HandleFunc("POST /v2/agents/{agentId}/versions/{version}/publish", handler.publish)
-	mux.HandleFunc("POST /v2/agents/{agentId}/versions/{version}/disable", handler.disable)
-	return mux
+	mux.HandleFunc("POST /v3/agents", handler.register)
+	mux.HandleFunc("GET /v3/agents", handler.search)
+	mux.HandleFunc("GET /v3/agents/{agentId}/versions/{version}", handler.get)
+	mux.HandleFunc("POST /v3/agents/{agentId}/versions/{version}/publish", handler.publish)
+	mux.HandleFunc("POST /v3/agents/{agentId}/versions/{version}/disable", handler.disable)
 }
 
 func (handler *Handler) liveness(writer http.ResponseWriter, _ *http.Request) {

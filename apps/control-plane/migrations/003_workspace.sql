@@ -41,10 +41,6 @@ CREATE UNIQUE INDEX installations_current_agent_idx
 CREATE INDEX installations_workspace_order_idx
     ON workspace.installations (workspace_id, installed_at ASC, installation_id ASC);
 
-CREATE INDEX installations_current_lookup_idx
-    ON workspace.installations (workspace_id, agent_id)
-    WHERE status <> 'uninstalled';
-
 ---- create above / drop below ----
 
 DROP TABLE workspace.installations;

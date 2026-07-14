@@ -25,6 +25,7 @@ paths:
         - internalBearerAuth: []
       requestBody:
         required: true
+        x-nekiro-max-body-bytes: 1048576
         content:
           application/json:
             schema:

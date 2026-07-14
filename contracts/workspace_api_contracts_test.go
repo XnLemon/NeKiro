@@ -146,6 +146,21 @@ func TestResolveAgentResponsePreservesExactRequestIdentity(t *testing.T) {
 	if err := validator.ValidateResolveAgentResponseForRequest(request, response); err != nil {
 		t.Fatalf("valid exact resolution response rejected: %v", err)
 	}
+	unauthorized := response
+	unauthorized.Installation.AcceptedPermissions = nil
+	if err := validator.ValidateResolveAgentResponseForRequest(request, unauthorized); err == nil {
+		t.Fatal("resolution response without the skill's required permission was accepted")
+	}
+	missingCapability := request
+	missingCapability.Capability = "missing.capability"
+	if err := validator.ValidateResolveAgentResponseForRequest(missingCapability, response); err == nil {
+		t.Fatal("resolution response for an undeclared capability was accepted")
+	}
+	undeclaredPermission := response
+	undeclaredPermission.Installation.AcceptedPermissions = []string{"undeclared.permission"}
+	if err := validator.ValidateResolveAgentResponseForRequest(request, undeclaredPermission); err == nil {
+		t.Fatal("resolution response with an undeclared permission was accepted")
+	}
 	response.Card.Version = "2.0.0"
 	if err := validator.ValidateResolveAgentResponseForRequest(request, response); err == nil {
 		t.Fatal("resolution response with mismatched Card version was accepted")

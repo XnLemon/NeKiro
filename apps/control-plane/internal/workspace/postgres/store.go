@@ -24,12 +24,12 @@ func NewStore(pool *pgxpool.Pool) (*Store, error) {
 	return &Store{pool: pool}, nil
 }
 
-func (store *Store) CreateWorkspace(ctx context.Context, value contracts.Workspace) (contracts.Workspace, error) {
+func (store *Store) CreateWorkspace(ctx context.Context, value contracts.Workspace) (result contracts.Workspace, returnErr error) {
 	tx, err := store.pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
 		return contracts.Workspace{}, dependencyError("begin workspace creation", err)
 	}
-	defer rollback(ctx, tx, &err, "workspace creation")
+	defer rollback(ctx, tx, &returnErr, "workspace creation")
 	if _, err = tx.Exec(ctx, `
 INSERT INTO workspace.workspaces (workspace_id, owner_id, created_at, updated_at)
 VALUES ($1, $2, $3, $4)`, value.WorkspaceID, value.OwnerID, value.CreatedAt, value.UpdatedAt); err != nil {
@@ -72,12 +72,12 @@ SELECT EXISTS (
 	return exists, nil
 }
 
-func (store *Store) CreateInstallation(ctx context.Context, callerID string, value contracts.Installation) (contracts.Installation, error) {
+func (store *Store) CreateInstallation(ctx context.Context, callerID string, value contracts.Installation) (result contracts.Installation, returnErr error) {
 	tx, err := store.pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
 		return contracts.Installation{}, dependencyError("begin Installation creation", err)
 	}
-	defer rollback(ctx, tx, &err, "Installation creation")
+	defer rollback(ctx, tx, &returnErr, "Installation creation")
 	var ownerID string
 	if err = tx.QueryRow(ctx, `
 SELECT owner_id FROM workspace.workspaces WHERE workspace_id = $1 FOR UPDATE`, value.WorkspaceID).Scan(&ownerID); errors.Is(err, pgx.ErrNoRows) {
