@@ -607,6 +607,37 @@ func TestWorkspaceHandlerSeparatesPreAndPostCorrelationErrors(t *testing.T) {
 	}
 }
 
+func TestResolveHandlerKeepsCorrelationForNonCorrelationValidationErrors(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+	}{
+		{name: "invalid Workspace", body: `{"invocationId":"inv-a","rootTaskId":"task-a","traceId":"trace-a","workspaceId":"bad workspace","agentId":"agent-a","version":"1.0.0","capability":"capability-a"}`},
+		{name: "invalid Agent", body: `{"invocationId":"inv-a","rootTaskId":"task-a","traceId":"trace-a","workspaceId":"workspace-a","agentId":"bad agent","version":"1.0.0","capability":"capability-a"}`},
+		{name: "invalid capability", body: `{"invocationId":"inv-a","rootTaskId":"task-a","traceId":"trace-a","workspaceId":"workspace-a","agentId":"agent-a","version":"1.0.0","capability":"bad capability"}`},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			service := &workspaceTestService{}
+			handler := newWorkspaceTestHandler(t, workspaceTestAuthenticator{caller: catalog.AuthenticatedCaller{ID: "router-a"}}, service)
+			request := httptest.NewRequest(http.MethodPost, "/internal/v2/resolve-agent", strings.NewReader(test.body))
+			request.Header.Set("Authorization", "Bearer internal")
+			response := httptest.NewRecorder()
+			handler.Routes().ServeHTTP(response, request)
+			if response.Code != http.StatusBadRequest || service.resolveCalls != 0 {
+				t.Fatalf("status=%d resolveCalls=%d", response.Code, service.resolveCalls)
+			}
+			var payload contracts.PlatformErrorV3
+			if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
+				t.Fatal(err)
+			}
+			if payload.Code != contracts.ErrorCodeValidationError || payload.InvocationID != "inv-a" || payload.RootTaskID != "task-a" || payload.TraceID != "trace-a" || response.Header().Get(TraceHeader) != "trace-a" {
+				t.Fatalf("payload=%#v header=%q", payload, response.Header().Get(TraceHeader))
+			}
+		})
+	}
+}
+
 func TestResolveHandlerUsesSeparateInternalAuthentication(t *testing.T) {
 	service := &workspaceTestService{}
 	handler := newWorkspaceTestHandlerWithAuthenticators(t,

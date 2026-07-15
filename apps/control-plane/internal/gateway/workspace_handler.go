@@ -393,7 +393,7 @@ func rejectDuplicateMembers(data []byte) error {
 }
 
 func validCorrelation(request contracts.ResolveAgentRequest) bool {
-	if !workspace.ValidIdentifier(request.InvocationID) || !workspace.ValidIdentifier(request.RootTaskID) || !workspace.ValidIdentifier(request.WorkspaceID) || !workspace.ValidIdentifier(request.AgentID) || !workspace.ValidIdentifier(request.Capability) {
+	if !workspace.ValidIdentifier(request.InvocationID) || !workspace.ValidIdentifier(request.RootTaskID) {
 		return false
 	}
 	_, err := contracts.ParseTraceID(string(request.TraceID))

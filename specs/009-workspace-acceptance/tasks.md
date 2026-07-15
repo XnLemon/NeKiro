@@ -78,6 +78,12 @@ product behavior is included.
 - [X] T022 [Review-R5] Close the remaining acceptance evidence gaps by proving
   highest matching version selection through the composed HTTP flow and
   enabled/disabled/uninstalled facts after store reconstruction.
+- [X] T023 [Review-R6] Preserve valid request correlation when internal
+  resolution rejects a non-correlation field such as Workspace, Agent, or
+  capability identity.
+- [X] T024 [Review-R6] Make Workspace schema readiness reject incomplete
+  Installation columns and constraints, with real PostgreSQL regression
+  evidence.
 
 ## Requirement Coverage Map
 
@@ -87,12 +93,12 @@ product behavior is included.
 | FR-002 | T007, T012, T013, T022 | Public create/install returns the highest matching exact pin and permission snapshot. |
 | FR-003 | T007, T012, T013, T020 | HTTP list/detail/cursor traversal plus existing keyset/restart integration. |
 | FR-004 | T006, T007, T012, T013 | Legal/illegal lifecycle and committed timestamps. |
-| FR-005 | T007, T008, T012, T013, T021 | Separate internal auth and exact resolution correlation, including typed resolution failures. |
+| FR-005 | T007, T008, T012, T013, T021, T023 | Separate internal auth and exact resolution correlation, including typed resolution failures and validation precedence. |
 | FR-006 | T006, T007, T013, T022 | Restart, enabled/disabled/terminal history, and new reinstall identity. |
 | FR-007 | T006, T013, T020 | 100-request create/install/lifecycle races and per-result legal outcome validation. |
 | FR-008 | T007, T008, T012 | Active v3/public and v2/internal HTTP routes only. |
 | FR-009 | T008, T012, T020, T021 | Distinct auth, owner, identity, conflict, disabled, capability, and dependency results with state immutability checks. |
-| FR-010 | T008, T013, T020 | Canceled/dependency/schema/transaction failures remain explicit. |
+| FR-010 | T008, T013, T020, T024 | Canceled/dependency/schema/transaction failures remain explicit, including incomplete Installation schema readiness. |
 | FR-011 | T007, T008, T009 | No Agent endpoint call and no future runtime dependency. |
 | FR-012 | T002, T003, T010, T011, T015, T016, T017 | SDD artifacts, quickstart, review, converge, and handoff. |
 
@@ -177,6 +183,16 @@ accepted permission snapshot is incomplete, plus highest-version selection and
 disabled-state restart durability. T021 adds the typed HTTP failure cases and
 T022 adds the real PostgreSQL-backed version and reconstruction evidence. The
 post-remediation OCR review reported no comments.
+
+## Review-R6 Remediation Evidence
+
+Review-R6 found that internal resolution classified invalid Workspace, Agent,
+and capability identifiers as pre-correlation failures, and that Workspace
+readiness checked only the Installation table and indexes. T023 limits the
+pre-correlation gate to invocation, root-task, and Trace identifiers and adds
+HTTP regression cases. T024 validates all Installation columns and named
+constraints and adds PostgreSQL readiness regression cases. No public contract
+version or fallback policy changes.
 
 ## Spec Review Remediation
 

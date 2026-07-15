@@ -36,6 +36,9 @@ public and internal Gateway handlers under `httptest`.
 - The internal HTTP failure matrix proves `AGENT_NOT_INSTALLED` after
   uninstall and `CAPABILITY_NOT_ALLOWED` when the accepted permission snapshot
   omits the capability requirement, with request correlation preserved.
+- Internal resolution now preserves valid correlation for non-correlation
+  validation failures, and Workspace readiness rejects incomplete Installation
+  columns or constraints before serving traffic.
 - Internal resolution uses a separate authenticated principal and preserves
   the request correlation identifiers. The fixture Agent endpoint records zero
   requests.
