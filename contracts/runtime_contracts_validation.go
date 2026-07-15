@@ -19,6 +19,8 @@ const (
 var (
 	ErrRuntimeMediaNotAcceptable = errors.New("invocation result media is not acceptable")
 	ErrRuntimeSequenceTerminal   = errors.New("invocation lifecycle already has a terminal event")
+	ErrRuntimeStreamInterrupted  = errors.New("result stream ended before a terminal event")
+	ErrRuntimeStreamClosed       = errors.New("result stream validation is closed")
 )
 
 var platformErrorV4Messages = map[PlatformErrorCode]string{
@@ -258,6 +260,7 @@ type RuntimeResultStreamSequenceValidator struct {
 	nextSequence   int64
 	nextChunkIndex int64
 	terminal       bool
+	closed         bool
 }
 
 func NewRuntimeResultStreamSequenceValidator(contracts *RuntimeContractValidator, invocationID, rootTaskID string, traceID TraceID) (*RuntimeResultStreamSequenceValidator, error) {
@@ -277,6 +280,9 @@ func NewRuntimeResultStreamSequenceValidator(contracts *RuntimeContractValidator
 }
 
 func (v *RuntimeResultStreamSequenceValidator) Accept(event InvocationResultStreamEventV2) error {
+	if v.closed {
+		return ErrRuntimeStreamClosed
+	}
 	if v.terminal {
 		return ErrRuntimeSequenceTerminal
 	}
@@ -307,6 +313,17 @@ func (v *RuntimeResultStreamSequenceValidator) Accept(event InvocationResultStre
 }
 
 func (v *RuntimeResultStreamSequenceValidator) IsTerminal() bool { return v.terminal }
+
+func (v *RuntimeResultStreamSequenceValidator) Finish() error {
+	if v.closed {
+		return ErrRuntimeStreamClosed
+	}
+	v.closed = true
+	if !v.terminal {
+		return ErrRuntimeStreamInterrupted
+	}
+	return nil
+}
 
 func (v *RuntimeContractValidator) ValidateInvocationDetailResponseV4(workspaceID string, detail InvocationDetailResponseV4) error {
 	if detail.Invocation.WorkspaceID != workspaceID {
@@ -344,22 +361,27 @@ func ValidateTraceResponseV4(workspaceID string, traceID TraceID, response Trace
 	if len(response.Invocations) == 0 {
 		return errors.New("trace response requires non-empty Invocation lineage")
 	}
+	rootTaskID := response.Invocations[0].RootTaskID
 	identities := make(map[string]struct{}, len(response.Invocations))
 	for _, invocation := range response.Invocations {
 		if invocation.WorkspaceID != workspaceID || invocation.TraceID != traceID {
 			return errors.New("trace Invocation is outside the authorized Workspace or Trace")
 		}
+		if invocation.RootTaskID != rootTaskID {
+			return errors.New("trace response changes root Task within one lineage")
+		}
 		if _, exists := identities[invocation.InvocationID]; exists {
 			return errors.New("trace response repeats an Invocation")
 		}
-		identities[invocation.InvocationID] = struct{}{}
-	}
-	for _, invocation := range response.Invocations {
 		if invocation.ParentInvocationID != "" {
+			if invocation.ParentInvocationID == invocation.InvocationID {
+				return errors.New("trace response contains a self-parent Invocation")
+			}
 			if _, exists := identities[invocation.ParentInvocationID]; !exists {
-				return errors.New("trace response child references a missing parent")
+				return errors.New("trace response child must follow its existing parent")
 			}
 		}
+		identities[invocation.InvocationID] = struct{}{}
 	}
 	return nil
 }

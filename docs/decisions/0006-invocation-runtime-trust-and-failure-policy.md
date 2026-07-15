@@ -140,6 +140,11 @@ Invocation/root Task/Trace exactly. A versioned positive/negative
 corpus covers fixed code/message pairs, required post-acceptance correlation,
 stable lineage/context, legal transitions, event/chunk order, first terminal,
 and the media matrix. JSON Schema alone is not treated as lifecycle evidence.
+Result Stream validation completes only through `Finish`; EOF before terminal
+is `ErrRuntimeStreamInterrupted`, including accepted-only and accepted-plus-
+chunk streams. Trace validation requires deterministic parent-before-child
+order, forbids self-parent/cycles, and preserves one root Task ID throughout
+the lineage.
 
 ## Compatibility
 

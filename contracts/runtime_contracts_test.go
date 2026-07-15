@@ -335,6 +335,9 @@ func TestRuntimeContractExecutableConformanceCorpus(t *testing.T) {
 				break
 			}
 		}
+		if err == nil {
+			err = sequence.Finish()
+		}
 		if (err == nil) != test.Valid {
 			t.Errorf("result stream corpus %s valid=%v, error=%v", test.ID, test.Valid, err)
 		}

@@ -35,6 +35,22 @@
     {
       "id":"trace-missing-parent-invalid","workspaceId":"workspace-1","traceId":"trace-1","valid":false,
       "response":{"traceId":"trace-1","invocations":[{"invocationId":"child-1","rootTaskId":"task-1","parentInvocationId":"missing-root","traceId":"trace-1","caller":{"type":"agent","id":"agent-1"},"workspaceId":"workspace-1","targetAgentId":"agent-2","agentCardVersion":"2.0.0","capability":"summarize","status":"pending","createdAt":"2026-07-16T00:00:01Z","updatedAt":"2026-07-16T00:00:01Z"}]}
+    },
+    {
+      "id":"trace-child-before-parent-invalid","workspaceId":"workspace-1","traceId":"trace-1","valid":false,
+      "response":{"traceId":"trace-1","invocations":[{"invocationId":"child-1","rootTaskId":"task-1","parentInvocationId":"root-1","traceId":"trace-1","caller":{"type":"agent","id":"agent-1"},"workspaceId":"workspace-1","targetAgentId":"agent-2","agentCardVersion":"2.0.0","capability":"summarize","status":"pending","createdAt":"2026-07-16T00:00:01Z","updatedAt":"2026-07-16T00:00:01Z"},{"invocationId":"root-1","rootTaskId":"task-1","traceId":"trace-1","caller":{"type":"user","id":"user-1"},"workspaceId":"workspace-1","targetAgentId":"agent-1","agentCardVersion":"1.0.0","capability":"orchestrate","status":"running","createdAt":"2026-07-16T00:00:00Z","updatedAt":"2026-07-16T00:00:01Z"}]}
+    },
+    {
+      "id":"trace-self-parent-invalid","workspaceId":"workspace-1","traceId":"trace-1","valid":false,
+      "response":{"traceId":"trace-1","invocations":[{"invocationId":"self-1","rootTaskId":"task-1","parentInvocationId":"self-1","traceId":"trace-1","caller":{"type":"agent","id":"agent-1"},"workspaceId":"workspace-1","targetAgentId":"agent-2","agentCardVersion":"2.0.0","capability":"summarize","status":"pending","createdAt":"2026-07-16T00:00:01Z","updatedAt":"2026-07-16T00:00:01Z"}]}
+    },
+    {
+      "id":"trace-cycle-invalid","workspaceId":"workspace-1","traceId":"trace-1","valid":false,
+      "response":{"traceId":"trace-1","invocations":[{"invocationId":"a","rootTaskId":"task-1","parentInvocationId":"b","traceId":"trace-1","caller":{"type":"agent","id":"agent-1"},"workspaceId":"workspace-1","targetAgentId":"agent-2","agentCardVersion":"2.0.0","capability":"summarize","status":"pending","createdAt":"2026-07-16T00:00:01Z","updatedAt":"2026-07-16T00:00:01Z"},{"invocationId":"b","rootTaskId":"task-1","parentInvocationId":"a","traceId":"trace-1","caller":{"type":"agent","id":"agent-2"},"workspaceId":"workspace-1","targetAgentId":"agent-1","agentCardVersion":"1.0.0","capability":"orchestrate","status":"pending","createdAt":"2026-07-16T00:00:02Z","updatedAt":"2026-07-16T00:00:02Z"}]}
+    },
+    {
+      "id":"trace-root-task-mismatch-invalid","workspaceId":"workspace-1","traceId":"trace-1","valid":false,
+      "response":{"traceId":"trace-1","invocations":[{"invocationId":"root-1","rootTaskId":"task-1","traceId":"trace-1","caller":{"type":"user","id":"user-1"},"workspaceId":"workspace-1","targetAgentId":"agent-1","agentCardVersion":"1.0.0","capability":"orchestrate","status":"running","createdAt":"2026-07-16T00:00:00Z","updatedAt":"2026-07-16T00:00:01Z"},{"invocationId":"child-1","rootTaskId":"task-other","parentInvocationId":"root-1","traceId":"trace-1","caller":{"type":"agent","id":"agent-1"},"workspaceId":"workspace-1","targetAgentId":"agent-2","agentCardVersion":"2.0.0","capability":"summarize","status":"pending","createdAt":"2026-07-16T00:00:01Z","updatedAt":"2026-07-16T00:00:01Z"}]}
     }
   ]
 }

@@ -49,6 +49,9 @@
 - [x] R008 Add outer/nested error correlation plus Result Stream v2 sequence/chunk/first-terminal validator and negative corpus after follow-up Review.
 - [x] R009 Add Workspace detail/Trace projection cross-field validators and versioned negative corpus, including non-empty/parent-complete lineage.
 - [x] R010 Re-run full verification and push the follow-up Review remediation.
+- [x] R011 Add Result Stream EOF/Finish terminal validation and missing-terminal negative corpus.
+- [x] R012 Enforce Trace parent-before-child, no self-parent/cycle, and root-Task stability with negative corpus.
+- [x] R013 Re-run full verification and push the third Review remediation.
 
 - [ ] T023 Independent Review by a non-implementing agent. **Owner: root; intentionally not completed here.**
 - [ ] T024 Converge findings into tasks and resolve them. **Blocked by T023; intentionally not completed here.**
