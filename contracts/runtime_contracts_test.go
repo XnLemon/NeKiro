@@ -2,12 +2,16 @@ package contracts
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
 	"slices"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/getkin/kin-openapi/openapi3"
 )
 
 func TestRuntimeContractOpenAPIDirectionsAndVersions(t *testing.T) {
@@ -113,6 +117,7 @@ func TestRuntimeContractExactFailureMappings(t *testing.T) {
 		responses := document.Paths.Find(route).Post.Responses
 		assertExtensionStringSliceContains(t, responses.Status(413).Value.Extensions, "x-platform-error-codes", "PAYLOAD_TOO_LARGE")
 		assertExtensionStringSliceContains(t, responses.Status(502).Value.Extensions, "x-platform-error-codes", "AGENT_AUTH_UNSUPPORTED")
+		assertExtensionStringSliceContains(t, responses.Status(502).Value.Extensions, "x-platform-error-codes", "AGENT_RESPONSE_TOO_LARGE")
 	}
 
 	if ErrorCodeAgentAuthUnsupported == ErrorCodeRouteNotFound ||
@@ -141,11 +146,227 @@ func TestRuntimeContractLimitsAndSSEHaveNoDefaults(t *testing.T) {
 			stream.Extensions["x-nekiro-max-event-bytes-source"] == nil || stream.Extensions["x-nekiro-limit-default"] != false {
 			t.Fatalf("%s SSE framing/limit is incomplete: %#v", test.path, stream.Extensions)
 		}
+		success := operation.Responses.Status(200).Value.Extensions
+		if success["x-nekiro-max-agent-response-bytes-source"] == nil ||
+			success["x-nekiro-max-a2a-event-bytes-source"] == nil || success["x-nekiro-limit-default"] != false {
+			t.Fatalf("%s Agent response/A2A limits must be separate required no-default sources: %#v", test.path, success)
+		}
+		if operation.Extensions["x-nekiro-media-negotiation"] != "invocation-result-v1" {
+			t.Fatalf("%s does not declare the shared media rule", test.path)
+		}
 	}
 
 	if RuntimeDeadlineMinimumMS != 1 || RuntimeDeadlineMaximumMS != 600000 ||
 		RuntimeByteLimitMinimum != 1 || RuntimeByteLimitMaximum != 2147483647 {
 		t.Fatal("Go runtime limit mapping differs from the language-neutral contract ranges")
+	}
+}
+
+func TestRuntimeContractWorkspaceScopedProjectionAndLineageReads(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 7, 16, 0, 0, 0, 0, time.UTC)
+	record := InvocationRecordV4{
+		InvocationID: "inv-1", RootTaskID: "task-1", TraceID: "trace-1",
+		Caller: Caller{Type: "user", ID: "user-1"}, WorkspaceID: "workspace-1",
+		TargetAgentID: "agent-1", AgentCardVersion: "1.0.0", Capability: "summarize",
+		Status: "pending", CreatedAt: now, UpdatedAt: now,
+	}
+	event := InvocationEventV03{
+		SchemaVersion: "0.3", EventID: "event-1", Sequence: 0, OccurredAt: now.Format(time.RFC3339),
+		Type: "created", Status: "pending", InvocationID: "inv-1", RootTaskID: "task-1", TraceID: "trace-1",
+		Caller: record.Caller, WorkspaceID: "workspace-1", TargetAgentID: "agent-1",
+		AgentCardVersion: "1.0.0", Capability: "summarize",
+	}
+
+	for _, test := range []struct {
+		path, invocationRoute, traceRoute string
+	}{
+		{"openapi/control-plane-invocation.v4.yaml", "/v4/workspaces/{workspaceId}/invocations/{invocationId}", "/v4/workspaces/{workspaceId}/traces/{traceId}"},
+		{"openapi/router-internal.v3.yaml", "/internal/v3/workspaces/{workspaceId}/invocations/{invocationId}", "/internal/v3/workspaces/{workspaceId}/traces/{traceId}"},
+	} {
+		document := loadOpenAPIDocument(t, filepath.FromSlash(test.path))
+		invocationOperation := document.Paths.Find(test.invocationRoute)
+		traceOperation := document.Paths.Find(test.traceRoute)
+		if invocationOperation == nil || invocationOperation.Get == nil || traceOperation == nil || traceOperation.Get == nil {
+			t.Fatalf("%s missing Workspace-scoped metadata reads", test.path)
+		}
+		assertOperationHasPathParameter(t, invocationOperation.Get.Parameters, "workspaceId")
+		assertOperationHasPathParameter(t, traceOperation.Get.Parameters, "workspaceId")
+		validateOpenAPIValue(t, invocationOperation.Get.Responses.Status(200).Value.Content["application/json"].Schema, InvocationDetailResponseV4{Invocation: record, Events: []InvocationEventV03{event}})
+		validateOpenAPIValue(t, traceOperation.Get.Responses.Status(200).Value.Content["application/json"].Schema, TraceResponseV4{TraceID: "trace-1", Invocations: []InvocationRecordV4{record}})
+	}
+
+	northbound := loadOpenAPIDocument(t, filepath.FromSlash("openapi/control-plane-invocation.v4.yaml"))
+	if northbound.Paths.Find("/v4/invocations/{invocationId}") != nil || northbound.Paths.Find("/v4/traces/{traceId}") != nil {
+		t.Fatal("Northbound v4 must not expose unscoped raw metadata routes")
+	}
+}
+
+func TestRuntimeContractExecutableConformanceCorpus(t *testing.T) {
+	t.Parallel()
+
+	validator, err := NewRuntimeContractValidator()
+	if err != nil {
+		t.Fatalf("create runtime contract validator: %v", err)
+	}
+
+	var media struct {
+		Cases []struct {
+			ID     string               `json:"id"`
+			Stream bool                 `json:"stream"`
+			Accept string               `json:"accept"`
+			Valid  bool                 `json:"valid"`
+			Mode   InvocationResultMode `json:"mode"`
+		} `json:"cases"`
+	}
+	readRuntimeCorpus(t, "media.json", &media)
+	for _, test := range media.Cases {
+		mode, err := NegotiateInvocationResultMode(test.Stream, test.Accept)
+		if test.Valid && (err != nil || mode != test.Mode) {
+			t.Errorf("media %s = %q, %v; want %q", test.ID, mode, err, test.Mode)
+		}
+		if !test.Valid && !errors.Is(err, ErrRuntimeMediaNotAcceptable) {
+			t.Errorf("media %s error = %v, want not acceptable", test.ID, err)
+		}
+	}
+
+	var errorCases struct {
+		Cases []struct {
+			ID, Phase string
+			Valid     bool
+			Error     json.RawMessage `json:"error"`
+		} `json:"cases"`
+	}
+	readRuntimeCorpus(t, "errors.json", &errorCases)
+	for _, test := range errorCases.Cases {
+		var err error
+		if test.Phase == "pre" {
+			err = validator.ValidatePreCorrelationPlatformErrorV4JSON(test.Error)
+		} else {
+			err = validator.ValidateCorrelatedPlatformErrorV4JSON(test.Error)
+		}
+		if (err == nil) != test.Valid {
+			t.Errorf("error corpus %s valid=%v, error=%v", test.ID, test.Valid, err)
+		}
+	}
+
+	var nested struct {
+		Cases []struct {
+			ID     string             `json:"id"`
+			Valid  bool               `json:"valid"`
+			Parent InvocationRecordV4 `json:"parent"`
+			Child  InvocationEventV03 `json:"child"`
+		} `json:"cases"`
+	}
+	readRuntimeCorpus(t, "nested.json", &nested)
+	for _, test := range nested.Cases {
+		err := ValidateNestedInvocationCorrelation(test.Parent, test.Child)
+		if (err == nil) != test.Valid {
+			t.Errorf("nested corpus %s valid=%v, error=%v", test.ID, test.Valid, err)
+		}
+	}
+
+	var lifecycle struct {
+		Cases []struct {
+			ID     string               `json:"id"`
+			Valid  bool                 `json:"valid"`
+			Events []InvocationEventV03 `json:"events"`
+		} `json:"cases"`
+	}
+	readRuntimeCorpus(t, "lifecycle.json", &lifecycle)
+	for _, test := range lifecycle.Cases {
+		sequence, err := NewRuntimeInvocationSequenceValidator(validator)
+		if err != nil {
+			t.Fatalf("create lifecycle validator: %v", err)
+		}
+		for _, event := range test.Events {
+			if err = sequence.Accept(event); err != nil {
+				break
+			}
+		}
+		if (err == nil) != test.Valid {
+			t.Errorf("lifecycle corpus %s valid=%v, error=%v", test.ID, test.Valid, err)
+		}
+	}
+}
+
+func TestRuntimeContractCorpusManifestIsCompleteAndEmbedded(t *testing.T) {
+	t.Parallel()
+
+	var manifest struct {
+		SchemaVersion string   `json:"schemaVersion"`
+		Fixtures      []string `json:"fixtures"`
+	}
+	readRuntimeCorpus(t, "manifest.json", &manifest)
+	if manifest.SchemaVersion != "1" {
+		t.Fatalf("runtime corpus schemaVersion = %q", manifest.SchemaVersion)
+	}
+	want := []string{"errors.json", "lifecycle.json", "media.json", "nested.json"}
+	slices.Sort(manifest.Fixtures)
+	if !slices.Equal(manifest.Fixtures, want) {
+		t.Fatalf("runtime corpus fixtures = %v, want %v", manifest.Fixtures, want)
+	}
+	assertEmbeddedContractFile(t, contractFiles, "invocation-runtime/v1/semantic-rules.md")
+	assertEmbeddedContractFile(t, contractFiles, "invocation-runtime/v1/conformance/manifest.json")
+	for _, fixture := range want {
+		assertEmbeddedContractFile(t, contractFiles, filepath.ToSlash(filepath.Join("invocation-runtime", "v1", "conformance", fixture)))
+	}
+}
+
+func TestRuntimeContractPostAcceptanceErrorsRequireCorrelation(t *testing.T) {
+	t.Parallel()
+
+	validator, err := NewRuntimeContractValidator()
+	if err != nil {
+		t.Fatalf("create runtime validator: %v", err)
+	}
+	pre, err := NewPreCorrelationPlatformErrorV4(ErrorCodePayloadTooLarge, "trace-1")
+	if err != nil || validator.ValidatePreCorrelationPlatformErrorV4(pre) != nil {
+		t.Fatalf("valid pre-correlation error rejected: %v, %#v", err, pre)
+	}
+	correlated, err := NewCorrelatedPlatformErrorV4(ErrorCodeAgentResponseTooLarge, "trace-1", "inv-1", "task-1")
+	if err != nil || validator.ValidateCorrelatedPlatformErrorV4(correlated) != nil {
+		t.Fatalf("valid correlated error rejected: %v, %#v", err, correlated)
+	}
+	correlated.RootTaskID = ""
+	if validator.ValidateCorrelatedPlatformErrorV4(correlated) == nil {
+		t.Fatal("post-acceptance error without root Task correlation was accepted")
+	}
+
+	document := loadOpenAPIDocument(t, filepath.FromSlash("openapi/router-internal.v3.yaml"))
+	phase := document.Components.Schemas["PhasePlatformError"].Value.Extensions
+	if phase["x-nekiro-phase-boundary"] != "successful-created-commit" ||
+		phase["x-nekiro-pre-acceptance-schema"] != "PreCorrelationPlatformError" ||
+		phase["x-nekiro-post-acceptance-schema"] != "CorrelatedPlatformError" {
+		t.Fatalf("phase error schema does not bind correlation to acceptance: %#v", phase)
+	}
+	agentFailure := document.Paths.Find("/internal/v3/invocations").Post.Responses.Status(502).Value.Content["application/json"].Schema
+	valid := CorrelatedPlatformErrorV4{Code: ErrorCodeAgentAuthUnsupported, Message: platformErrorV4Messages[ErrorCodeAgentAuthUnsupported], TraceID: "trace-1", InvocationID: "inv-1", RootTaskID: "task-1"}
+	validateOpenAPIValue(t, agentFailure, valid)
+}
+
+func TestRuntimeContractStreamV2ValidatorRequiresCorrelatedError(t *testing.T) {
+	t.Parallel()
+
+	validator, err := NewRuntimeContractValidator()
+	if err != nil {
+		t.Fatalf("create runtime validator: %v", err)
+	}
+	platformError, err := NewCorrelatedPlatformErrorV4(ErrorCodeAgentResponseTooLarge, "trace-1", "inv-1", "task-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	event := InvocationResultStreamEventV2{
+		SchemaVersion: "2", Sequence: 1, Type: ResultStreamEventFailed, Status: "failed",
+		InvocationID: "inv-1", RootTaskID: "task-1", TraceID: "trace-1", Error: &platformError,
+	}
+	if err := validator.ValidateInvocationResultStreamEventV2(event); err != nil {
+		t.Fatalf("valid Stream Event v2 rejected: %v", err)
+	}
+	event.Error.RootTaskID = ""
+	if validator.ValidateInvocationResultStreamEventV2(event) == nil {
+		t.Fatal("Stream Event v2 accepted an uncorrelated post-acceptance error")
 	}
 }
 
@@ -245,4 +466,25 @@ func assertExtensionStringSliceContains(t *testing.T, extensions map[string]any,
 		}
 	}
 	t.Fatalf("extension %s = %#v, missing %s", key, value, want)
+}
+
+func assertOperationHasPathParameter(t *testing.T, parameters openapi3.Parameters, name string) {
+	t.Helper()
+	for _, parameter := range parameters {
+		if parameter.Value != nil && parameter.Value.In == "path" && parameter.Value.Name == name && parameter.Value.Required {
+			return
+		}
+	}
+	t.Fatalf("missing required path parameter %s", name)
+}
+
+func readRuntimeCorpus(t *testing.T, name string, destination any) {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join("invocation-runtime", "v1", "conformance", name))
+	if err != nil {
+		t.Fatalf("read runtime corpus %s: %v", name, err)
+	}
+	if err := json.Unmarshal(data, destination); err != nil {
+		t.Fatalf("decode runtime corpus %s: %v", name, err)
+	}
 }
