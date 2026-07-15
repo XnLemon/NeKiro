@@ -212,9 +212,10 @@ WHERE workspace_id = $1 AND installation_id = $2 FOR UPDATE`, workspaceID, insta
 	if (before.Status != "enabled" || status != "disabled") && (before.Status != "disabled" || status != "enabled") {
 		return contracts.Installation{}, workspace.ErrConflict
 	}
+	committedAt := nextLifecycleTime(before.UpdatedAt, at)
 	after := before
 	after.Status = status
-	after.UpdatedAt = at
+	after.UpdatedAt = committedAt
 	if err := contracts.ValidateInstallationImmutablePin(before, after); err != nil {
 		return contracts.Installation{}, dependencyError("validate immutable Installation pin", err)
 	}
@@ -223,7 +224,7 @@ UPDATE workspace.installations SET status = $3, updated_at = $4
 WHERE workspace_id = $1 AND installation_id = $2
 RETURNING installation_id, workspace_id, agent_id, version_constraint, installed_version,
           accepted_permissions, status, installed_at, updated_at, uninstalled_at`,
-		workspaceID, installationID, status, at).Scan(
+		workspaceID, installationID, status, committedAt).Scan(
 		&after.InstallationID, &after.WorkspaceID, &after.AgentID, &after.VersionConstraint,
 		&after.InstalledVersion, &after.AcceptedPermissions, &after.Status, &after.InstalledAt,
 		&after.UpdatedAt, &after.UninstalledAt); err != nil {
@@ -255,10 +256,11 @@ WHERE workspace_id = $1 AND installation_id = $2 FOR UPDATE`, workspaceID, insta
 	if before.Status != "disabled" {
 		return contracts.Installation{}, workspace.ErrConflict
 	}
+	committedAt := nextLifecycleTime(before.UpdatedAt, at)
 	after := before
 	after.Status = "uninstalled"
-	after.UpdatedAt = at
-	after.UninstalledAt = &at
+	after.UpdatedAt = committedAt
+	after.UninstalledAt = &committedAt
 	if err := contracts.ValidateInstallationImmutablePin(before, after); err != nil {
 		return contracts.Installation{}, dependencyError("validate immutable Installation pin", err)
 	}
@@ -267,7 +269,7 @@ UPDATE workspace.installations SET status = 'uninstalled', updated_at = $3, unin
 WHERE workspace_id = $1 AND installation_id = $2
 RETURNING installation_id, workspace_id, agent_id, version_constraint, installed_version,
           accepted_permissions, status, installed_at, updated_at, uninstalled_at`,
-		workspaceID, installationID, at).Scan(
+		workspaceID, installationID, committedAt).Scan(
 		&after.InstallationID, &after.WorkspaceID, &after.AgentID, &after.VersionConstraint,
 		&after.InstalledVersion, &after.AcceptedPermissions, &after.Status, &after.InstalledAt,
 		&after.UpdatedAt, &after.UninstalledAt); err != nil {
@@ -277,6 +279,15 @@ RETURNING installation_id, workspace_id, agent_id, version_constraint, installed
 		return contracts.Installation{}, dependencyError("commit Installation uninstall", err)
 	}
 	return after, nil
+}
+
+func nextLifecycleTime(previous, candidate time.Time) time.Time {
+	previous = previous.UTC().Truncate(time.Microsecond)
+	candidate = candidate.UTC().Truncate(time.Microsecond)
+	if !candidate.After(previous) {
+		return previous.Add(time.Microsecond)
+	}
+	return candidate
 }
 
 func scanInstallation(row interface{ Scan(...any) error }) (contracts.Installation, error) {

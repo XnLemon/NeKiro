@@ -31,9 +31,10 @@ import (
 )
 
 const (
-	ownerAToken = "catalog-owner-a-integration-token"
-	ownerBToken = "catalog-owner-b-integration-token"
-	userToken   = "catalog-user-integration-token"
+	ownerAToken   = "catalog-owner-a-integration-token"
+	ownerBToken   = "catalog-owner-b-integration-token"
+	userToken     = "catalog-user-integration-token"
+	internalToken = "catalog-router-integration-token"
 )
 
 type testServer struct {
@@ -79,13 +80,13 @@ func TestCatalogPostgreSQLAndHTTPAcceptance(t *testing.T) {
 	runtimeB := readFixture(t, root, "runtime-b-card.json")
 
 	t.Run("fixed authentication and registration semantics", func(t *testing.T) {
-		missing := request(t, http.MethodGet, server.baseURL+"/v2/agents", "", nil)
+		missing := request(t, http.MethodGet, server.baseURL+"/v3/agents", "", nil)
 		assertPlatformError(t, missing, http.StatusUnauthorized, contracts.ErrorCodeUnauthenticated)
 		if bytes.Contains(missing.body, []byte(ownerAToken)) || bytes.Contains(missing.body, []byte(digest(ownerAToken))) {
 			t.Fatal("authentication material appeared in public error")
 		}
 
-		draft := request(t, http.MethodPost, server.baseURL+"/v2/agents", ownerAToken, registrationEnvelope(t, runtimeA))
+		draft := request(t, http.MethodPost, server.baseURL+"/v3/agents", ownerAToken, registrationEnvelope(t, runtimeA))
 		draftEntry := decodeEntry(t, draft)
 		if draft.status != http.StatusCreated || draftEntry.PublicationStatus != "draft" {
 			t.Fatalf("Runtime A registration = %d %s", draft.status, draft.body)
@@ -97,7 +98,7 @@ func TestCatalogPostgreSQLAndHTTPAcceptance(t *testing.T) {
 		if err := pool.QueryRow(ctx, `SELECT registered_at FROM catalog.agent_versions WHERE agent_id = 'runtime-a' AND version = '1.0.0'`).Scan(&storedRegisteredAt); err != nil || !draftEntry.RegisteredAt.Equal(storedRegisteredAt) {
 			t.Fatalf("registration response time = %s, stored = %s, err = %v", draftEntry.RegisteredAt, storedRegisteredAt, err)
 		}
-		assertPlatformError(t, request(t, http.MethodPost, server.baseURL+"/v2/agents", ownerAToken, registrationEnvelope(t, runtimeA)), http.StatusConflict, contracts.ErrorCodeConflict)
+		assertPlatformError(t, request(t, http.MethodPost, server.baseURL+"/v3/agents", ownerAToken, registrationEnvelope(t, runtimeA)), http.StatusConflict, contracts.ErrorCodeConflict)
 
 		var originalCard, originalOwner string
 		if err := pool.QueryRow(ctx, `
@@ -112,7 +113,7 @@ WHERE v.agent_id = 'runtime-a' AND v.version = '1.0.0'`).Scan(&originalCard, &or
 		crossOwnerExact.Description = "This structurally valid Card must not replace the immutable version."
 		crossOwnerExact.Owner.ID = "catalog-owner-b"
 		crossOwnerExact.Owner.DisplayName = "Catalog Owner B"
-		crossOwnerConflict := request(t, http.MethodPost, server.baseURL+"/v2/agents", ownerBToken, registrationEnvelope(t, mustJSON(t, crossOwnerExact)))
+		crossOwnerConflict := request(t, http.MethodPost, server.baseURL+"/v3/agents", ownerBToken, registrationEnvelope(t, mustJSON(t, crossOwnerExact)))
 		assertPlatformError(t, crossOwnerConflict, http.StatusConflict, contracts.ErrorCodeConflict)
 		for _, forbiddenDetail := range []string{originalOwner, crossOwnerExact.Name, "draft"} {
 			if bytes.Contains(crossOwnerConflict.body, []byte(forbiddenDetail)) {
@@ -138,7 +139,7 @@ WHERE v.agent_id = 'runtime-a' AND v.version = '1.0.0'`).Scan(&retainedCard, &re
 		boundaryCard.Skills[0].ID = "number.boundary"
 		boundaryCard.Skills[0].Name = "Number boundary"
 		boundaryCard.Limits.MaxInputBytes = json.Number("1e1000001")
-		boundary := request(t, http.MethodPost, server.baseURL+"/v2/agents", ownerAToken, registrationEnvelope(t, mustJSON(t, boundaryCard)))
+		boundary := request(t, http.MethodPost, server.baseURL+"/v3/agents", ownerAToken, registrationEnvelope(t, mustJSON(t, boundaryCard)))
 		boundaryEntry := decodeEntry(t, boundary)
 		if boundary.status != http.StatusCreated {
 			t.Fatalf("unbounded number registration = %d %s", boundary.status, boundary.body)
@@ -165,25 +166,25 @@ WHERE agent_id = 'unbounded-number-agent' AND version = '1.0.0'`).Scan(
 		if storedName != boundaryCard.Name || storedDescription != boundaryCard.Description {
 			t.Fatalf("derived text = %q/%q", storedName, storedDescription)
 		}
-		if result := request(t, http.MethodPost, server.baseURL+"/v2/agents/unbounded-number-agent/versions/1.0.0/publish", ownerAToken, nil); result.status != http.StatusOK {
+		if result := request(t, http.MethodPost, server.baseURL+"/v3/agents/unbounded-number-agent/versions/1.0.0/publish", ownerAToken, nil); result.status != http.StatusOK {
 			t.Fatalf("publish unbounded number Card = %d %s", result.status, result.body)
 		}
-		boundaryDiscovery := decodeSearch(t, request(t, http.MethodGet, server.baseURL+"/v2/agents?query=PostgreSQL&capability=number.boundary", userToken, nil))
+		boundaryDiscovery := decodeSearch(t, request(t, http.MethodGet, server.baseURL+"/v3/agents?query=PostgreSQL&capability=number.boundary", userToken, nil))
 		if len(boundaryDiscovery.Items) != 1 || boundaryDiscovery.Items[0].Card.Limits.MaxInputBytes.String() != "1e1000001" {
 			t.Fatalf("unbounded number Discovery = %#v", boundaryDiscovery)
 		}
 
 		invalid := append([]byte(nil), runtimeA...)
 		invalid = bytes.Replace(invalid, []byte(`"schemaVersion": "0.2"`), []byte(`"schemaVersion": "0.1"`), 1)
-		assertPlatformError(t, request(t, http.MethodPost, server.baseURL+"/v2/agents", ownerAToken, registrationEnvelope(t, invalid)), http.StatusBadRequest, contracts.ErrorCodeValidationError)
+		assertPlatformError(t, request(t, http.MethodPost, server.baseURL+"/v3/agents", ownerAToken, registrationEnvelope(t, invalid)), http.StatusBadRequest, contracts.ErrorCodeValidationError)
 
 		crossOwner := decodeCard(t, runtimeA)
 		crossOwner.Version = "2.0.0"
 		crossOwner.Owner.ID = "catalog-owner-b"
-		assertPlatformError(t, request(t, http.MethodPost, server.baseURL+"/v2/agents", ownerBToken, registrationEnvelope(t, mustJSON(t, crossOwner))), http.StatusForbidden, contracts.ErrorCodeForbidden)
+		assertPlatformError(t, request(t, http.MethodPost, server.baseURL+"/v3/agents", ownerBToken, registrationEnvelope(t, mustJSON(t, crossOwner))), http.StatusForbidden, contracts.ErrorCodeForbidden)
 
-		assertPlatformError(t, request(t, http.MethodGet, server.baseURL+"/v2/agents/runtime-a/versions/1.0.0", userToken, nil), http.StatusForbidden, contracts.ErrorCodeForbidden)
-		if result := request(t, http.MethodGet, server.baseURL+"/v2/agents/runtime-a/versions/1.0.0", ownerAToken, nil); result.status != http.StatusOK {
+		assertPlatformError(t, request(t, http.MethodGet, server.baseURL+"/v3/agents/runtime-a/versions/1.0.0", userToken, nil), http.StatusForbidden, contracts.ErrorCodeForbidden)
+		if result := request(t, http.MethodGet, server.baseURL+"/v3/agents/runtime-a/versions/1.0.0", ownerAToken, nil); result.status != http.StatusOK {
 			t.Fatalf("owner draft read = %d %s", result.status, result.body)
 		}
 		var versionRows int
@@ -193,7 +194,7 @@ WHERE agent_id = 'unbounded-number-agent' AND version = '1.0.0'`).Scan(
 	})
 
 	t.Run("publication discovery disablement and cross-runtime metadata", func(t *testing.T) {
-		publishedA := request(t, http.MethodPost, server.baseURL+"/v2/agents/runtime-a/versions/1.0.0/publish", ownerAToken, nil)
+		publishedA := request(t, http.MethodPost, server.baseURL+"/v3/agents/runtime-a/versions/1.0.0/publish", ownerAToken, nil)
 		publishedEntry := decodeEntry(t, publishedA)
 		if publishedA.status != http.StatusOK || publishedEntry.PublicationStatus != "published" {
 			t.Fatalf("publish Runtime A = %d %s", publishedA.status, publishedA.body)
@@ -202,51 +203,51 @@ WHERE agent_id = 'unbounded-number-agent' AND version = '1.0.0'`).Scan(
 		if err := pool.QueryRow(ctx, `SELECT published_at FROM catalog.agent_versions WHERE agent_id = 'runtime-a' AND version = '1.0.0'`).Scan(&storedPublishedAt); err != nil || publishedEntry.PublishedAt == nil || !publishedEntry.PublishedAt.Equal(storedPublishedAt) {
 			t.Fatalf("publication response time = %v, stored = %s, err = %v", publishedEntry.PublishedAt, storedPublishedAt, err)
 		}
-		assertPlatformError(t, request(t, http.MethodPost, server.baseURL+"/v2/agents/runtime-a/versions/1.0.0/publish", ownerAToken, nil), http.StatusConflict, contracts.ErrorCodeConflict)
-		if result := request(t, http.MethodGet, server.baseURL+"/v2/agents/runtime-a/versions/1.0.0", userToken, nil); result.status != http.StatusOK {
+		assertPlatformError(t, request(t, http.MethodPost, server.baseURL+"/v3/agents/runtime-a/versions/1.0.0/publish", ownerAToken, nil), http.StatusConflict, contracts.ErrorCodeConflict)
+		if result := request(t, http.MethodGet, server.baseURL+"/v3/agents/runtime-a/versions/1.0.0", userToken, nil); result.status != http.StatusOK {
 			t.Fatalf("published public read = %d %s", result.status, result.body)
 		}
 
-		if result := request(t, http.MethodPost, server.baseURL+"/v2/agents", ownerBToken, registrationEnvelope(t, runtimeB)); result.status != http.StatusCreated {
+		if result := request(t, http.MethodPost, server.baseURL+"/v3/agents", ownerBToken, registrationEnvelope(t, runtimeB)); result.status != http.StatusCreated {
 			t.Fatalf("register Runtime B = %d %s", result.status, result.body)
 		}
-		if result := request(t, http.MethodPost, server.baseURL+"/v2/agents/runtime-b/versions/1.0.0/publish", ownerBToken, nil); result.status != http.StatusOK {
+		if result := request(t, http.MethodPost, server.baseURL+"/v3/agents/runtime-b/versions/1.0.0/publish", ownerBToken, nil); result.status != http.StatusOK {
 			t.Fatalf("publish Runtime B = %d %s", result.status, result.body)
 		}
-		search := decodeSearch(t, request(t, http.MethodGet, server.baseURL+"/v2/agents?capability=runtime.echo", userToken, nil))
+		search := decodeSearch(t, request(t, http.MethodGet, server.baseURL+"/v3/agents?capability=runtime.echo", userToken, nil))
 		if len(search.Items) != 2 {
 			t.Fatalf("cross-runtime discovery count = %d, want 2", len(search.Items))
 		}
-		filtered := decodeSearch(t, request(t, http.MethodGet, server.baseURL+"/v2/agents?query=translation&capability=runtime.translate&ownerId=catalog-owner-b", userToken, nil))
+		filtered := decodeSearch(t, request(t, http.MethodGet, server.baseURL+"/v3/agents?query=translation&capability=runtime.translate&ownerId=catalog-owner-b", userToken, nil))
 		if len(filtered.Items) != 1 || filtered.Items[0].Card.AgentID != "runtime-b" {
 			t.Fatalf("combined discovery = %#v", filtered)
 		}
 		for _, literal := range []string{"%", "_"} {
-			literalResult := decodeSearch(t, request(t, http.MethodGet, server.baseURL+"/v2/agents?query="+url.QueryEscape(literal), userToken, nil))
+			literalResult := decodeSearch(t, request(t, http.MethodGet, server.baseURL+"/v3/agents?query="+url.QueryEscape(literal), userToken, nil))
 			if len(literalResult.Items) != 0 {
 				t.Fatalf("literal wildcard query %q matched %d rows", literal, len(literalResult.Items))
 			}
 		}
 
-		assertPlatformError(t, request(t, http.MethodPost, server.baseURL+"/v2/agents/runtime-a/versions/1.0.0/disable", userToken, nil), http.StatusForbidden, contracts.ErrorCodeForbidden)
-		firstDisable := request(t, http.MethodPost, server.baseURL+"/v2/agents/runtime-a/versions/1.0.0/disable", ownerAToken, nil)
-		secondDisable := request(t, http.MethodPost, server.baseURL+"/v2/agents/runtime-a/versions/1.0.0/disable", ownerAToken, nil)
+		assertPlatformError(t, request(t, http.MethodPost, server.baseURL+"/v3/agents/runtime-a/versions/1.0.0/disable", userToken, nil), http.StatusForbidden, contracts.ErrorCodeForbidden)
+		firstDisable := request(t, http.MethodPost, server.baseURL+"/v3/agents/runtime-a/versions/1.0.0/disable", ownerAToken, nil)
+		secondDisable := request(t, http.MethodPost, server.baseURL+"/v3/agents/runtime-a/versions/1.0.0/disable", ownerAToken, nil)
 		firstEntry, secondEntry := decodeEntry(t, firstDisable), decodeEntry(t, secondDisable)
 		if firstDisable.status != http.StatusOK || secondDisable.status != http.StatusOK || firstEntry.PublicationStatus != "disabled" || firstEntry.PublishedAt == nil || secondEntry.PublishedAt == nil || !firstEntry.PublishedAt.Equal(*secondEntry.PublishedAt) {
 			t.Fatalf("idempotent disable = %#v / %#v", firstEntry, secondEntry)
 		}
-		disabledOwnerRead := request(t, http.MethodGet, server.baseURL+"/v2/agents/runtime-a/versions/1.0.0", ownerAToken, nil)
+		disabledOwnerRead := request(t, http.MethodGet, server.baseURL+"/v3/agents/runtime-a/versions/1.0.0", ownerAToken, nil)
 		disabledOwnerEntry := decodeEntry(t, disabledOwnerRead)
 		if disabledOwnerRead.status != http.StatusOK || disabledOwnerEntry.PublicationStatus != "disabled" || disabledOwnerEntry.PublishedAt == nil || !disabledOwnerEntry.PublishedAt.Equal(*firstEntry.PublishedAt) {
 			t.Fatalf("disabled owner read = %d %s %#v", disabledOwnerRead.status, disabledOwnerRead.body, disabledOwnerEntry)
 		}
-		assertPlatformError(t, request(t, http.MethodGet, server.baseURL+"/v2/agents/runtime-a/versions/1.0.0", userToken, nil), http.StatusForbidden, contracts.ErrorCodeForbidden)
-		assertPlatformError(t, request(t, http.MethodPost, server.baseURL+"/v2/agents/runtime-a/versions/1.0.0/publish", ownerAToken, nil), http.StatusConflict, contracts.ErrorCodeConflict)
-		disabledAfterRepublishAttempt := decodeEntry(t, request(t, http.MethodGet, server.baseURL+"/v2/agents/runtime-a/versions/1.0.0", ownerAToken, nil))
+		assertPlatformError(t, request(t, http.MethodGet, server.baseURL+"/v3/agents/runtime-a/versions/1.0.0", userToken, nil), http.StatusForbidden, contracts.ErrorCodeForbidden)
+		assertPlatformError(t, request(t, http.MethodPost, server.baseURL+"/v3/agents/runtime-a/versions/1.0.0/publish", ownerAToken, nil), http.StatusConflict, contracts.ErrorCodeConflict)
+		disabledAfterRepublishAttempt := decodeEntry(t, request(t, http.MethodGet, server.baseURL+"/v3/agents/runtime-a/versions/1.0.0", ownerAToken, nil))
 		if disabledAfterRepublishAttempt.PublicationStatus != "disabled" || disabledAfterRepublishAttempt.PublishedAt == nil || !disabledAfterRepublishAttempt.PublishedAt.Equal(*firstEntry.PublishedAt) {
 			t.Fatalf("disabled state changed after republish attempt = %#v", disabledAfterRepublishAttempt)
 		}
-		afterDisable := decodeSearch(t, request(t, http.MethodGet, server.baseURL+"/v2/agents?capability=runtime.echo", userToken, nil))
+		afterDisable := decodeSearch(t, request(t, http.MethodGet, server.baseURL+"/v3/agents?capability=runtime.echo", userToken, nil))
 		if len(afterDisable.Items) != 1 || afterDisable.Items[0].Card.AgentID != "runtime-b" {
 			t.Fatalf("discovery after disable = %#v", afterDisable)
 		}
@@ -255,7 +256,7 @@ WHERE agent_id = 'unbounded-number-agent' AND version = '1.0.0'`).Scan(
 	t.Run("concurrent lifecycle has one legal final state", func(t *testing.T) {
 		card := decodeCard(t, runtimeA)
 		card.AgentID = "race-agent"
-		if result := request(t, http.MethodPost, server.baseURL+"/v2/agents", ownerAToken, registrationEnvelope(t, mustJSON(t, card))); result.status != http.StatusCreated {
+		if result := request(t, http.MethodPost, server.baseURL+"/v3/agents", ownerAToken, registrationEnvelope(t, mustJSON(t, card))); result.status != http.StatusCreated {
 			t.Fatalf("register race Card = %d %s", result.status, result.body)
 		}
 		var wait sync.WaitGroup
@@ -265,12 +266,12 @@ WHERE agent_id = 'unbounded-number-agent' AND version = '1.0.0'`).Scan(
 		go func() {
 			defer wait.Done()
 			<-start
-			statuses <- request(t, http.MethodPost, server.baseURL+"/v2/agents/race-agent/versions/1.0.0/publish", ownerAToken, nil).status
+			statuses <- request(t, http.MethodPost, server.baseURL+"/v3/agents/race-agent/versions/1.0.0/publish", ownerAToken, nil).status
 		}()
 		go func() {
 			defer wait.Done()
 			<-start
-			statuses <- request(t, http.MethodPost, server.baseURL+"/v2/agents/race-agent/versions/1.0.0/disable", ownerAToken, nil).status
+			statuses <- request(t, http.MethodPost, server.baseURL+"/v3/agents/race-agent/versions/1.0.0/disable", ownerAToken, nil).status
 		}()
 		close(start)
 		wait.Wait()
@@ -280,7 +281,7 @@ WHERE agent_id = 'unbounded-number-agent' AND version = '1.0.0'`).Scan(
 				t.Fatalf("race status = %d", status)
 			}
 		}
-		final := decodeEntry(t, request(t, http.MethodGet, server.baseURL+"/v2/agents/race-agent/versions/1.0.0", ownerAToken, nil))
+		final := decodeEntry(t, request(t, http.MethodGet, server.baseURL+"/v3/agents/race-agent/versions/1.0.0", ownerAToken, nil))
 		if final.PublicationStatus != "disabled" {
 			t.Fatalf("race final state = %q", final.PublicationStatus)
 		}
@@ -299,7 +300,7 @@ WHERE agent_id = 'unbounded-number-agent' AND version = '1.0.0'`).Scan(
 			go func() {
 				defer wait.Done()
 				<-start
-				statuses <- request(t, http.MethodPost, server.baseURL+"/v2/agents", ownerAToken, body).status
+				statuses <- request(t, http.MethodPost, server.baseURL+"/v3/agents", ownerAToken, body).status
 			}()
 		}
 		close(start)
@@ -326,14 +327,14 @@ WHERE agent_id = 'unbounded-number-agent' AND version = '1.0.0'`).Scan(
 		previousServer.stop(t)
 		assertLogsAreSecretSafe(t, previousServer.logs.String())
 		server = startServer(t, root, databaseURL, binary)
-		if result := request(t, http.MethodGet, server.baseURL+"/v2/agents/runtime-b/versions/1.0.0", userToken, nil); result.status != http.StatusOK {
+		if result := request(t, http.MethodGet, server.baseURL+"/v3/agents/runtime-b/versions/1.0.0", userToken, nil); result.status != http.StatusOK {
 			t.Fatalf("durable read after restart = %d %s", result.status, result.body)
 		}
-		boundaryRead := decodeEntry(t, request(t, http.MethodGet, server.baseURL+"/v2/agents/unbounded-number-agent/versions/1.0.0", userToken, nil))
+		boundaryRead := decodeEntry(t, request(t, http.MethodGet, server.baseURL+"/v3/agents/unbounded-number-agent/versions/1.0.0", userToken, nil))
 		if got := boundaryRead.Card.Limits.MaxInputBytes.String(); got != "1e1000001" {
 			t.Fatalf("unbounded number after restart = %s", got)
 		}
-		boundaryDiscovery := decodeSearch(t, request(t, http.MethodGet, server.baseURL+"/v2/agents?capability=number.boundary", userToken, nil))
+		boundaryDiscovery := decodeSearch(t, request(t, http.MethodGet, server.baseURL+"/v3/agents?capability=number.boundary", userToken, nil))
 		if len(boundaryDiscovery.Items) != 1 || boundaryDiscovery.Items[0].Card.AgentID != "unbounded-number-agent" || boundaryDiscovery.Items[0].Card.Limits.MaxInputBytes.String() != "1e1000001" {
 			t.Fatalf("unbounded Discovery after restart = %#v", boundaryDiscovery)
 		}
@@ -341,7 +342,7 @@ WHERE agent_id = 'unbounded-number-agent' AND version = '1.0.0'`).Scan(
 		if _, err := pool.Exec(ctx, `ALTER SCHEMA catalog RENAME TO catalog_unavailable`); err != nil {
 			t.Fatal(err)
 		}
-		failure := request(t, http.MethodGet, server.baseURL+"/v2/agents?capability=runtime.echo", userToken, nil)
+		failure := request(t, http.MethodGet, server.baseURL+"/v3/agents?capability=runtime.echo", userToken, nil)
 		assertPlatformError(t, failure, http.StatusServiceUnavailable, contracts.ErrorCodeDependency)
 		if _, err := pool.Exec(ctx, `ALTER SCHEMA catalog_unavailable RENAME TO catalog`); err != nil {
 			t.Fatal(err)
@@ -376,18 +377,18 @@ WHERE agent_id = 'unbounded-number-agent' AND version = '1.0.0'`).Scan(
 		clockTransaction, firstSequence := beginDelayedPublication(t, pool, "clock-race-a")
 		secondPublication := make(chan httpResult, 1)
 		go func() {
-			secondPublication <- request(t, http.MethodPost, server.baseURL+"/v2/agents/clock-race-b/versions/1.0.0/publish", ownerAToken, nil)
+			secondPublication <- request(t, http.MethodPost, server.baseURL+"/v3/agents/clock-race-b/versions/1.0.0/publish", ownerAToken, nil)
 		}()
 		select {
 		case result := <-secondPublication:
 			t.Fatalf("competing publication bypassed transactional clock with status %d", result.status)
 		case <-time.After(100 * time.Millisecond):
 		}
-		first := decodeSearch(t, request(t, http.MethodGet, server.baseURL+"/v2/agents?capability=scale.test&limit=100", userToken, nil))
+		first := decodeSearch(t, request(t, http.MethodGet, server.baseURL+"/v3/agents?capability=scale.test&limit=100", userToken, nil))
 		if len(first.Items) != 100 || first.NextCursor == nil {
 			t.Fatalf("first scale page = %d items, cursor %v", len(first.Items), first.NextCursor)
 		}
-		mismatched := request(t, http.MethodGet, server.baseURL+"/v2/agents?capability=other.test&limit=100&cursor="+*first.NextCursor, userToken, nil)
+		mismatched := request(t, http.MethodGet, server.baseURL+"/v3/agents?capability=other.test&limit=100&cursor="+*first.NextCursor, userToken, nil)
 		assertPlatformError(t, mismatched, http.StatusBadRequest, contracts.ErrorCodeValidationError)
 		firstVersions := make([]string, len(first.Items))
 		for index, item := range first.Items {
@@ -420,7 +421,7 @@ WHERE agent_id = 'unbounded-number-agent' AND version = '1.0.0'`).Scan(
 		}
 		cursor := first.NextCursor
 		for cursor != nil {
-			page := decodeSearch(t, request(t, http.MethodGet, server.baseURL+"/v2/agents?capability=scale.test&limit=100&cursor="+*cursor, userToken, nil))
+			page := decodeSearch(t, request(t, http.MethodGet, server.baseURL+"/v3/agents?capability=scale.test&limit=100&cursor="+*cursor, userToken, nil))
 			for _, item := range page.Items {
 				key := item.Card.AgentID + "@" + item.Card.Version
 				if _, exists := seen[key]; exists {
@@ -448,7 +449,7 @@ WHERE agent_id = 'unbounded-number-agent' AND version = '1.0.0'`).Scan(
 
 		seedPublishedVersions(t, pool, 1000, 9000)
 		started := time.Now()
-		page := request(t, http.MethodGet, server.baseURL+"/v2/agents?capability=scale.test&limit=100", userToken, nil)
+		page := request(t, http.MethodGet, server.baseURL+"/v3/agents?capability=scale.test&limit=100", userToken, nil)
 		elapsed := time.Since(started)
 		if page.status != http.StatusOK {
 			t.Fatalf("10,000-version first page = %d %s", page.status, page.body)
@@ -793,14 +794,20 @@ func startServer(t *testing.T, root, databaseURL, binary string) *testServer {
 	if err != nil {
 		t.Fatal(err)
 	}
+	internalPrincipalsJSON, err := json.Marshal([]map[string]string{{"id": "router-integration", "tokenSha256": digest(internalToken)}})
+	if err != nil {
+		t.Fatal(err)
+	}
 	server := &testServer{baseURL: "http://" + address}
 	server.command = exec.Command(binary, "serve")
 	server.command.Dir = root
 	server.command.Env = environmentWith(map[string]string{
-		"NEKIRO_DATABASE_URL":             databaseURL,
-		"NEKIRO_LISTEN_ADDRESS":           address,
-		"NEKIRO_AUTH_MODE":                "development-static",
-		"NEKIRO_DEV_AUTH_PRINCIPALS_JSON": string(principalsJSON),
+		"NEKIRO_DATABASE_URL":                      databaseURL,
+		"NEKIRO_LISTEN_ADDRESS":                    address,
+		"NEKIRO_AUTH_MODE":                         "development-static",
+		"NEKIRO_DEV_AUTH_PRINCIPALS_JSON":          string(principalsJSON),
+		"NEKIRO_INTERNAL_AUTH_MODE":                "development-static",
+		"NEKIRO_INTERNAL_DEV_AUTH_PRINCIPALS_JSON": string(internalPrincipalsJSON),
 	})
 	server.command.Stdout = &server.logs
 	server.command.Stderr = &server.logs
@@ -1077,7 +1084,7 @@ func registerClockRaceCards(t *testing.T, server *testServer) {
 	for _, agentID := range []string{"clock-race-a", "clock-race-b"} {
 		card := scaleCard("1.0.0")
 		card.AgentID = agentID
-		result := request(t, http.MethodPost, server.baseURL+"/v2/agents", ownerAToken, registrationEnvelope(t, mustJSON(t, card)))
+		result := request(t, http.MethodPost, server.baseURL+"/v3/agents", ownerAToken, registrationEnvelope(t, mustJSON(t, card)))
 		if result.status != http.StatusCreated {
 			t.Fatalf("register %s = %d %s", agentID, result.status, result.body)
 		}

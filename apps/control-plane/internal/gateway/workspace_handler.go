@@ -41,6 +41,10 @@ type installRequestWire struct {
 	AcceptedPermissions json.RawMessage `json:"acceptedPermissions"`
 }
 
+type updateInstallationRequestWire struct {
+	Status json.RawMessage `json:"status"`
+}
+
 func NewWorkspaceHandler(authenticator, internalAuthenticator Authenticator, service WorkspaceService, traces *TraceGenerator, logger *slog.Logger) (*WorkspaceHandler, error) {
 	if authenticator == nil || internalAuthenticator == nil || service == nil || traces == nil || logger == nil {
 		return nil, errors.New("workspace gateway dependencies are required")
@@ -164,12 +168,12 @@ func (handler *WorkspaceHandler) updateInstallation(writer http.ResponseWriter, 
 	if !ok {
 		return
 	}
-	var body contracts.UpdateInstallationRequest
-	if err := readStrictJSON(writer, request, &body); err != nil {
+	status, err := readUpdateInstallationStatus(writer, request)
+	if err != nil {
 		handler.fail(writer, request, traceID, "update_installation", workspace.ErrInvalid, nil)
 		return
 	}
-	value, err := handler.service.UpdateInstallation(request.Context(), caller, request.PathValue("workspaceId"), request.PathValue("installationId"), body.Status)
+	value, err := handler.service.UpdateInstallation(request.Context(), caller, request.PathValue("workspaceId"), request.PathValue("installationId"), status)
 	if err != nil {
 		handler.fail(writer, request, traceID, "update_installation", err, nil)
 		return
@@ -320,6 +324,22 @@ func readInstallRequest(writer http.ResponseWriter, request *http.Request) (cont
 		VersionConstraint:   wire.VersionConstraint,
 		AcceptedPermissions: accepted,
 	}, nil
+}
+
+func readUpdateInstallationStatus(writer http.ResponseWriter, request *http.Request) (string, error) {
+	var wire updateInstallationRequestWire
+	if err := readStrictJSON(writer, request, &wire); err != nil {
+		return "", err
+	}
+	status := bytes.TrimSpace(wire.Status)
+	if len(status) == 0 || bytes.Equal(status, []byte("null")) {
+		return "", errors.New("status is required")
+	}
+	var value string
+	if err := json.Unmarshal(status, &value); err != nil || (value != "enabled" && value != "disabled") {
+		return "", errors.New("status is invalid")
+	}
+	return value, nil
 }
 
 func rejectDuplicateMembers(data []byte) error {

@@ -35,10 +35,20 @@ type workspaceTestService struct {
 	createErr          error
 	getErr             error
 	installErr         error
+	updateErr          error
+	uninstallErr       error
 	createCalls        int
 	getCalls           int
 	installCalls       int
+	updateCalls        int
+	uninstallCalls     int
 	lastInstallRequest contracts.InstallAgentRequest
+	lastUpdate         struct {
+		workspaceID, installationID, status string
+	}
+	lastUninstall struct {
+		workspaceID, installationID string
+	}
 }
 
 func (service *workspaceTestService) CreateWorkspace(_ context.Context, caller workspace.AuthenticatedCaller, request contracts.CreateWorkspaceRequest) (contracts.Workspace, error) {
@@ -83,11 +93,29 @@ func (service *workspaceTestService) GetInstallation(context.Context, workspace.
 func (service *workspaceTestService) ListInstallations(context.Context, workspace.AuthenticatedCaller, string, int, *string) (contracts.InstallationList, error) {
 	return contracts.InstallationList{Items: []contracts.Installation{}}, nil
 }
-func (service *workspaceTestService) UpdateInstallation(context.Context, workspace.AuthenticatedCaller, string, string, string) (contracts.Installation, error) {
-	return contracts.Installation{}, nil
+func (service *workspaceTestService) UpdateInstallation(_ context.Context, _ workspace.AuthenticatedCaller, workspaceID, installationID, status string) (contracts.Installation, error) {
+	service.updateCalls++
+	service.lastUpdate.workspaceID = workspaceID
+	service.lastUpdate.installationID = installationID
+	service.lastUpdate.status = status
+	if service.updateErr != nil {
+		return contracts.Installation{}, service.updateErr
+	}
+	service.installation.Status = status
+	return service.installation, nil
 }
-func (service *workspaceTestService) Uninstall(context.Context, workspace.AuthenticatedCaller, string, string) (contracts.Installation, error) {
-	return contracts.Installation{}, nil
+func (service *workspaceTestService) Uninstall(_ context.Context, _ workspace.AuthenticatedCaller, workspaceID, installationID string) (contracts.Installation, error) {
+	service.uninstallCalls++
+	service.lastUninstall.workspaceID = workspaceID
+	service.lastUninstall.installationID = installationID
+	if service.uninstallErr != nil {
+		return contracts.Installation{}, service.uninstallErr
+	}
+	service.installation.Status = "uninstalled"
+	now := time.Date(2026, 7, 15, 10, 0, 0, 0, time.UTC)
+	service.installation.UpdatedAt = now
+	service.installation.UninstalledAt = &now
+	return service.installation, nil
 }
 func (service *workspaceTestService) Resolve(context.Context, contracts.ResolveAgentRequest) (contracts.ResolveAgentResponse, error) {
 	return contracts.ResolveAgentResponse{}, service.resolveErr
@@ -245,6 +273,96 @@ func TestWorkspaceHandlerInstallRequiresPermissionArrayAndPreservesEmpty(t *test
 		if response.Code != test.status || !strings.Contains(response.Body.String(), `"code":"`+test.code+`"`) {
 			t.Fatalf("install error=%v status=%d body=%s", test.err, response.Code, response.Body.String())
 		}
+	}
+}
+
+func TestWorkspaceHandlerMapsLifecycleSuccessAndFailures(t *testing.T) {
+	service := &workspaceTestService{installation: contracts.Installation{
+		InstallationID: "installation-a", WorkspaceID: "workspace-a", AgentID: "agent-a",
+		VersionConstraint: "^1.0.0", InstalledVersion: "1.0.0",
+		AcceptedPermissions: []string{"document.read"}, Status: "enabled",
+		InstalledAt: time.Date(2026, 7, 15, 9, 0, 0, 0, time.UTC), UpdatedAt: time.Date(2026, 7, 15, 9, 0, 0, 0, time.UTC),
+	}}
+	handler := newWorkspaceTestHandler(t, workspaceTestAuthenticator{caller: catalog.AuthenticatedCaller{ID: "owner-a"}}, service)
+
+	request := httptest.NewRequest(http.MethodPatch, "/v3/workspaces/workspace-a/installations/installation-a", strings.NewReader(`{"status":"disabled"}`))
+	request.Header.Set("Authorization", "Bearer token")
+	response := httptest.NewRecorder()
+	handler.Routes().ServeHTTP(response, request)
+	if response.Code != http.StatusOK || response.Header().Get(TraceHeader) == "" || service.updateCalls != 1 || service.lastUpdate.status != "disabled" {
+		t.Fatalf("disable response status=%d trace=%q calls=%d request=%#v", response.Code, response.Header().Get(TraceHeader), service.updateCalls, service.lastUpdate)
+	}
+	var disabled contracts.Installation
+	if err := json.Unmarshal(response.Body.Bytes(), &disabled); err != nil {
+		t.Fatal(err)
+	}
+	if disabled.Status != "disabled" || disabled.InstalledVersion != "1.0.0" || len(disabled.AcceptedPermissions) != 1 {
+		t.Fatalf("disable response = %#v", disabled)
+	}
+
+	request = httptest.NewRequest(http.MethodDelete, "/v3/workspaces/workspace-a/installations/installation-a", nil)
+	request.Header.Set("Authorization", "Bearer token")
+	response = httptest.NewRecorder()
+	handler.Routes().ServeHTTP(response, request)
+	if response.Code != http.StatusOK || service.uninstallCalls != 1 || service.lastUninstall.installationID != "installation-a" {
+		t.Fatalf("uninstall response status=%d calls=%d request=%#v", response.Code, service.uninstallCalls, service.lastUninstall)
+	}
+	var terminal contracts.Installation
+	if err := json.Unmarshal(response.Body.Bytes(), &terminal); err != nil {
+		t.Fatal(err)
+	}
+	if terminal.Status != "uninstalled" || terminal.UninstalledAt == nil || !terminal.UninstalledAt.Equal(terminal.UpdatedAt) {
+		t.Fatalf("terminal response = %#v", terminal)
+	}
+
+	for _, test := range []struct {
+		name       string
+		method     string
+		body       string
+		err        error
+		wantStatus int
+		wantCode   string
+	}{
+		{name: "invalid missing status", method: http.MethodPatch, body: `{}`, err: workspace.ErrInvalid, wantStatus: http.StatusBadRequest, wantCode: "VALIDATION_ERROR"},
+		{name: "invalid terminal target", method: http.MethodPatch, body: `{"status":"uninstalled"}`, err: workspace.ErrInvalid, wantStatus: http.StatusBadRequest, wantCode: "VALIDATION_ERROR"},
+		{name: "unknown fields", method: http.MethodPatch, body: `{"status":"enabled","secret":"token=secret"}`, err: workspace.ErrInvalid, wantStatus: http.StatusBadRequest, wantCode: "VALIDATION_ERROR"},
+		{name: "forbidden", method: http.MethodPatch, body: `{"status":"enabled"}`, err: workspace.ErrForbidden, wantStatus: http.StatusForbidden, wantCode: "FORBIDDEN"},
+		{name: "not found", method: http.MethodPatch, body: `{"status":"enabled"}`, err: workspace.ErrNotFound, wantStatus: http.StatusNotFound, wantCode: "NOT_FOUND"},
+		{name: "conflict", method: http.MethodPatch, body: `{"status":"enabled"}`, err: workspace.ErrConflict, wantStatus: http.StatusConflict, wantCode: "CONFLICT"},
+		{name: "dependency", method: http.MethodDelete, body: ``, err: workspace.ErrDependency, wantStatus: http.StatusServiceUnavailable, wantCode: "DEPENDENCY_ERROR"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			service.updateErr = nil
+			service.uninstallErr = nil
+			if test.method == http.MethodPatch {
+				service.updateErr = test.err
+			} else {
+				service.uninstallErr = test.err
+			}
+			beforeUpdate := service.updateCalls
+			beforeUninstall := service.uninstallCalls
+			request := httptest.NewRequest(test.method, "/v3/workspaces/workspace-a/installations/installation-a", strings.NewReader(test.body))
+			request.Header.Set("Authorization", "Bearer token")
+			response := httptest.NewRecorder()
+			handler.Routes().ServeHTTP(response, request)
+			if response.Code != test.wantStatus || response.Header().Get(TraceHeader) == "" || !strings.Contains(response.Body.String(), `"code":"`+test.wantCode+`"`) {
+				t.Fatalf("status=%d trace=%q body=%s", response.Code, response.Header().Get(TraceHeader), response.Body.String())
+			}
+			if test.err == workspace.ErrInvalid && test.method == http.MethodPatch && beforeUpdate != service.updateCalls {
+				t.Fatalf("invalid PATCH reached service: before=%d after=%d", beforeUpdate, service.updateCalls)
+			}
+			if test.method == http.MethodDelete && test.err == workspace.ErrDependency && beforeUninstall == service.uninstallCalls {
+				t.Fatalf("dependency DELETE did not reach service")
+			}
+		})
+	}
+
+	unauthenticated := newWorkspaceTestHandler(t, workspaceTestAuthenticator{err: ErrUnauthenticated}, service)
+	request = httptest.NewRequest(http.MethodDelete, "/v3/workspaces/workspace-a/installations/installation-a", nil)
+	response = httptest.NewRecorder()
+	unauthenticated.Routes().ServeHTTP(response, request)
+	if response.Code != http.StatusUnauthorized || service.uninstallCalls != 2 {
+		t.Fatalf("unauthenticated response status=%d uninstallCalls=%d", response.Code, service.uninstallCalls)
 	}
 }
 

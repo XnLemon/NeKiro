@@ -208,6 +208,43 @@ func TestWorkspaceV3GoMappings(t *testing.T) {
 	validateOpenAPIValue(t, item.Delete.Responses.Status(200).Value.Content["application/json"].Schema, uninstalled)
 }
 
+func TestWorkspaceV3LifecycleContractIsTerminalAndNonIdempotent(t *testing.T) {
+	document := loadOpenAPIDocument(t, filepath.Join("openapi", "control-plane.v3.yaml"))
+	item := document.Paths.Find("/v3/workspaces/{workspaceId}/installations/{installationId}")
+	if item == nil || item.Patch == nil || item.Delete == nil {
+		t.Fatal("active lifecycle operations are missing")
+	}
+	statusSchema := item.Patch.RequestBody.Value.Content["application/json"].Schema
+	if statusSchema == nil || statusSchema.Value == nil {
+		t.Fatal("lifecycle status schema is missing")
+	}
+	statusRequired := false
+	for _, required := range statusSchema.Value.Required {
+		if required == "status" {
+			statusRequired = true
+			break
+		}
+	}
+	if !statusRequired {
+		t.Fatal("lifecycle status is not required")
+	}
+	status := statusSchema.Value.Properties["status"]
+	if status == nil || status.Value == nil || len(status.Value.Enum) != 2 {
+		t.Fatalf("lifecycle status enum = %#v, want enabled/disabled", status)
+	}
+	if status.Value.Enum[0] != "enabled" || status.Value.Enum[1] != "disabled" {
+		t.Fatalf("lifecycle status enum = %#v", status.Value.Enum)
+	}
+	if item.Delete.Description == "" || !strings.Contains(strings.ToLower(item.Delete.Description), "disabled") || !strings.Contains(strings.ToLower(item.Delete.Description), "conflict") {
+		t.Fatalf("DELETE description does not declare terminal/conflict policy: %q", item.Delete.Description)
+	}
+	for _, operation := range []*openapi3.Operation{item.Patch, item.Delete} {
+		for _, code := range []int{400, 401, 403, 404, 409, 503} {
+			assertTraceHeader(t, operation, code)
+		}
+	}
+}
+
 func TestControlPlaneInternalResolutionDeclaresTrustedIdentityAndTrace(t *testing.T) {
 	document := loadOpenAPIDocument(t, filepath.Join("openapi", "control-plane-internal.v2.yaml"))
 	operation := findOperation(t, document, "/internal/v2/resolve-agent", "POST")

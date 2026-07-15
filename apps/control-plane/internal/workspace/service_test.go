@@ -120,12 +120,15 @@ func (store *memoryStore) UninstallInstallation(_ context.Context, workspaceID, 
 func (store *memoryStore) Check(context.Context) error { return nil }
 
 type memoryCatalog struct {
-	candidates []catalog.AgentVersion
-	versions   map[string]catalog.AgentVersion
-	selectErr  error
+	candidates  []catalog.AgentVersion
+	versions    map[string]catalog.AgentVersion
+	selectErr   error
+	selectCalls int
+	getCalls    int
 }
 
 func (reader *memoryCatalog) SelectPublished(_ context.Context, agentID, constraint string) (catalog.AgentVersion, error) {
+	reader.selectCalls++
 	if reader.selectErr != nil {
 		return catalog.AgentVersion{}, reader.selectErr
 	}
@@ -140,6 +143,7 @@ func (reader *memoryCatalog) SelectPublished(_ context.Context, agentID, constra
 	return service.SelectPublished(context.Background(), agentID, constraint)
 }
 func (reader *memoryCatalog) GetVersion(_ context.Context, agentID, version string) (catalog.AgentVersion, error) {
+	reader.getCalls++
 	value, exists := reader.versions[agentID+"/"+version]
 	if !exists {
 		return catalog.AgentVersion{}, catalog.ErrNotFound
@@ -380,6 +384,169 @@ func TestLifecycleResolutionAndReinstall(t *testing.T) {
 	}
 }
 
+func TestLifecycleTransitionTablePreservesImmutableFactsAndTimestamps(t *testing.T) {
+	store := newMemoryStore()
+	reader := &memoryCatalog{candidates: []catalog.AgentVersion{{
+		Card:   testWorkspaceCard("agent-lifecycle", "1.0.0", []string{"read", "write"}, nil),
+		Status: catalog.PublicationPublished,
+	}}}
+	clockValues := []time.Time{
+		time.Date(2026, 7, 15, 10, 0, 0, 0, time.UTC),
+		time.Date(2026, 7, 15, 10, 0, 1, 0, time.UTC),
+		time.Date(2026, 7, 15, 10, 0, 2, 0, time.UTC),
+		time.Date(2026, 7, 15, 10, 0, 3, 0, time.UTC),
+		time.Date(2026, 7, 15, 10, 0, 4, 0, time.UTC),
+		time.Date(2026, 7, 15, 10, 0, 5, 0, time.UTC),
+		time.Date(2026, 7, 15, 10, 0, 6, 0, time.UTC),
+		time.Date(2026, 7, 15, 10, 0, 7, 0, time.UTC),
+	}
+	clockIndex := 0
+	service := newWorkspaceTestServiceWithClock(t, store, reader, func() time.Time {
+		value := clockValues[clockIndex]
+		clockIndex++
+		return value
+	})
+	owner := AuthenticatedCaller{ID: "owner-a"}
+	if _, err := service.CreateWorkspace(context.Background(), owner, contracts.CreateWorkspaceRequest{WorkspaceID: "workspace-lifecycle"}); err != nil {
+		t.Fatal(err)
+	}
+	installation, err := service.Install(context.Background(), owner, "workspace-lifecycle", contracts.InstallAgentRequest{
+		AgentID: "agent-lifecycle", VersionConstraint: "^1.0.0", AcceptedPermissions: []string{"write", "read"},
+	})
+	if err != nil {
+		t.Fatalf("install: %v", err)
+	}
+	if !installation.InstalledAt.Equal(clockValues[1]) || !installation.UpdatedAt.Equal(clockValues[1]) {
+		t.Fatalf("initial timestamps = %#v", installation)
+	}
+
+	before := installation
+	disabled, err := service.UpdateInstallation(context.Background(), owner, "workspace-lifecycle", installation.InstallationID, "disabled")
+	if err != nil {
+		t.Fatalf("disable: %v", err)
+	}
+	if disabled.Status != "disabled" || !disabled.UpdatedAt.Equal(clockValues[2]) || !disabled.UpdatedAt.After(before.UpdatedAt) {
+		t.Fatalf("disabled result = %#v", disabled)
+	}
+	assertImmutableInstallationFacts(t, before, disabled)
+
+	if _, err := service.UpdateInstallation(context.Background(), owner, "workspace-lifecycle", installation.InstallationID, "disabled"); !errors.Is(err, ErrConflict) {
+		t.Fatalf("same-state disable = %v, want conflict", err)
+	}
+	if _, err := service.Uninstall(context.Background(), owner, "workspace-lifecycle", installation.InstallationID); err != nil {
+		t.Fatalf("uninstall disabled Installation: %v", err)
+	}
+	terminal, err := service.GetInstallation(context.Background(), owner, "workspace-lifecycle", installation.InstallationID)
+	if err != nil {
+		t.Fatalf("read terminal Installation: %v", err)
+	}
+	if terminal.Status != "uninstalled" || terminal.UninstalledAt == nil || !terminal.UninstalledAt.Equal(terminal.UpdatedAt) || !terminal.UpdatedAt.Equal(clockValues[4]) {
+		t.Fatalf("terminal result = %#v", terminal)
+	}
+	assertImmutableInstallationFacts(t, before, terminal)
+	if reader.selectCalls != 1 || reader.getCalls != 0 {
+		t.Fatalf("lifecycle consulted Catalog: select=%d get=%d", reader.selectCalls, reader.getCalls)
+	}
+
+	if _, err := service.UpdateInstallation(context.Background(), owner, "workspace-lifecycle", installation.InstallationID, "enabled"); !errors.Is(err, ErrConflict) {
+		t.Fatalf("re-enable terminal Installation = %v, want conflict", err)
+	}
+	if _, err := service.Uninstall(context.Background(), owner, "workspace-lifecycle", installation.InstallationID); !errors.Is(err, ErrConflict) {
+		t.Fatalf("repeat terminal uninstall = %v, want conflict", err)
+	}
+
+	reinstalled, err := service.Install(context.Background(), owner, "workspace-lifecycle", contracts.InstallAgentRequest{
+		AgentID: "agent-lifecycle", VersionConstraint: "^1.0.0", AcceptedPermissions: []string{"read", "write"},
+	})
+	if err != nil {
+		t.Fatalf("reinstall: %v", err)
+	}
+	if reinstalled.InstallationID == terminal.InstallationID || reinstalled.Status != "enabled" || !reinstalled.UpdatedAt.Equal(clockValues[7]) {
+		t.Fatalf("reinstall result = %#v", reinstalled)
+	}
+}
+
+func TestLifecycleRejectsNonOwnerInvalidIdentityAndDependency(t *testing.T) {
+	store := newMemoryStore()
+	reader := &memoryCatalog{}
+	service := newWorkspaceTestService(t, store, reader)
+	owner := AuthenticatedCaller{ID: "owner-a"}
+	if _, err := service.CreateWorkspace(context.Background(), owner, contracts.CreateWorkspaceRequest{WorkspaceID: "workspace-policy"}); err != nil {
+		t.Fatal(err)
+	}
+	store.installations["installation-policy"] = contracts.Installation{
+		InstallationID: "installation-policy", WorkspaceID: "workspace-policy", AgentID: "agent-policy",
+		VersionConstraint: "^1.0.0", InstalledVersion: "1.0.0", AcceptedPermissions: []string{"read"},
+		Status: "enabled", InstalledAt: time.Date(2026, 7, 15, 10, 0, 0, 0, time.UTC), UpdatedAt: time.Date(2026, 7, 15, 10, 0, 0, 0, time.UTC),
+	}
+
+	cases := []struct {
+		name                                string
+		caller                              AuthenticatedCaller
+		workspaceID, installationID, status string
+		want                                error
+	}{
+		{name: "non-owner disable", caller: AuthenticatedCaller{ID: "owner-b"}, workspaceID: "workspace-policy", installationID: "installation-policy", status: "disabled", want: ErrForbidden},
+		{name: "missing caller", caller: AuthenticatedCaller{}, workspaceID: "workspace-policy", installationID: "installation-policy", status: "disabled", want: ErrInvalid},
+		{name: "invalid target", caller: owner, workspaceID: "workspace-policy", installationID: "installation-policy", status: "uninstalled", want: ErrInvalid},
+		{name: "unknown installation", caller: owner, workspaceID: "workspace-policy", installationID: "missing-installation", status: "disabled", want: ErrNotFound},
+		{name: "wrong workspace", caller: owner, workspaceID: "other-workspace", installationID: "installation-policy", status: "disabled", want: ErrNotFound},
+	}
+	for _, test := range cases {
+		t.Run(test.name, func(t *testing.T) {
+			if test.workspaceID == "other-workspace" {
+				if _, err := service.CreateWorkspace(context.Background(), owner, contracts.CreateWorkspaceRequest{WorkspaceID: test.workspaceID}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			_, err := service.UpdateInstallation(context.Background(), test.caller, test.workspaceID, test.installationID, test.status)
+			if !errors.Is(err, test.want) {
+				t.Fatalf("error = %v, want %v", err, test.want)
+			}
+		})
+	}
+
+	dependencyStore := &lifecycleDependencyStore{Store: store, workspace: contracts.Workspace{WorkspaceID: "workspace-policy", OwnerID: "owner-a"}, changeErr: ErrDependency, uninstallErr: ErrDependency}
+	dependencyService := newWorkspaceTestService(t, dependencyStore, reader)
+	if _, err := dependencyService.UpdateInstallation(context.Background(), owner, "workspace-policy", "installation-policy", "disabled"); !errors.Is(err, ErrDependency) {
+		t.Fatalf("transition dependency = %v, want dependency", err)
+	}
+	if _, err := dependencyService.Uninstall(context.Background(), owner, "workspace-policy", "installation-policy"); !errors.Is(err, ErrDependency) {
+		t.Fatalf("uninstall dependency = %v, want dependency", err)
+	}
+}
+
+type lifecycleDependencyStore struct {
+	Store
+	workspace    contracts.Workspace
+	changeErr    error
+	uninstallErr error
+}
+
+func (store *lifecycleDependencyStore) GetWorkspace(context.Context, string) (contracts.Workspace, error) {
+	return store.workspace, nil
+}
+
+func (store *lifecycleDependencyStore) ChangeInstallationStatus(context.Context, string, string, string, time.Time) (contracts.Installation, error) {
+	return contracts.Installation{}, store.changeErr
+}
+
+func (store *lifecycleDependencyStore) UninstallInstallation(context.Context, string, string, time.Time) (contracts.Installation, error) {
+	return contracts.Installation{}, store.uninstallErr
+}
+
+func assertImmutableInstallationFacts(t *testing.T, before, after contracts.Installation) {
+	t.Helper()
+	if before.InstallationID != after.InstallationID || before.WorkspaceID != after.WorkspaceID || before.AgentID != after.AgentID || before.VersionConstraint != after.VersionConstraint || before.InstalledVersion != after.InstalledVersion || len(before.AcceptedPermissions) != len(after.AcceptedPermissions) {
+		t.Fatalf("immutable fields changed: before=%#v after=%#v", before, after)
+	}
+	for index := range before.AcceptedPermissions {
+		if before.AcceptedPermissions[index] != after.AcceptedPermissions[index] {
+			t.Fatalf("permission %d changed: before=%#v after=%#v", index, before, after)
+		}
+	}
+}
+
 func TestListCursorBindsWorkspaceAndLimit(t *testing.T) {
 	reader := &memoryCatalog{versions: map[string]catalog.AgentVersion{}}
 	store := newMemoryStore()
@@ -403,14 +570,19 @@ func TestListCursorBindsWorkspaceAndLimit(t *testing.T) {
 }
 
 func newWorkspaceTestService(t *testing.T, store Store, reader CatalogReader) *Service {
+	return newWorkspaceTestServiceWithClock(t, store, reader, func() time.Time {
+		return time.Date(2026, 7, 14, 12, 0, 0, 0, time.UTC)
+	})
+}
+
+func newWorkspaceTestServiceWithClock(t *testing.T, store Store, reader CatalogReader, clock Clock) *Service {
 	t.Helper()
 	validator, err := contracts.NewValidator()
 	if err != nil {
 		t.Fatal(err)
 	}
-	clock := time.Date(2026, 7, 14, 12, 0, 0, 0, time.UTC)
 	sequence := 0
-	service, err := NewService(store, reader, OwnerPolicy{}, validator, func() time.Time { return clock }, func() (string, error) {
+	service, err := NewService(store, reader, OwnerPolicy{}, validator, clock, func() (string, error) {
 		sequence++
 		return fmt.Sprintf("installation-generated-%d", sequence), nil
 	})
