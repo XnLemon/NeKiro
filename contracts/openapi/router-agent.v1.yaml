@@ -1,0 +1,141 @@
+openapi: 3.1.0
+info:
+  title: NeKiro Agent Router API
+  version: 1.0.0
+  description: >-
+    Agent-SDK-facing nested invocation boundary. It is distinct from the
+    Control-Plane-only Router Internal API. The Bearer binding authenticates
+    exactly one calling Agent and is never a Card or Ledger field.
+servers:
+  - url: https://a2a-router.agent.nekiro.dev
+    description: Explicit Agent-facing Router destination; no default or direct-Agent fallback
+paths:
+  /agent/v1/invocations:
+    post:
+      operationId: dispatchNestedInvocation
+      summary: Create and dispatch one child Invocation
+      description: >-
+        The request supplies only an existing parent reference and untrusted
+        target work. Router derives caller Agent identity from authentication,
+        requires the committed parent target Agent to match that identity and
+        the parent to be running, copies Workspace/root Task/Trace from the
+        parent, and generates the child Invocation ID. Authentication, strict
+        shape, parent, and mode failures occur before child acceptance and
+        create no child Ledger fact. A successful child created-event commit
+        is acceptance. No direct target endpoint, retry, or replay exists.
+      security:
+        - agentBearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/ResultAccept"
+      requestBody:
+        required: true
+        x-nekiro-max-body-bytes-source: required-router-agent-request-limit
+        x-nekiro-limit-default: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NestedInvocationRequest"
+      responses:
+        "200":
+          description: >-
+            JSON success follows terminal Ledger commit. SSE accepted follows
+            created commit; every event is one data line, one blank line, and
+            an immediate flush. A failed SSE delivery event does not fabricate
+            a terminal Ledger fact after Ledger persistence loss.
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/invocation-result.v1.schema.json
+            text/event-stream:
+              schema: { type: string }
+              x-sse-data-schema:
+                $ref: ../schemas/invocation-result-stream-event.v2.schema.json
+              x-nekiro-sse-framing: single-data-line-blank-line-flush
+              x-nekiro-max-event-bytes-source: required-router-sse-event-limit
+              x-nekiro-limit-default: false
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/ParentNotFound" }
+        "406": { $ref: "#/components/responses/NotAcceptable" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "413": { $ref: "#/components/responses/PayloadTooLarge" }
+        "502": { $ref: "#/components/responses/AgentFailure" }
+        "503": { $ref: "#/components/responses/Unavailable" }
+        "504": { $ref: "#/components/responses/Timeout" }
+components:
+  securitySchemes:
+    agentBearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: opaque-agent-binding
+      description: >-
+        Required Router deployment binding from one opaque secret to one exact
+        Agent ID. Missing/invalid bindings are rejected; no default identity,
+        anonymous mode, Card secret, or request identity is permitted.
+  parameters:
+    ResultAccept:
+      in: header
+      name: Accept
+      required: true
+      schema: { type: string, minLength: 1 }
+      description: application/json or compatible wildcard for stream=false; text/event-stream for stream=true.
+  schemas:
+    NestedInvocationRequest:
+      type: object
+      additionalProperties: false
+      required: [parentInvocationId, targetAgentId, capability, input, stream]
+      properties:
+        parentInvocationId:
+          $ref: ../schemas/common.v1.schema.json#/$defs/invocationId
+        targetAgentId:
+          $ref: ../schemas/common.v1.schema.json#/$defs/agentId
+        capability:
+          $ref: ../schemas/common.v1.schema.json#/$defs/capabilityId
+        input:
+          $ref: ../schemas/common.v1.schema.json#/$defs/jsonObject
+        stream: { type: boolean }
+  responses:
+    BadRequest:
+      description: Malformed or structurally invalid request; no child correlation exists
+      x-platform-error-codes: [VALIDATION_ERROR]
+      content: { application/json: { schema: { $ref: ../schemas/platform-error.v4.schema.json } } }
+    Unauthenticated:
+      description: Missing or invalid Agent credential; no child correlation exists
+      x-platform-error-codes: [UNAUTHENTICATED]
+      content: { application/json: { schema: { $ref: ../schemas/platform-error.v4.schema.json } } }
+    Forbidden:
+      description: Authenticated Agent does not match the committed parent target
+      x-platform-error-codes: [FORBIDDEN]
+      content: { application/json: { schema: { $ref: ../schemas/platform-error.v4.schema.json } } }
+    ParentNotFound:
+      description: Parent Invocation is absent from the trusted Ledger boundary
+      x-platform-error-codes: [NOT_FOUND]
+      content: { application/json: { schema: { $ref: ../schemas/platform-error.v4.schema.json } } }
+    NotAcceptable:
+      description: stream and Accept disagree before acceptance
+      x-platform-error-codes: [NOT_ACCEPTABLE]
+      content: { application/json: { schema: { $ref: ../schemas/platform-error.v4.schema.json } } }
+    Conflict:
+      description: Parent is not running or child was canceled after acceptance and before response commitment
+      x-platform-error-codes: [CONFLICT, CANCELED]
+      content: { application/json: { schema: { $ref: ../schemas/platform-error.v4.schema.json } } }
+    PayloadTooLarge:
+      description: Agent-facing request exceeds the required configured body limit before acceptance
+      x-platform-error-codes: [PAYLOAD_TOO_LARGE]
+      content: { application/json: { schema: { $ref: ../schemas/platform-error.v4.schema.json } } }
+    AgentFailure:
+      description: >-
+        Agent failure, protocol failure, or unsupported Card authentication
+        after acceptance. AGENT_AUTH_UNSUPPORTED is exact and never remapped to
+        route, unavailable, dependency, or anonymous behavior.
+      x-platform-error-codes: [AGENT_AUTH_UNSUPPORTED, AGENT_EXECUTION_FAILED, A2A_PROTOCOL_ERROR]
+      content: { application/json: { schema: { $ref: ../schemas/platform-error.v4.schema.json } } }
+    Unavailable:
+      description: Route, Agent, or required dependency failed
+      x-platform-error-codes: [ROUTE_NOT_FOUND, AGENT_UNAVAILABLE, DEPENDENCY_ERROR]
+      content: { application/json: { schema: { $ref: ../schemas/platform-error.v4.schema.json } } }
+    Timeout:
+      description: Required effective deadline expired before response commitment
+      x-platform-error-codes: [TIMEOUT]
+      content: { application/json: { schema: { $ref: ../schemas/platform-error.v4.schema.json } } }

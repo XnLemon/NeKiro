@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.nekiro.dev/platform-error/v4",
+  "title": "NeKiro Platform Error v4",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["code", "message", "traceId"],
+  "properties": {
+    "code": {
+      "enum": [
+        "VALIDATION_ERROR", "UNAUTHENTICATED", "FORBIDDEN", "NOT_FOUND",
+        "CONFLICT", "NOT_ACCEPTABLE", "PAYLOAD_TOO_LARGE",
+        "AGENT_NOT_INSTALLED", "INSTALLATION_DISABLED", "AGENT_DISABLED",
+        "CAPABILITY_NOT_ALLOWED", "ROUTE_NOT_FOUND", "AGENT_AUTH_UNSUPPORTED",
+        "A2A_PROTOCOL_ERROR", "AGENT_UNAVAILABLE", "AGENT_EXECUTION_FAILED",
+        "DEPENDENCY_ERROR", "TIMEOUT", "CANCELED", "INTERNAL_ERROR"
+      ]
+    },
+    "message": {
+      "enum": [
+        "The request is invalid.", "Authentication is required.",
+        "The requested operation is not allowed.", "The requested resource was not found.",
+        "The requested operation conflicts with current state.",
+        "The requested result mode is not acceptable.", "The request payload is too large.",
+        "The Agent is not installed in this Workspace.", "The Agent installation is disabled.",
+        "The Agent version is disabled.", "The requested capability is not allowed.",
+        "No route is available for the Agent.",
+        "The Agent authentication type is not supported for invocation.",
+        "The Agent returned an invalid A2A response.", "The Agent is unavailable.",
+        "The Agent failed to complete the invocation.",
+        "A required platform dependency failed.", "The invocation timed out.",
+        "The invocation was canceled.", "The platform could not complete the request."
+      ]
+    },
+    "traceId": { "$ref": "https://schemas.nekiro.dev/common/v1#/$defs/traceId" },
+    "invocationId": { "$ref": "https://schemas.nekiro.dev/common/v1#/$defs/invocationId" },
+    "rootTaskId": { "$ref": "https://schemas.nekiro.dev/common/v1#/$defs/taskId" }
+  },
+  "dependentRequired": {
+    "invocationId": ["rootTaskId"],
+    "rootTaskId": ["invocationId"]
+  },
+  "allOf": [
+    { "if": { "properties": { "code": { "const": "VALIDATION_ERROR" } }, "required": ["code"] }, "then": { "properties": { "message": { "const": "The request is invalid." } } } },
+    { "if": { "properties": { "code": { "const": "UNAUTHENTICATED" } }, "required": ["code"] }, "then": { "properties": { "message": { "const": "Authentication is required." } } } },
+    { "if": { "properties": { "code": { "const": "FORBIDDEN" } }, "required": ["code"] }, "then": { "properties": { "message": { "const": "The requested operation is not allowed." } } } },
+    { "if": { "properties": { "code": { "const": "NOT_FOUND" } }, "required": ["code"] }, "then": { "properties": { "message": { "const": "The requested resource was not found." } } } },
+    { "if": { "properties": { "code": { "const": "CONFLICT" } }, "required": ["code"] }, "then": { "properties": { "message": { "const": "The requested operation conflicts with current state." } } } },
+    { "if": { "properties": { "code": { "const": "NOT_ACCEPTABLE" } }, "required": ["code"] }, "then": { "properties": { "message": { "const": "The requested result mode is not acceptable." } } } },
+    { "if": { "properties": { "code": { "const": "PAYLOAD_TOO_LARGE" } }, "required": ["code"] }, "then": { "properties": { "message": { "const": "The request payload is too large." } } } },
+    { "if": { "properties": { "code": { "const": "AGENT_NOT_INSTALLED" } }, "required": ["code"] }, "then": { "properties": { "message": { "const": "The Agent is not installed in this Workspace." } } } },
+    { "if": { "properties": { "code": { "const": "INSTALLATION_DISABLED" } }, "required": ["code"] }, "then": { "properties": { "message": { "const": "The Agent installation is disabled." } } } },
+    { "if": { "properties": { "code": { "const": "AGENT_DISABLED" } }, "required": ["code"] }, "then": { "properties": { "message": { "const": "The Agent version is disabled." } } } },
+    { "if": { "properties": { "code": { "const": "CAPABILITY_NOT_ALLOWED" } }, "required": ["code"] }, "then": { "properties": { "message": { "const": "The requested capability is not allowed." } } } },
+    { "if": { "properties": { "code": { "const": "ROUTE_NOT_FOUND" } }, "required": ["code"] }, "then": { "properties": { "message": { "const": "No route is available for the Agent." } } } },
+    { "if": { "properties": { "code": { "const": "AGENT_AUTH_UNSUPPORTED" } }, "required": ["code"] }, "then": { "properties": { "message": { "const": "The Agent authentication type is not supported for invocation." } } } },
+    { "if": { "properties": { "code": { "const": "A2A_PROTOCOL_ERROR" } }, "required": ["code"] }, "then": { "properties": { "message": { "const": "The Agent returned an invalid A2A response." } } } },
+    { "if": { "properties": { "code": { "const": "AGENT_UNAVAILABLE" } }, "required": ["code"] }, "then": { "properties": { "message": { "const": "The Agent is unavailable." } } } },
+    { "if": { "properties": { "code": { "const": "AGENT_EXECUTION_FAILED" } }, "required": ["code"] }, "then": { "properties": { "message": { "const": "The Agent failed to complete the invocation." } } } },
+    { "if": { "properties": { "code": { "const": "DEPENDENCY_ERROR" } }, "required": ["code"] }, "then": { "properties": { "message": { "const": "A required platform dependency failed." } } } },
+    { "if": { "properties": { "code": { "const": "TIMEOUT" } }, "required": ["code"] }, "then": { "properties": { "message": { "const": "The invocation timed out." } } } },
+    { "if": { "properties": { "code": { "const": "CANCELED" } }, "required": ["code"] }, "then": { "properties": { "message": { "const": "The invocation was canceled." } } } },
+    { "if": { "properties": { "code": { "const": "INTERNAL_ERROR" } }, "required": ["code"] }, "then": { "properties": { "message": { "const": "The platform could not complete the request." } } } }
+  ]
+}

@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.nekiro.dev/invocation-event/v0.3",
+  "title": "NeKiro Invocation Event v0.3",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "eventId", "sequence", "occurredAt", "type", "status", "invocationId", "rootTaskId", "traceId", "caller", "workspaceId", "targetAgentId", "agentCardVersion", "capability"],
+  "properties": {
+    "schemaVersion": { "const": "0.3" },
+    "eventId": { "$ref": "https://schemas.nekiro.dev/common/v1#/$defs/eventId" },
+    "sequence": { "type": "integer", "minimum": 0 },
+    "occurredAt": { "$ref": "https://schemas.nekiro.dev/common/v1#/$defs/dateTime" },
+    "type": { "enum": ["created", "routing", "started", "stream", "succeeded", "failed", "canceled", "timed_out"] },
+    "status": { "enum": ["pending", "routing", "running", "succeeded", "failed", "canceled", "timed_out"] },
+    "invocationId": { "$ref": "https://schemas.nekiro.dev/common/v1#/$defs/invocationId" },
+    "rootTaskId": { "$ref": "https://schemas.nekiro.dev/common/v1#/$defs/taskId" },
+    "parentInvocationId": { "$ref": "https://schemas.nekiro.dev/common/v1#/$defs/invocationId" },
+    "traceId": { "$ref": "https://schemas.nekiro.dev/common/v1#/$defs/traceId" },
+    "caller": { "$ref": "https://schemas.nekiro.dev/common/v1#/$defs/caller" },
+    "workspaceId": { "$ref": "https://schemas.nekiro.dev/common/v1#/$defs/workspaceId" },
+    "targetAgentId": { "$ref": "https://schemas.nekiro.dev/common/v1#/$defs/agentId" },
+    "agentCardVersion": { "$ref": "https://schemas.nekiro.dev/common/v1#/$defs/semver" },
+    "capability": { "$ref": "https://schemas.nekiro.dev/common/v1#/$defs/capabilityId" },
+    "chunkIndex": { "type": "integer", "minimum": 0 },
+    "chunkBytes": { "type": "integer", "minimum": 0 },
+    "latencyMs": { "type": "integer", "minimum": 0 },
+    "error": { "$ref": "https://schemas.nekiro.dev/platform-error/v4" }
+  },
+  "allOf": [
+    { "if": { "properties": { "type": { "const": "created" } }, "required": ["type"] }, "then": { "properties": { "status": { "const": "pending" } }, "not": { "anyOf": [{ "required": ["chunkIndex"] }, { "required": ["chunkBytes"] }, { "required": ["latencyMs"] }, { "required": ["error"] }] } } },
+    { "if": { "properties": { "type": { "const": "routing" } }, "required": ["type"] }, "then": { "properties": { "status": { "const": "routing" } }, "not": { "anyOf": [{ "required": ["chunkIndex"] }, { "required": ["chunkBytes"] }, { "required": ["latencyMs"] }, { "required": ["error"] }] } } },
+    { "if": { "properties": { "type": { "const": "started" } }, "required": ["type"] }, "then": { "properties": { "status": { "const": "running" } }, "not": { "anyOf": [{ "required": ["chunkIndex"] }, { "required": ["chunkBytes"] }, { "required": ["latencyMs"] }, { "required": ["error"] }] } } },
+    { "if": { "properties": { "type": { "const": "stream" } }, "required": ["type"] }, "then": { "properties": { "status": { "const": "running" } }, "required": ["chunkIndex", "chunkBytes"], "not": { "anyOf": [{ "required": ["latencyMs"] }, { "required": ["error"] }] } } },
+    { "if": { "properties": { "type": { "const": "succeeded" } }, "required": ["type"] }, "then": { "properties": { "status": { "const": "succeeded" } }, "required": ["latencyMs"], "not": { "anyOf": [{ "required": ["chunkIndex"] }, { "required": ["chunkBytes"] }, { "required": ["error"] }] } } },
+    { "if": { "properties": { "type": { "enum": ["failed", "canceled", "timed_out"] } }, "required": ["type"] }, "then": { "required": ["latencyMs", "error"], "properties": { "error": { "required": ["invocationId", "rootTaskId"] } }, "not": { "anyOf": [{ "required": ["chunkIndex"] }, { "required": ["chunkBytes"] }] } } },
+    { "if": { "properties": { "type": { "const": "failed" } }, "required": ["type"] }, "then": { "properties": { "status": { "const": "failed" }, "error": { "properties": { "code": { "not": { "enum": ["CANCELED", "TIMEOUT"] } } } } } } },
+    { "if": { "properties": { "type": { "const": "canceled" } }, "required": ["type"] }, "then": { "properties": { "status": { "const": "canceled" }, "error": { "properties": { "code": { "const": "CANCELED" } } } } } },
+    { "if": { "properties": { "type": { "const": "timed_out" } }, "required": ["type"] }, "then": { "properties": { "status": { "const": "timed_out" }, "error": { "properties": { "code": { "const": "TIMEOUT" } } } } } }
+  ]
+}

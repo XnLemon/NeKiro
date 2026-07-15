@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.nekiro.dev/invocation-result-stream-event/v2",
+  "title": "NeKiro Invocation Result Stream Event v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "sequence", "type", "status", "invocationId", "rootTaskId", "traceId"],
+  "properties": {
+    "schemaVersion": { "const": "2" },
+    "sequence": { "type": "integer", "minimum": 0 },
+    "type": { "enum": ["accepted", "chunk", "completed", "failed", "canceled", "timed_out"] },
+    "status": { "enum": ["pending", "running", "succeeded", "failed", "canceled", "timed_out"] },
+    "invocationId": { "$ref": "https://schemas.nekiro.dev/common/v1#/$defs/invocationId" },
+    "rootTaskId": { "$ref": "https://schemas.nekiro.dev/common/v1#/$defs/taskId" },
+    "traceId": { "$ref": "https://schemas.nekiro.dev/common/v1#/$defs/traceId" },
+    "chunkIndex": { "type": "integer", "minimum": 0 },
+    "chunk": {},
+    "error": { "$ref": "https://schemas.nekiro.dev/platform-error/v4" }
+  },
+  "oneOf": [
+    { "properties": { "type": { "const": "accepted" }, "status": { "const": "pending" } }, "not": { "anyOf": [{ "required": ["chunkIndex"] }, { "required": ["chunk"] }, { "required": ["error"] }] } },
+    { "properties": { "type": { "const": "chunk" }, "status": { "const": "running" } }, "required": ["chunkIndex", "chunk"], "not": { "required": ["error"] } },
+    { "properties": { "type": { "const": "completed" }, "status": { "const": "succeeded" } }, "not": { "anyOf": [{ "required": ["chunkIndex"] }, { "required": ["chunk"] }, { "required": ["error"] }] } },
+    { "properties": { "type": { "const": "failed" }, "status": { "const": "failed" }, "error": { "properties": { "code": { "not": { "enum": ["CANCELED", "TIMEOUT"] } } }, "required": ["invocationId", "rootTaskId"] } }, "required": ["error"], "not": { "anyOf": [{ "required": ["chunkIndex"] }, { "required": ["chunk"] }] } },
+    { "properties": { "type": { "const": "canceled" }, "status": { "const": "canceled" }, "error": { "properties": { "code": { "const": "CANCELED" } }, "required": ["invocationId", "rootTaskId"] } }, "required": ["error"], "not": { "anyOf": [{ "required": ["chunkIndex"] }, { "required": ["chunk"] }] } },
+    { "properties": { "type": { "const": "timed_out" }, "status": { "const": "timed_out" }, "error": { "properties": { "code": { "const": "TIMEOUT" } }, "required": ["invocationId", "rootTaskId"] } }, "required": ["error"], "not": { "anyOf": [{ "required": ["chunkIndex"] }, { "required": ["chunk"] }] } }
+  ]
+}

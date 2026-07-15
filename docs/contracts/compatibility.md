@@ -27,6 +27,18 @@ consumers and must not redefine their semantics.
 | A2A Profile Schema | `0.1` | `0.2` | Breaking profile metadata and conformance requirements |
 | A2A protocol | `0.3.0` | `0.3.0` | Unchanged wire protocol |
 
+Spec 011 adds invocation-runtime targets without replacing the active Catalog
+and Workspace surfaces:
+
+| Contract | Historical | Runtime target | Compatibility impact |
+| --- | --- | --- | --- |
+| Northbound Invocation API | invocation routes in Control Plane `v3` | invocation-only `v4` | Breaking acceptance, size, error, and persistence-interruption semantics; Catalog/Workspace/Installation remain on v3 |
+| Router Internal API | `v1` / `v2` | `v3` | Breaking service-auth, acceptance, size, and post-side-effect failure semantics |
+| Agent Router API | none | `v1` | New authenticated Agent-SDK direction and parent-derived trust model |
+| Platform Error | `v1` / `v2` / `v3` | `v4` for invocation runtime | Breaking/additive enum impact: exact unsupported-auth and payload-size outcomes |
+| Invocation Event | `0.1` / `0.2` | `0.3` | Breaking embedded Platform Error v4 revision |
+| Result Stream Event | `v1` | `v2` | Breaking embedded Platform Error v4 revision |
+
 Historical files remain unchanged as migration evidence. The first backend
 runtime implements only active targets. No deployed runtime consumer exists,
 so there is no dual-read, dual-write, or dual-dispatch compatibility window.
@@ -107,6 +119,27 @@ historical artifacts remain unchanged migration evidence.
   a validation error and has no default.
 - Consume uninstall as `200 application/json` with an Installation v2 body.
 - Do not run v2 and v3 as a fallback pair. v2 remains contract history only.
+
+## Invocation Runtime Target Migration
+
+- Keep Catalog, Workspace, and Installation clients on
+  `control-plane.v3.yaml`. Use `control-plane-invocation.v4.yaml` at the same
+  Gateway destination only for `/v4/.../invocations`, `/v4/invocations/...`,
+  and `/v4/traces/...`. The invocation-only document is not a second fact for
+  the v3-owned domains.
+- Control Plane Dispatch uses Router Internal v3. Agent SDKs use Agent Router
+  v1 with an Agent-bound credential; the caller classes and credentials are not
+  interchangeable.
+- Adopt Platform Error v4, Invocation Event 0.3, and Result Stream Event v2
+  together. Treat HTTP 413 as `PAYLOAD_TOO_LARGE` and HTTP 502/in-band failed
+  as `AGENT_AUTH_UNSUPPORTED` when that exact code is present.
+- Configure every deadline/size value explicitly. Omission or invalid text is a
+  startup/readiness failure and has no migration default.
+- Treat successful `created` commit as acceptance. A post-side-effect
+  `DEPENDENCY_ERROR` may coexist with a last committed non-terminal Ledger
+  history; do not infer or synthesize a terminal outcome.
+- Do not run v3/v4 Northbound Invocation or v2/v3 Router dispatch as fallback
+  pairs. No deployed runtime consumer justifies a compatibility window.
 
 ## Compatible Changes
 
