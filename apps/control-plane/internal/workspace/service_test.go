@@ -123,6 +123,7 @@ type memoryCatalog struct {
 	candidates  []catalog.AgentVersion
 	versions    map[string]catalog.AgentVersion
 	selectErr   error
+	getErr      error
 	selectCalls int
 	getCalls    int
 }
@@ -144,6 +145,9 @@ func (reader *memoryCatalog) SelectPublished(_ context.Context, agentID, constra
 }
 func (reader *memoryCatalog) GetVersion(_ context.Context, agentID, version string) (catalog.AgentVersion, error) {
 	reader.getCalls++
+	if reader.getErr != nil {
+		return catalog.AgentVersion{}, reader.getErr
+	}
 	value, exists := reader.versions[agentID+"/"+version]
 	if !exists {
 		return catalog.AgentVersion{}, catalog.ErrNotFound
@@ -544,6 +548,150 @@ func assertImmutableInstallationFacts(t *testing.T, before, after contracts.Inst
 		if before.AcceptedPermissions[index] != after.AcceptedPermissions[index] {
 			t.Fatalf("permission %d changed: before=%#v after=%#v", index, before, after)
 		}
+	}
+}
+
+type failingResolutionStore struct {
+	Store
+	getWorkspaceErr error
+}
+
+func (store *failingResolutionStore) GetWorkspace(ctx context.Context, workspaceID string) (contracts.Workspace, error) {
+	if store.getWorkspaceErr != nil {
+		return contracts.Workspace{}, store.getWorkspaceErr
+	}
+	return store.Store.GetWorkspace(ctx, workspaceID)
+}
+
+func TestResolveFailurePrecedenceUsesWorkspaceAndExactEnabledPin(t *testing.T) {
+	card := testWorkspaceCard("agent-resolve", "1.0.0", []string{"read"}, []string{"read"})
+	reader := &memoryCatalog{versions: map[string]catalog.AgentVersion{
+		"agent-resolve/1.0.0": {Card: card, Status: catalog.PublicationPublished},
+	}}
+	store := newMemoryStore()
+	service := newWorkspaceTestService(t, store, reader)
+	request := contracts.ResolveAgentRequest{
+		InvocationID: "inv-resolve", RootTaskID: "task-resolve", TraceID: "trace-resolve",
+		WorkspaceID: "workspace-resolve", AgentID: "agent-resolve", Version: "1.0.0", Capability: "capability.read",
+	}
+
+	if _, err := service.Resolve(context.Background(), request); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("missing Workspace = %v, want NOT_FOUND", err)
+	}
+	if reader.getCalls != 0 {
+		t.Fatalf("missing Workspace consulted Catalog %d times", reader.getCalls)
+	}
+
+	store.workspaces[request.WorkspaceID] = contracts.Workspace{WorkspaceID: request.WorkspaceID, OwnerID: "owner-a"}
+	if _, err := service.Resolve(context.Background(), request); !errors.Is(err, ErrAgentNotInstalled) {
+		t.Fatalf("missing Installation = %v, want AGENT_NOT_INSTALLED", err)
+	}
+	if reader.getCalls != 0 {
+		t.Fatalf("missing Installation consulted Catalog %d times", reader.getCalls)
+	}
+
+	store.installations["installation-resolve"] = contracts.Installation{
+		InstallationID: "installation-resolve", WorkspaceID: request.WorkspaceID, AgentID: request.AgentID,
+		InstalledVersion: "1.0.0", AcceptedPermissions: []string{"read"}, Status: "enabled",
+	}
+	request.Version = "2.0.0"
+	if _, err := service.Resolve(context.Background(), request); !errors.Is(err, ErrAgentNotInstalled) {
+		t.Fatalf("pin mismatch = %v, want AGENT_NOT_INSTALLED", err)
+	}
+	if reader.getCalls != 0 {
+		t.Fatalf("pin mismatch consulted Catalog %d times", reader.getCalls)
+	}
+
+	request.Version = "1.0.0"
+	store.installations["installation-resolve"] = contracts.Installation{
+		InstallationID: "installation-resolve", WorkspaceID: request.WorkspaceID, AgentID: request.AgentID,
+		InstalledVersion: "1.0.0", AcceptedPermissions: []string{"read"}, Status: "disabled",
+	}
+	if _, err := service.Resolve(context.Background(), request); !errors.Is(err, ErrInstallationDisabled) {
+		t.Fatalf("disabled Installation = %v, want INSTALLATION_DISABLED", err)
+	}
+	if reader.getCalls != 0 {
+		t.Fatalf("disabled Installation consulted Catalog %d times", reader.getCalls)
+	}
+}
+
+func TestResolveAuthorizesCapabilityAndPreservesInstallationOnCatalogState(t *testing.T) {
+	card := testWorkspaceCard("agent-authorize", "1.0.0", []string{"read"}, []string{"read"})
+	reader := &memoryCatalog{versions: map[string]catalog.AgentVersion{
+		"agent-authorize/1.0.0": {Card: card, Status: catalog.PublicationPublished},
+	}}
+	store := newMemoryStore()
+	store.workspaces["workspace-authorize"] = contracts.Workspace{WorkspaceID: "workspace-authorize", OwnerID: "owner-a"}
+	installation := contracts.Installation{
+		InstallationID: "installation-authorize", WorkspaceID: "workspace-authorize", AgentID: "agent-authorize",
+		InstalledVersion: "1.0.0", AcceptedPermissions: []string{"read"}, Status: "enabled",
+	}
+	store.installations[installation.InstallationID] = installation
+	service := newWorkspaceTestService(t, store, reader)
+	request := contracts.ResolveAgentRequest{
+		InvocationID: "inv-authorize", RootTaskID: "task-authorize", TraceID: "trace-authorize",
+		WorkspaceID: "workspace-authorize", AgentID: "agent-authorize", Version: "1.0.0", Capability: "capability.read",
+	}
+
+	resolved, err := service.Resolve(context.Background(), request)
+	if err != nil {
+		t.Fatalf("authorized resolution = %v", err)
+	}
+	if resolved.Card.Version != request.Version || resolved.Installation.InstallationID != installation.InstallationID || resolved.Installation.Status != "enabled" {
+		t.Fatalf("resolved exact facts = %#v", resolved)
+	}
+
+	reader.versions["agent-authorize/1.0.0"] = catalog.AgentVersion{Card: card, Status: catalog.PublicationDisabled}
+	if _, err := service.Resolve(context.Background(), request); !errors.Is(err, ErrAgentDisabled) {
+		t.Fatalf("disabled Catalog version = %v, want AGENT_DISABLED", err)
+	}
+	stored := store.installations[installation.InstallationID]
+	if stored.InstallationID != installation.InstallationID || stored.WorkspaceID != installation.WorkspaceID || stored.AgentID != installation.AgentID || stored.InstalledVersion != installation.InstalledVersion || stored.Status != installation.Status || len(stored.AcceptedPermissions) != len(installation.AcceptedPermissions) || stored.AcceptedPermissions[0] != installation.AcceptedPermissions[0] {
+		t.Fatalf("Catalog disablement mutated Installation = %#v, want %#v", stored, installation)
+	}
+
+	reader.versions["agent-authorize/1.0.0"] = catalog.AgentVersion{Card: card, Status: catalog.PublicationPublished}
+	request.Capability = "capability.missing"
+	if response, err := service.Resolve(context.Background(), request); !errors.Is(err, ErrCapabilityNotAllowed) || response.Card.AgentID != "" {
+		t.Fatalf("missing capability response=%#v err=%v", response, err)
+	}
+
+	request.Capability = "capability.read"
+	store.installations[installation.InstallationID] = contracts.Installation{
+		InstallationID: installation.InstallationID, WorkspaceID: installation.WorkspaceID, AgentID: installation.AgentID,
+		InstalledVersion: installation.InstalledVersion, Status: "enabled",
+	}
+	if response, err := service.Resolve(context.Background(), request); !errors.Is(err, ErrCapabilityNotAllowed) || response.Card.AgentID != "" {
+		t.Fatalf("permission denial response=%#v err=%v", response, err)
+	}
+}
+
+func TestResolveDoesNotMaskWorkspaceOrCatalogDependencyFailures(t *testing.T) {
+	baseStore := newMemoryStore()
+	storeDependency := &failingResolutionStore{Store: baseStore, getWorkspaceErr: ErrDependency}
+	service := newWorkspaceTestService(t, storeDependency, &memoryCatalog{})
+	request := contracts.ResolveAgentRequest{
+		InvocationID: "inv-dependency", RootTaskID: "task-dependency", TraceID: "trace-dependency",
+		WorkspaceID: "workspace-dependency", AgentID: "agent-dependency", Version: "1.0.0", Capability: "capability.read",
+	}
+	if response, err := service.Resolve(context.Background(), request); !errors.Is(err, ErrDependency) || response.Card.AgentID != "" {
+		t.Fatalf("Workspace dependency response=%#v err=%v", response, err)
+	}
+
+	store := newMemoryStore()
+	store.workspaces[request.WorkspaceID] = contracts.Workspace{WorkspaceID: request.WorkspaceID, OwnerID: "owner-a"}
+	store.installations["installation-dependency"] = contracts.Installation{
+		InstallationID: "installation-dependency", WorkspaceID: request.WorkspaceID, AgentID: request.AgentID,
+		InstalledVersion: request.Version, AcceptedPermissions: []string{"read"}, Status: "enabled",
+	}
+	reader := &memoryCatalog{getErr: catalog.ErrDependency}
+	service = newWorkspaceTestService(t, store, reader)
+	if response, err := service.Resolve(context.Background(), request); !errors.Is(err, ErrDependency) || response.Card.AgentID != "" {
+		t.Fatalf("Catalog dependency response=%#v err=%v", response, err)
+	}
+	reader.getErr = catalog.ErrNotFound
+	if response, err := service.Resolve(context.Background(), request); !errors.Is(err, ErrDependency) || response.Card.AgentID != "" {
+		t.Fatalf("missing exact Catalog fact response=%#v err=%v", response, err)
 	}
 }
 

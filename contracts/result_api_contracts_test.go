@@ -82,6 +82,7 @@ func TestDirectionalOpenAPIOwnership(t *testing.T) {
 	}
 	resolveAgent := controlPlane.Paths.Find("/internal/v2/resolve-agent").Post
 	assertDeterministicErrorCodeStatuses(t, resolveAgent)
+	assertResponseErrorCode(t, resolveAgent, 404, "NOT_FOUND")
 	assertResponseErrorCode(t, resolveAgent, 404, "AGENT_NOT_INSTALLED")
 	assertResponseOmitsErrorCode(t, resolveAgent, 403, "AGENT_NOT_INSTALLED")
 	if router.Paths.Find("/internal/v2/resolve-agent") != nil {
@@ -147,7 +148,7 @@ func TestResolveAgentOpenAPIPreservesExistingCorrelation(t *testing.T) {
 		400: {"VALIDATION_ERROR"},
 		401: {"UNAUTHENTICATED"},
 		403: {"INSTALLATION_DISABLED", "AGENT_DISABLED", "CAPABILITY_NOT_ALLOWED"},
-		404: {"AGENT_NOT_INSTALLED"},
+		404: {"NOT_FOUND", "AGENT_NOT_INSTALLED"},
 		503: {"DEPENDENCY_ERROR"},
 	}
 	for status, expectedCodes := range responseCodes {

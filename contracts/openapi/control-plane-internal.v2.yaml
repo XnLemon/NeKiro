@@ -114,11 +114,11 @@ components:
           schema:
             $ref: "#/components/schemas/CorrelatedPlatformError"
     NotFound:
-      description: No current Installation matches the requested Agent and exact version
+      description: The requested Workspace does not exist, or no current Installation matches the requested Agent and exact version
       headers:
         x-nek-trace-id:
           $ref: "#/components/headers/TraceID"
-      x-platform-error-codes: [AGENT_NOT_INSTALLED]
+      x-platform-error-codes: [NOT_FOUND, AGENT_NOT_INSTALLED]
       x-platform-error-correlation:
         source: request
         exactFields: [invocationId, rootTaskId, traceId]

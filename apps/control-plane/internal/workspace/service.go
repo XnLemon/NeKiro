@@ -195,6 +195,9 @@ func (service *Service) Resolve(ctx context.Context, request contracts.ResolveAg
 	if err := contracts.ValidateResolveAgentRequestV1(request); err != nil {
 		return contracts.ResolveAgentResponse{}, ErrInvalid
 	}
+	if _, err := service.store.GetWorkspace(ctx, request.WorkspaceID); err != nil {
+		return contracts.ResolveAgentResponse{}, err
+	}
 	installation, err := service.store.GetCurrentInstallation(ctx, request.WorkspaceID, request.AgentID)
 	if errors.Is(err, ErrNotFound) {
 		return contracts.ResolveAgentResponse{}, ErrAgentNotInstalled

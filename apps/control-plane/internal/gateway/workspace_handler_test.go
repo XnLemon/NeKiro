@@ -31,6 +31,7 @@ func (auth workspaceTestAuthenticator) Authenticate(*http.Request) (catalog.Auth
 type workspaceTestService struct {
 	workspace          contracts.Workspace
 	installation       contracts.Installation
+	resolveResponse    contracts.ResolveAgentResponse
 	resolveErr         error
 	createErr          error
 	getErr             error
@@ -42,6 +43,8 @@ type workspaceTestService struct {
 	installCalls       int
 	updateCalls        int
 	uninstallCalls     int
+	resolveCalls       int
+	lastResolveRequest contracts.ResolveAgentRequest
 	lastInstallRequest contracts.InstallAgentRequest
 	lastUpdate         struct {
 		workspaceID, installationID, status string
@@ -117,8 +120,13 @@ func (service *workspaceTestService) Uninstall(_ context.Context, _ workspace.Au
 	service.installation.UninstalledAt = &now
 	return service.installation, nil
 }
-func (service *workspaceTestService) Resolve(context.Context, contracts.ResolveAgentRequest) (contracts.ResolveAgentResponse, error) {
-	return contracts.ResolveAgentResponse{}, service.resolveErr
+func (service *workspaceTestService) Resolve(_ context.Context, request contracts.ResolveAgentRequest) (contracts.ResolveAgentResponse, error) {
+	service.resolveCalls++
+	service.lastResolveRequest = request
+	if service.resolveErr != nil {
+		return contracts.ResolveAgentResponse{}, service.resolveErr
+	}
+	return service.resolveResponse, nil
 }
 
 func TestWorkspaceHandlerRequiresBearerAndRequiredListLimit(t *testing.T) {
@@ -415,6 +423,86 @@ func TestWorkspaceHandlerSeparatesPreAndPostCorrelationErrors(t *testing.T) {
 	}
 }
 
+func TestResolveHandlerUsesSeparateInternalAuthentication(t *testing.T) {
+	service := &workspaceTestService{}
+	handler := newWorkspaceTestHandlerWithAuthenticators(t,
+		workspaceTestAuthenticator{caller: catalog.AuthenticatedCaller{ID: "owner-a"}},
+		workspaceTestAuthenticator{err: ErrUnauthenticated}, service)
+	request := httptest.NewRequest(http.MethodPost, "/internal/v2/resolve-agent", strings.NewReader("{\"invocationId\":\"inv-a\",\"rootTaskId\":\"task-a\",\"traceId\":\"trace-a\",\"workspaceId\":\"workspace-a\",\"agentId\":\"agent-a\",\"version\":\"1.0.0\",\"capability\":\"capability-a\"}"))
+	request.Header.Set("Authorization", "Bearer northbound-token")
+	response := httptest.NewRecorder()
+	handler.Routes().ServeHTTP(response, request)
+	if response.Code != http.StatusUnauthorized || service.resolveCalls != 0 {
+		t.Fatalf("northbound credential status=%d resolveCalls=%d", response.Code, service.resolveCalls)
+	}
+	var payload contracts.PlatformErrorV3
+	if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload.Code != contracts.ErrorCodeUnauthenticated || payload.InvocationID != "" || payload.RootTaskID != "" || payload.TraceID == "trace-a" || response.Header().Get(TraceHeader) != string(payload.TraceID) {
+		t.Fatalf("internal auth error=%#v header=%q", payload, response.Header().Get(TraceHeader))
+	}
+}
+
+func TestResolveHandlerPreservesTypedFailureCorrelation(t *testing.T) {
+	tests := []struct {
+		name    string
+		err     error
+		status  int
+		code    contracts.PlatformErrorCode
+		message string
+	}{
+		{name: "workspace missing", err: workspace.ErrNotFound, status: http.StatusNotFound, code: contracts.ErrorCodeNotFound, message: "The requested resource was not found."},
+		{name: "installation missing", err: workspace.ErrAgentNotInstalled, status: http.StatusNotFound, code: contracts.ErrorCodeAgentNotInstalled, message: "The Agent is not installed in this Workspace."},
+		{name: "installation disabled", err: workspace.ErrInstallationDisabled, status: http.StatusForbidden, code: contracts.ErrorCodeInstallationDisabled, message: "The Agent installation is disabled."},
+		{name: "agent disabled", err: workspace.ErrAgentDisabled, status: http.StatusForbidden, code: contracts.ErrorCodeAgentDisabled, message: "The Agent version is disabled."},
+		{name: "capability denied", err: workspace.ErrCapabilityNotAllowed, status: http.StatusForbidden, code: contracts.ErrorCodeCapabilityNotAllowed, message: "The requested capability is not allowed."},
+		{name: "dependency", err: workspace.ErrDependency, status: http.StatusServiceUnavailable, code: contracts.ErrorCodeDependency, message: "A required platform dependency failed."},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			service := &workspaceTestService{resolveErr: test.err}
+			handler := newWorkspaceTestHandler(t, workspaceTestAuthenticator{caller: catalog.AuthenticatedCaller{ID: "router-a"}}, service)
+			request := httptest.NewRequest(http.MethodPost, "/internal/v2/resolve-agent", strings.NewReader("{\"invocationId\":\"inv-a\",\"rootTaskId\":\"task-a\",\"traceId\":\"trace-a\",\"workspaceId\":\"workspace-a\",\"agentId\":\"agent-a\",\"version\":\"1.0.0\",\"capability\":\"capability-a\"}"))
+			request.Header.Set("Authorization", "Bearer internal")
+			response := httptest.NewRecorder()
+			handler.Routes().ServeHTTP(response, request)
+			if response.Code != test.status {
+				t.Fatalf("status=%d, want %d", response.Code, test.status)
+			}
+			var payload contracts.PlatformErrorV3
+			if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
+				t.Fatal(err)
+			}
+			if payload.Code != test.code || payload.Message != test.message || payload.InvocationID != "inv-a" || payload.RootTaskID != "task-a" || payload.TraceID != "trace-a" || response.Header().Get(TraceHeader) != "trace-a" {
+				t.Fatalf("payload=%#v header=%q", payload, response.Header().Get(TraceHeader))
+			}
+		})
+	}
+}
+
+func TestResolveHandlerReturnsOnlyResolutionContractFields(t *testing.T) {
+	service := &workspaceTestService{resolveResponse: contracts.ResolveAgentResponse{
+		Card:         contracts.AgentCard{AgentID: "agent-a", Version: "1.0.0"},
+		Installation: contracts.ResolvedInstallation{InstallationID: "installation-a", WorkspaceID: "workspace-a", AgentID: "agent-a", InstalledVersion: "1.0.0", AcceptedPermissions: []string{"read"}, Status: "enabled"},
+	}}
+	handler := newWorkspaceTestHandler(t, workspaceTestAuthenticator{caller: catalog.AuthenticatedCaller{ID: "router-a"}}, service)
+	request := httptest.NewRequest(http.MethodPost, "/internal/v2/resolve-agent", strings.NewReader("{\"invocationId\":\"inv-a\",\"rootTaskId\":\"task-a\",\"traceId\":\"trace-a\",\"workspaceId\":\"workspace-a\",\"agentId\":\"agent-a\",\"version\":\"1.0.0\",\"capability\":\"capability-a\"}"))
+	request.Header.Set("Authorization", "Bearer internal")
+	response := httptest.NewRecorder()
+	handler.Routes().ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("success status=%d body=%s", response.Code, response.Body.String())
+	}
+	var body map[string]json.RawMessage
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if len(body) != 2 || body["card"] == nil || body["installation"] == nil || strings.Contains(strings.ToLower(response.Body.String()), "secret") || strings.Contains(strings.ToLower(response.Body.String()), "health") {
+		t.Fatalf("unsafe or expanded resolution response=%s", response.Body.String())
+	}
+}
+
 func TestWorkspaceHandlerMapsUnexpectedErrorsToInternalServerError(t *testing.T) {
 	service := &workspaceTestService{resolveErr: errors.New("unexpected service failure")}
 	handler := newWorkspaceTestHandler(t, workspaceTestAuthenticator{caller: catalog.AuthenticatedCaller{ID: "router-a"}}, service)
@@ -435,12 +523,16 @@ func TestWorkspaceHandlerMapsUnexpectedErrorsToInternalServerError(t *testing.T)
 }
 
 func newWorkspaceTestHandler(t *testing.T, auth Authenticator, service WorkspaceService) *WorkspaceHandler {
+	return newWorkspaceTestHandlerWithAuthenticators(t, auth, auth, service)
+}
+
+func newWorkspaceTestHandlerWithAuthenticators(t *testing.T, auth, internalAuth Authenticator, service WorkspaceService) *WorkspaceHandler {
 	t.Helper()
 	traces, err := NewTraceGenerator()
 	if err != nil {
 		t.Fatal(err)
 	}
-	handler, err := NewWorkspaceHandler(auth, auth, service, traces, slog.Default())
+	handler, err := NewWorkspaceHandler(auth, internalAuth, service, traces, slog.Default())
 	if err != nil {
 		t.Fatal(err)
 	}
