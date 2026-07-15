@@ -249,6 +249,13 @@ func requireAcceptanceError(t *testing.T, harness *acceptanceHTTPHarness, respon
 
 func TestAcceptanceWorkspaceControlPlaneHTTPWorkflow(t *testing.T) {
 	harness := newAcceptanceHTTPHarness(t)
+	newerCard := integrationCard()
+	newerCard.Version = "1.1.0"
+	newerCard.Name = "Runtime A Newer"
+	newerCard.Protocol.Endpoint = harness.agentEndpoint
+	if err := registerPublishedCard(context.Background(), harness.catalog, newerCard); err != nil {
+		t.Fatalf("publish newer acceptance fixture Card: %v", err)
+	}
 
 	searchResponse := harness.request(t, http.MethodGet, "/v3/agents?capability=document.read", harness.ownerToken, nil)
 	if searchResponse.Code != http.StatusOK {
@@ -257,7 +264,20 @@ func TestAcceptanceWorkspaceControlPlaneHTTPWorkflow(t *testing.T) {
 	requireAcceptanceTrace(t, searchResponse)
 	var search contracts.SearchAgentsResponse
 	decodeAcceptanceJSON(t, searchResponse, &search)
-	if len(search.Items) != 1 || search.Items[0].Card.AgentID != "runtime-a" || search.Items[0].Card.Version != "1.0.0" || search.Items[0].PublicationStatus != "published" {
+	versions := make(map[string]struct{}, len(search.Items))
+	for _, item := range search.Items {
+		if item.Card.AgentID != "runtime-a" || item.PublicationStatus != "published" {
+			t.Fatalf("discover response = %#v", search)
+		}
+		versions[item.Card.Version] = struct{}{}
+	}
+	if len(search.Items) != 2 || len(versions) != 2 {
+		t.Fatalf("discover response = %#v", search)
+	}
+	if _, exists := versions["1.0.0"]; !exists {
+		t.Fatalf("discover response omitted 1.0.0: %#v", search)
+	}
+	if _, exists := versions["1.1.0"]; !exists {
 		t.Fatalf("discover response = %#v", search)
 	}
 
@@ -281,7 +301,7 @@ func TestAcceptanceWorkspaceControlPlaneHTTPWorkflow(t *testing.T) {
 	requireAcceptanceTrace(t, installResponse)
 	var installed contracts.Installation
 	decodeAcceptanceJSON(t, installResponse, &installed)
-	if installed.AgentID != "runtime-a" || installed.InstalledVersion != "1.0.0" || installed.Status != "enabled" || len(installed.AcceptedPermissions) != 1 || installed.AcceptedPermissions[0] != "document.read" {
+	if installed.AgentID != "runtime-a" || installed.InstalledVersion != "1.1.0" || installed.Status != "enabled" || len(installed.AcceptedPermissions) != 1 || installed.AcceptedPermissions[0] != "document.read" {
 		t.Fatalf("installed = %#v", installed)
 	}
 
@@ -381,7 +401,7 @@ func TestAcceptanceWorkspaceControlPlaneHTTPWorkflow(t *testing.T) {
 
 	resolveRequest := contracts.ResolveAgentRequest{
 		InvocationID: "invocation-acceptance", RootTaskID: "root-task-acceptance", TraceID: "trace-acceptance",
-		WorkspaceID: "acceptance-workspace", AgentID: "runtime-a", Version: "1.0.0", Capability: "document.read",
+		WorkspaceID: "acceptance-workspace", AgentID: "runtime-a", Version: "1.1.0", Capability: "document.read",
 	}
 	resolveResponse := harness.request(t, http.MethodPost, "/internal/v2/resolve-agent", harness.internalToken, resolveRequest)
 	if resolveResponse.Code != http.StatusOK {
@@ -392,7 +412,7 @@ func TestAcceptanceWorkspaceControlPlaneHTTPWorkflow(t *testing.T) {
 	}
 	var resolved contracts.ResolveAgentResponse
 	decodeAcceptanceJSON(t, resolveResponse, &resolved)
-	if resolved.Card.AgentID != "runtime-a" || resolved.Card.Version != "1.0.0" || resolved.Installation.InstallationID != installed.InstallationID || resolved.Installation.Status != "enabled" {
+	if resolved.Card.AgentID != "runtime-a" || resolved.Card.Version != "1.1.0" || resolved.Installation.InstallationID != installed.InstallationID || resolved.Installation.Status != "enabled" {
 		t.Fatalf("resolved = %#v", resolved)
 	}
 
@@ -463,6 +483,60 @@ func TestAcceptanceHTTPFailureBoundaries(t *testing.T) {
 		t.Fatalf("create wrong-workspace fixture status=%d body=%s", otherWorkspaceResponse.Code, otherWorkspaceResponse.Body.String())
 	}
 	requireAcceptanceTrace(t, otherWorkspaceResponse)
+
+	uninstalledWorkspaceResponse := harness.request(t, http.MethodPost, "/v3/workspaces", harness.ownerToken, contracts.CreateWorkspaceRequest{WorkspaceID: "acceptance-uninstalled"})
+	if uninstalledWorkspaceResponse.Code != http.StatusCreated {
+		t.Fatalf("create uninstalled fixture status=%d body=%s", uninstalledWorkspaceResponse.Code, uninstalledWorkspaceResponse.Body.String())
+	}
+	requireAcceptanceTrace(t, uninstalledWorkspaceResponse)
+	uninstalledInstallResponse := harness.request(t, http.MethodPost, "/v3/workspaces/acceptance-uninstalled/installations", harness.ownerToken, contracts.InstallAgentRequest{
+		AgentID: "runtime-a", VersionConstraint: "^1.0.0", AcceptedPermissions: []string{"document.read"},
+	})
+	if uninstalledInstallResponse.Code != http.StatusCreated {
+		t.Fatalf("install uninstalled fixture status=%d body=%s", uninstalledInstallResponse.Code, uninstalledInstallResponse.Body.String())
+	}
+	requireAcceptanceTrace(t, uninstalledInstallResponse)
+	var uninstalledInstallation contracts.Installation
+	decodeAcceptanceJSON(t, uninstalledInstallResponse, &uninstalledInstallation)
+	uninstalledDisableResponse := harness.request(t, http.MethodPatch, "/v3/workspaces/acceptance-uninstalled/installations/"+uninstalledInstallation.InstallationID, harness.ownerToken, contracts.UpdateInstallationRequest{Status: "disabled"})
+	if uninstalledDisableResponse.Code != http.StatusOK {
+		t.Fatalf("disable uninstalled fixture status=%d body=%s", uninstalledDisableResponse.Code, uninstalledDisableResponse.Body.String())
+	}
+	requireAcceptanceTrace(t, uninstalledDisableResponse)
+	uninstalledDeleteResponse := harness.request(t, http.MethodDelete, "/v3/workspaces/acceptance-uninstalled/installations/"+uninstalledInstallation.InstallationID, harness.ownerToken, nil)
+	if uninstalledDeleteResponse.Code != http.StatusOK {
+		t.Fatalf("uninstall fixture status=%d body=%s", uninstalledDeleteResponse.Code, uninstalledDeleteResponse.Body.String())
+	}
+	requireAcceptanceTrace(t, uninstalledDeleteResponse)
+	uninstalledResolveRequest := contracts.ResolveAgentRequest{
+		InvocationID: "invocation-uninstalled", RootTaskID: "root-task-uninstalled", TraceID: "trace-uninstalled",
+		WorkspaceID: "acceptance-uninstalled", AgentID: "runtime-a", Version: "1.0.0", Capability: "document.read",
+	}
+	uninstalledError := requireAcceptanceError(t, harness, harness.request(t, http.MethodPost, "/internal/v2/resolve-agent", harness.internalToken, uninstalledResolveRequest), http.StatusNotFound, contracts.ErrorCodeAgentNotInstalled)
+	if uninstalledError.InvocationID != uninstalledResolveRequest.InvocationID || uninstalledError.RootTaskID != uninstalledResolveRequest.RootTaskID || uninstalledError.TraceID != uninstalledResolveRequest.TraceID {
+		t.Fatalf("uninstalled correlated error = %#v", uninstalledError)
+	}
+
+	permissionWorkspaceResponse := harness.request(t, http.MethodPost, "/v3/workspaces", harness.ownerToken, contracts.CreateWorkspaceRequest{WorkspaceID: "acceptance-permissions"})
+	if permissionWorkspaceResponse.Code != http.StatusCreated {
+		t.Fatalf("create permission fixture status=%d body=%s", permissionWorkspaceResponse.Code, permissionWorkspaceResponse.Body.String())
+	}
+	requireAcceptanceTrace(t, permissionWorkspaceResponse)
+	permissionInstallResponse := harness.request(t, http.MethodPost, "/v3/workspaces/acceptance-permissions/installations", harness.ownerToken, contracts.InstallAgentRequest{
+		AgentID: "runtime-a", VersionConstraint: "^1.0.0", AcceptedPermissions: []string{},
+	})
+	if permissionInstallResponse.Code != http.StatusCreated {
+		t.Fatalf("install permission fixture status=%d body=%s", permissionInstallResponse.Code, permissionInstallResponse.Body.String())
+	}
+	requireAcceptanceTrace(t, permissionInstallResponse)
+	permissionResolveRequest := contracts.ResolveAgentRequest{
+		InvocationID: "invocation-permission", RootTaskID: "root-task-permission", TraceID: "trace-permission",
+		WorkspaceID: "acceptance-permissions", AgentID: "runtime-a", Version: "1.0.0", Capability: "document.read",
+	}
+	permissionError := requireAcceptanceError(t, harness, harness.request(t, http.MethodPost, "/internal/v2/resolve-agent", harness.internalToken, permissionResolveRequest), http.StatusForbidden, contracts.ErrorCodeCapabilityNotAllowed)
+	if permissionError.InvocationID != permissionResolveRequest.InvocationID || permissionError.RootTaskID != permissionResolveRequest.RootTaskID || permissionError.TraceID != permissionResolveRequest.TraceID {
+		t.Fatalf("permission correlated error = %#v", permissionError)
+	}
 
 	requireAcceptanceError(t, harness, harness.request(t, http.MethodGet, "/v3/workspaces/acceptance-errors", "", nil), http.StatusUnauthorized, contracts.ErrorCodeUnauthenticated)
 	requireAcceptanceError(t, harness, harness.requestWithAuthorization(t, http.MethodGet, "/v3/workspaces/acceptance-errors", "Basic "+harness.ownerToken, nil), http.StatusUnauthorized, contracts.ErrorCodeUnauthenticated)

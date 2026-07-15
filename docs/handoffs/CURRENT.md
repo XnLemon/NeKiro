@@ -30,6 +30,12 @@ public and internal Gateway handlers under `httptest`.
   inspection, lifecycle, terminal uninstall, and new-identity reinstall pass
   in one workflow; Review-R1/R2 findings were remediated and Review-R3 passed
   with no P0-P2 findings.
+- The composed acceptance flow now publishes `1.0.0` and `1.1.0` and proves a
+  `^1.0.0` installation pins the highest matching `1.1.0` version. Store
+  reconstruction compares durable enabled, disabled, and uninstalled rows.
+- The internal HTTP failure matrix proves `AGENT_NOT_INSTALLED` after
+  uninstall and `CAPABILITY_NOT_ALLOWED` when the accepted permission snapshot
+  omits the capability requirement, with request correlation preserved.
 - Internal resolution uses a separate authenticated principal and preserves
   the request correlation identifiers. The fixture Agent endpoint records zero
   requests.

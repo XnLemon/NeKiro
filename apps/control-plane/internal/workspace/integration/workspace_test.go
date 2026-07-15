@@ -231,20 +231,33 @@ func TestInstallationInspectionHistorySurvivesStoreReconstruction(t *testing.T) 
 	if _, err := workspaceService.CreateWorkspace(ctx, owner, contracts.CreateWorkspaceRequest{WorkspaceID: "workspace-inspection-restart"}); err != nil {
 		t.Fatalf("create Workspace: %v", err)
 	}
+	for _, agentID := range []string{"runtime-b", "runtime-c"} {
+		card := integrationCard()
+		card.AgentID = agentID
+		card.Name = "Inspection " + agentID
+		if err := registerPublishedCard(ctx, catalogService, card); err != nil {
+			t.Fatalf("publish inspection fixture %s: %v", agentID, err)
+		}
+	}
 
 	var expected []contracts.Installation
 	expectedByID := make(map[string]contracts.Installation)
-	for index := 0; index < 3; index++ {
-		created, err := workspaceService.Install(ctx, owner, "workspace-inspection-restart", contracts.InstallAgentRequest{AgentID: "runtime-a", VersionConstraint: "^1.0.0", AcceptedPermissions: []string{"document.read"}})
+	for index, agentID := range []string{"runtime-a", "runtime-b", "runtime-c"} {
+		created, err := workspaceService.Install(ctx, owner, "workspace-inspection-restart", contracts.InstallAgentRequest{AgentID: agentID, VersionConstraint: "^1.0.0", AcceptedPermissions: []string{"document.read"}})
 		if err != nil {
 			t.Fatalf("install history row %d: %v", index, err)
 		}
-		if index < 2 {
+		switch index {
+		case 0:
 			if _, err := workspaceService.UpdateInstallation(ctx, owner, "workspace-inspection-restart", created.InstallationID, "disabled"); err != nil {
 				t.Fatalf("disable history row %d: %v", index, err)
 			}
 			if _, err := workspaceService.Uninstall(ctx, owner, "workspace-inspection-restart", created.InstallationID); err != nil {
 				t.Fatalf("uninstall history row %d: %v", index, err)
+			}
+		case 1:
+			if _, err := workspaceService.UpdateInstallation(ctx, owner, "workspace-inspection-restart", created.InstallationID, "disabled"); err != nil {
+				t.Fatalf("disable history row %d: %v", index, err)
 			}
 		}
 		stored, err := workspaceService.GetInstallation(ctx, owner, "workspace-inspection-restart", created.InstallationID)

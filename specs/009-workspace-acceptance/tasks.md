@@ -72,20 +72,26 @@ product behavior is included.
 - [X] T020 [Review-R4 Spec] Close the four Spec-axis evidence gaps: concurrent
   Workspace creation, public cursor traversal, durable state immutability after
   rejected requests, and real schema/transaction failure mapping.
+- [X] T021 [Review-R5] Add real PostgreSQL-backed internal HTTP evidence for
+  `AGENT_NOT_INSTALLED` after uninstall and `CAPABILITY_NOT_ALLOWED` when the
+  accepted permission snapshot omits a capability requirement.
+- [X] T022 [Review-R5] Close the remaining acceptance evidence gaps by proving
+  highest matching version selection through the composed HTTP flow and
+  enabled/disabled/uninstalled facts after store reconstruction.
 
 ## Requirement Coverage Map
 
 | Requirement | Tasks | Evidence |
 | --- | --- | --- |
 | FR-001 | T007, T012, T013 | Public capability discovery returns the published fixture. |
-| FR-002 | T007, T012, T013 | Public create/install returns exact pin and permission snapshot. |
+| FR-002 | T007, T012, T013, T022 | Public create/install returns the highest matching exact pin and permission snapshot. |
 | FR-003 | T007, T012, T013, T020 | HTTP list/detail/cursor traversal plus existing keyset/restart integration. |
 | FR-004 | T006, T007, T012, T013 | Legal/illegal lifecycle and committed timestamps. |
-| FR-005 | T007, T008, T012, T013 | Separate internal auth and exact resolution correlation. |
-| FR-006 | T006, T007, T013 | Restart, terminal history, and new reinstall identity. |
+| FR-005 | T007, T008, T012, T013, T021 | Separate internal auth and exact resolution correlation, including typed resolution failures. |
+| FR-006 | T006, T007, T013, T022 | Restart, enabled/disabled/terminal history, and new reinstall identity. |
 | FR-007 | T006, T013, T020 | 100-request create/install/lifecycle races and per-result legal outcome validation. |
 | FR-008 | T007, T008, T012 | Active v3/public and v2/internal HTTP routes only. |
-| FR-009 | T008, T012, T020 | Distinct auth, owner, identity, conflict, disabled, and dependency results with state immutability checks. |
+| FR-009 | T008, T012, T020, T021 | Distinct auth, owner, identity, conflict, disabled, capability, and dependency results with state immutability checks. |
 | FR-010 | T008, T013, T020 | Canceled/dependency/schema/transaction failures remain explicit. |
 | FR-011 | T007, T008, T009 | No Agent endpoint call and no future runtime dependency. |
 | FR-012 | T002, T003, T010, T011, T015, T016, T017 | SDD artifacts, quickstart, review, converge, and handoff. |
@@ -118,9 +124,18 @@ versions.
 - T020 also exercises a real Workspace schema outage and a PostgreSQL trigger
   that forces a transaction failure; both must map to `503 DEPENDENCY_ERROR`
   without exposing dependency details.
-- T020 integration-tag compilation and all static checks passed locally. The
-  PostgreSQL-backed T020 execution remains pending because this environment has
-  neither `NEKIRO_TEST_DATABASE_URL` nor a running Docker PostgreSQL service.
+- T021 extends the composed HTTP failure matrix with an uninstalled resolve
+  (`404 AGENT_NOT_INSTALLED`) and an accepted-permission denial
+  (`403 CAPABILITY_NOT_ALLOWED`), preserving request correlation and proving
+  both outcomes through the real PostgreSQL/Gateway boundary.
+- T022 extends the main composed HTTP workflow with published `1.0.0` and
+  `1.1.0` versions and asserts the `^1.0.0` install pins `1.1.0`. It also
+  reconstructs a history containing enabled, disabled, and uninstalled rows
+  and compares every row after reconstruction.
+- T020/T021/T022 integration-tag compilation and all static checks passed locally.
+  The PostgreSQL-backed acceptance execution remains pending because this
+  environment has neither `NEKIRO_TEST_DATABASE_URL` nor a running Docker
+  PostgreSQL service.
 - T009 uses a local fixture Agent HTTP server that records every request; both
   acceptance tests completed with zero Agent endpoint calls. Public and
   internal authenticators use different tokens.
@@ -153,6 +168,15 @@ Review-R3 re-read the current acceptance tests and SDD artifacts after T019.
 It found no P0, P1, or P2 issue. Converge checked all FR/SC mappings, plan
 decisions, active contract reuse, constitution boundaries, and task status and
 found no remaining unbuilt work. T015, T016, and T017 are complete.
+
+## Review-R5 Remediation Evidence
+
+The independent review identified a remaining acceptance-evidence gap for
+`AGENT_NOT_INSTALLED` after uninstall and `CAPABILITY_NOT_ALLOWED` when the
+accepted permission snapshot is incomplete, plus highest-version selection and
+disabled-state restart durability. T021 adds the typed HTTP failure cases and
+T022 adds the real PostgreSQL-backed version and reconstruction evidence. The
+post-remediation OCR review reported no comments.
 
 ## Spec Review Remediation
 
