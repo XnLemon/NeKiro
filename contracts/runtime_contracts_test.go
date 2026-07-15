@@ -201,6 +201,33 @@ func TestRuntimeContractWorkspaceScopedProjectionAndLineageReads(t *testing.T) {
 	if northbound.Paths.Find("/v4/invocations/{invocationId}") != nil || northbound.Paths.Find("/v4/traces/{traceId}") != nil {
 		t.Fatal("Northbound v4 must not expose unscoped raw metadata routes")
 	}
+
+	detail := InvocationDetailResponseV4{Invocation: record, Events: []InvocationEventV03{event}}
+	validator, err := NewRuntimeContractValidator()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := validator.ValidateInvocationDetailResponseV4("workspace-1", detail); err != nil {
+		t.Fatalf("valid Invocation detail rejected: %v", err)
+	}
+	detail.Invocation.Status = "running"
+	if validator.ValidateInvocationDetailResponseV4("workspace-1", detail) == nil {
+		t.Fatal("Invocation projection status mismatch was accepted")
+	}
+	detail.Invocation.Status = "pending"
+	detail.Invocation.WorkspaceID = "workspace-other"
+	if validator.ValidateInvocationDetailResponseV4("workspace-1", detail) == nil {
+		t.Fatal("cross-Workspace Invocation projection was accepted")
+	}
+
+	trace := TraceResponseV4{TraceID: "trace-1", Invocations: []InvocationRecordV4{record}}
+	if err := ValidateTraceResponseV4("workspace-1", "trace-1", trace); err != nil {
+		t.Fatalf("valid Trace projection rejected: %v", err)
+	}
+	trace.Invocations[0].WorkspaceID = "workspace-other"
+	if ValidateTraceResponseV4("workspace-1", "trace-1", trace) == nil {
+		t.Fatal("cross-Workspace Trace projection was accepted")
+	}
 }
 
 func TestRuntimeContractExecutableConformanceCorpus(t *testing.T) {
@@ -289,6 +316,58 @@ func TestRuntimeContractExecutableConformanceCorpus(t *testing.T) {
 			t.Errorf("lifecycle corpus %s valid=%v, error=%v", test.ID, test.Valid, err)
 		}
 	}
+
+	var resultStream struct {
+		Cases []struct {
+			ID     string                          `json:"id"`
+			Valid  bool                            `json:"valid"`
+			Events []InvocationResultStreamEventV2 `json:"events"`
+		} `json:"cases"`
+	}
+	readRuntimeCorpus(t, "result-stream.json", &resultStream)
+	for _, test := range resultStream.Cases {
+		sequence, err := NewRuntimeResultStreamSequenceValidator(validator, "inv-1", "task-1", "trace-1")
+		if err != nil {
+			t.Fatalf("create result stream validator: %v", err)
+		}
+		for _, event := range test.Events {
+			if err = sequence.Accept(event); err != nil {
+				break
+			}
+		}
+		if (err == nil) != test.Valid {
+			t.Errorf("result stream corpus %s valid=%v, error=%v", test.ID, test.Valid, err)
+		}
+	}
+
+	var projection struct {
+		DetailCases []struct {
+			ID          string                     `json:"id"`
+			WorkspaceID string                     `json:"workspaceId"`
+			Valid       bool                       `json:"valid"`
+			Detail      InvocationDetailResponseV4 `json:"detail"`
+		} `json:"detailCases"`
+		TraceCases []struct {
+			ID          string          `json:"id"`
+			WorkspaceID string          `json:"workspaceId"`
+			TraceID     TraceID         `json:"traceId"`
+			Valid       bool            `json:"valid"`
+			Response    TraceResponseV4 `json:"response"`
+		} `json:"traceCases"`
+	}
+	readRuntimeCorpus(t, "projection.json", &projection)
+	for _, test := range projection.DetailCases {
+		err := validator.ValidateInvocationDetailResponseV4(test.WorkspaceID, test.Detail)
+		if (err == nil) != test.Valid {
+			t.Errorf("detail projection corpus %s valid=%v, error=%v", test.ID, test.Valid, err)
+		}
+	}
+	for _, test := range projection.TraceCases {
+		err := ValidateTraceResponseV4(test.WorkspaceID, test.TraceID, test.Response)
+		if (err == nil) != test.Valid {
+			t.Errorf("Trace projection corpus %s valid=%v, error=%v", test.ID, test.Valid, err)
+		}
+	}
 }
 
 func TestRuntimeContractCorpusManifestIsCompleteAndEmbedded(t *testing.T) {
@@ -302,7 +381,7 @@ func TestRuntimeContractCorpusManifestIsCompleteAndEmbedded(t *testing.T) {
 	if manifest.SchemaVersion != "1" {
 		t.Fatalf("runtime corpus schemaVersion = %q", manifest.SchemaVersion)
 	}
-	want := []string{"errors.json", "lifecycle.json", "media.json", "nested.json"}
+	want := []string{"errors.json", "lifecycle.json", "media.json", "nested.json", "projection.json", "result-stream.json"}
 	slices.Sort(manifest.Fixtures)
 	if !slices.Equal(manifest.Fixtures, want) {
 		t.Fatalf("runtime corpus fixtures = %v, want %v", manifest.Fixtures, want)
@@ -367,6 +446,21 @@ func TestRuntimeContractStreamV2ValidatorRequiresCorrelatedError(t *testing.T) {
 	event.Error.RootTaskID = ""
 	if validator.ValidateInvocationResultStreamEventV2(event) == nil {
 		t.Fatal("Stream Event v2 accepted an uncorrelated post-acceptance error")
+	}
+	event.Error.RootTaskID = "task-1"
+	event.Error.InvocationID = "inv-other"
+	if validator.ValidateInvocationResultStreamEventV2(event) == nil {
+		t.Fatal("Stream Event v2 accepted nested error correlation different from its outer event")
+	}
+	one := int64(1)
+	ledgerEvent := InvocationEventV03{
+		SchemaVersion: "0.3", EventID: "event-1", Sequence: 1, OccurredAt: "2026-07-16T00:00:00Z",
+		Type: "failed", Status: "failed", InvocationID: "inv-1", RootTaskID: "task-1", TraceID: "trace-1",
+		Caller: Caller{Type: "user", ID: "user-1"}, WorkspaceID: "workspace-1", TargetAgentID: "agent-1",
+		AgentCardVersion: "1.0.0", Capability: "summarize", LatencyMS: &one, Error: event.Error,
+	}
+	if validator.ValidateInvocationEventV03(ledgerEvent) == nil {
+		t.Fatal("Invocation Event 0.3 accepted nested error correlation different from its outer event")
 	}
 }
 

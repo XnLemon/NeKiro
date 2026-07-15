@@ -126,11 +126,17 @@ func (v *RuntimeContractValidator) ValidateCorrelatedPlatformErrorV4JSON(data []
 }
 
 func (v *RuntimeContractValidator) ValidateInvocationEventV03(event InvocationEventV03) error {
-	return validateMappedValue(v.event, event)
+	if err := validateMappedValue(v.event, event); err != nil {
+		return err
+	}
+	return validateRuntimeNestedErrorCorrelation(event.InvocationID, event.RootTaskID, event.TraceID, event.Error)
 }
 
 func (v *RuntimeContractValidator) ValidateInvocationResultStreamEventV2(event InvocationResultStreamEventV2) error {
-	return validateMappedValue(v.streamEvent, event)
+	if err := validateMappedValue(v.streamEvent, event); err != nil {
+		return err
+	}
+	return validateRuntimeNestedErrorCorrelation(event.InvocationID, event.RootTaskID, event.TraceID, event.Error)
 }
 
 func NewPreCorrelationPlatformErrorV4(code PlatformErrorCode, traceID TraceID) (PreCorrelationPlatformErrorV4, error) {
@@ -231,7 +237,7 @@ func (v *RuntimeInvocationSequenceValidator) Accept(event InvocationEventV03) er
 	}
 	if event.Type == "stream" {
 		if event.ChunkIndex == nil || *event.ChunkIndex != v.nextChunkIndex {
-			return fmt.Errorf("Invocation stream chunk index must be %d", v.nextChunkIndex)
+			return fmt.Errorf("invocation stream chunk index must be %d", v.nextChunkIndex)
 		}
 		v.nextChunkIndex++
 	}
@@ -243,6 +249,120 @@ func (v *RuntimeInvocationSequenceValidator) Accept(event InvocationEventV03) er
 }
 
 func (v *RuntimeInvocationSequenceValidator) IsTerminal() bool { return v.terminal }
+
+type RuntimeResultStreamSequenceValidator struct {
+	contracts      *RuntimeContractValidator
+	invocationID   string
+	rootTaskID     string
+	traceID        TraceID
+	nextSequence   int64
+	nextChunkIndex int64
+	terminal       bool
+}
+
+func NewRuntimeResultStreamSequenceValidator(contracts *RuntimeContractValidator, invocationID, rootTaskID string, traceID TraceID) (*RuntimeResultStreamSequenceValidator, error) {
+	if contracts == nil {
+		return nil, errors.New("runtime contract validator is required")
+	}
+	if err := validateSafeContractIdentifier("invocation id", invocationID); err != nil {
+		return nil, err
+	}
+	if err := validateSafeContractIdentifier("root task id", rootTaskID); err != nil {
+		return nil, err
+	}
+	if _, err := ParseTraceID(string(traceID)); err != nil {
+		return nil, err
+	}
+	return &RuntimeResultStreamSequenceValidator{contracts: contracts, invocationID: invocationID, rootTaskID: rootTaskID, traceID: traceID}, nil
+}
+
+func (v *RuntimeResultStreamSequenceValidator) Accept(event InvocationResultStreamEventV2) error {
+	if v.terminal {
+		return ErrRuntimeSequenceTerminal
+	}
+	if err := v.contracts.ValidateInvocationResultStreamEventV2(event); err != nil {
+		return fmt.Errorf("validate Invocation Result Stream Event v2: %w", err)
+	}
+	if event.InvocationID != v.invocationID || event.RootTaskID != v.rootTaskID || event.TraceID != v.traceID {
+		return errors.New("result stream correlation changed")
+	}
+	if event.Sequence != v.nextSequence {
+		return fmt.Errorf("result stream sequence must be %d", v.nextSequence)
+	}
+	if v.nextSequence == 0 && event.Type != ResultStreamEventAccepted {
+		return errors.New("result stream must begin with accepted")
+	}
+	if v.nextSequence > 0 && event.Type == ResultStreamEventAccepted {
+		return errors.New("result stream accepted event must be first")
+	}
+	if event.Type == ResultStreamEventChunk {
+		if event.ChunkIndex == nil || *event.ChunkIndex != v.nextChunkIndex {
+			return fmt.Errorf("result stream chunk index must be %d", v.nextChunkIndex)
+		}
+		v.nextChunkIndex++
+	}
+	v.nextSequence++
+	v.terminal = isResultStreamTerminal(event.Type)
+	return nil
+}
+
+func (v *RuntimeResultStreamSequenceValidator) IsTerminal() bool { return v.terminal }
+
+func (v *RuntimeContractValidator) ValidateInvocationDetailResponseV4(workspaceID string, detail InvocationDetailResponseV4) error {
+	if detail.Invocation.WorkspaceID != workspaceID {
+		return errors.New("invocation projection Workspace does not match the authorized Workspace")
+	}
+	sequence, err := NewRuntimeInvocationSequenceValidator(v)
+	if err != nil {
+		return err
+	}
+	if len(detail.Events) == 0 {
+		return errors.New("invocation detail requires at least one committed event")
+	}
+	for _, event := range detail.Events {
+		if err := sequence.Accept(event); err != nil {
+			return err
+		}
+		if event.InvocationID != detail.Invocation.InvocationID || event.RootTaskID != detail.Invocation.RootTaskID ||
+			event.ParentInvocationID != detail.Invocation.ParentInvocationID || event.TraceID != detail.Invocation.TraceID ||
+			event.Caller != detail.Invocation.Caller || event.WorkspaceID != detail.Invocation.WorkspaceID ||
+			event.TargetAgentID != detail.Invocation.TargetAgentID || event.AgentCardVersion != detail.Invocation.AgentCardVersion ||
+			event.Capability != detail.Invocation.Capability {
+			return errors.New("invocation projection context does not match its events")
+		}
+	}
+	if detail.Invocation.Status != detail.Events[len(detail.Events)-1].Status {
+		return errors.New("invocation projection status does not match its last event")
+	}
+	return nil
+}
+
+func ValidateTraceResponseV4(workspaceID string, traceID TraceID, response TraceResponseV4) error {
+	if response.TraceID != traceID {
+		return errors.New("trace response correlation changed")
+	}
+	if len(response.Invocations) == 0 {
+		return errors.New("trace response requires non-empty Invocation lineage")
+	}
+	identities := make(map[string]struct{}, len(response.Invocations))
+	for _, invocation := range response.Invocations {
+		if invocation.WorkspaceID != workspaceID || invocation.TraceID != traceID {
+			return errors.New("trace Invocation is outside the authorized Workspace or Trace")
+		}
+		if _, exists := identities[invocation.InvocationID]; exists {
+			return errors.New("trace response repeats an Invocation")
+		}
+		identities[invocation.InvocationID] = struct{}{}
+	}
+	for _, invocation := range response.Invocations {
+		if invocation.ParentInvocationID != "" {
+			if _, exists := identities[invocation.ParentInvocationID]; !exists {
+				return errors.New("trace response child references a missing parent")
+			}
+		}
+	}
+	return nil
+}
 
 func validRuntimeTransition(from, eventType, to string) bool {
 	switch from {
@@ -284,4 +404,14 @@ func validateRuntimeJSON(schema *jsonschema.Schema, data []byte) error {
 		return err
 	}
 	return schema.Validate(document)
+}
+
+func validateRuntimeNestedErrorCorrelation(invocationID, rootTaskID string, traceID TraceID, platformError *PlatformErrorV4) error {
+	if platformError == nil {
+		return nil
+	}
+	if platformError.InvocationID != invocationID || platformError.RootTaskID != rootTaskID || platformError.TraceID != traceID {
+		return errors.New("nested Platform Error v4 correlation changed")
+	}
+	return nil
 }

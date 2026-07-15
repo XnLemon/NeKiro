@@ -1,4 +1,4 @@
 {
   "schemaVersion": "1",
-  "fixtures": ["media.json", "errors.json", "nested.json", "lifecycle.json"]
+  "fixtures": ["media.json", "errors.json", "nested.json", "lifecycle.json", "result-stream.json", "projection.json"]
 }

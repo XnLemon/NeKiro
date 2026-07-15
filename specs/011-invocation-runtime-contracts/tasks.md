@@ -46,6 +46,9 @@
 - [x] R005 Add exported runtime schema/semantic validators, rules, and positive/negative conformance corpus.
 - [x] R006 Add mapped DTO/OpenAPI/schema/corpus tests after remediation implementation.
 - [x] R007 Run focused/full/static verification, commit, push PR #32, and report finding locations.
+- [x] R008 Add outer/nested error correlation plus Result Stream v2 sequence/chunk/first-terminal validator and negative corpus after follow-up Review.
+- [x] R009 Add Workspace detail/Trace projection cross-field validators and versioned negative corpus, including non-empty/parent-complete lineage.
+- [x] R010 Re-run full verification and push the follow-up Review remediation.
 
 - [ ] T023 Independent Review by a non-implementing agent. **Owner: root; intentionally not completed here.**
 - [ ] T024 Converge findings into tasks and resolve them. **Blocked by T023; intentionally not completed here.**

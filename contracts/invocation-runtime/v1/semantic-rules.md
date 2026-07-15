@@ -8,6 +8,8 @@
 | `IRT-LIFE-001` | Lifecycle begins `created/pending` at sequence zero and preserves immutable context. |
 | `IRT-LIFE-002` | Only declared pending/routing/running transitions are legal; success is running-only. |
 | `IRT-LIFE-003` | Event and chunk indexes are gapless and no event follows the first terminal. |
+| `IRT-STREAM-001` | Result Stream v2 begins with accepted, preserves outer/nested error correlation, has gapless event/chunk indexes, and rejects every event after first terminal. |
+| `IRT-READ-001` | Invocation detail projection and events share exact Workspace/Invocation/Trace/context and last status; Trace lineage is non-empty, Workspace/Trace-stable, unique, and parent-complete. |
 | `IRT-MEDIA-001` | Non-stream accepts exactly `application/json`, `application/*`, or `*/*`; stream accepts exactly `text/event-stream`. |
 
 The conformance corpus is authoritative executable evidence for these rules.

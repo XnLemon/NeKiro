@@ -1,0 +1,30 @@
+{
+  "cases": [
+    {
+      "id":"stream-valid","valid":true,"events":[
+        {"schemaVersion":"2","sequence":0,"type":"accepted","status":"pending","invocationId":"inv-1","rootTaskId":"task-1","traceId":"trace-1"},
+        {"schemaVersion":"2","sequence":1,"type":"chunk","status":"running","invocationId":"inv-1","rootTaskId":"task-1","traceId":"trace-1","chunkIndex":0,"chunk":{"value":"a"}},
+        {"schemaVersion":"2","sequence":2,"type":"completed","status":"succeeded","invocationId":"inv-1","rootTaskId":"task-1","traceId":"trace-1"}
+      ]
+    },
+    {
+      "id":"chunk-gap-invalid","valid":false,"events":[
+        {"schemaVersion":"2","sequence":0,"type":"accepted","status":"pending","invocationId":"inv-1","rootTaskId":"task-1","traceId":"trace-1"},
+        {"schemaVersion":"2","sequence":1,"type":"chunk","status":"running","invocationId":"inv-1","rootTaskId":"task-1","traceId":"trace-1","chunkIndex":1,"chunk":{"value":"a"}}
+      ]
+    },
+    {
+      "id":"event-after-terminal-invalid","valid":false,"events":[
+        {"schemaVersion":"2","sequence":0,"type":"accepted","status":"pending","invocationId":"inv-1","rootTaskId":"task-1","traceId":"trace-1"},
+        {"schemaVersion":"2","sequence":1,"type":"completed","status":"succeeded","invocationId":"inv-1","rootTaskId":"task-1","traceId":"trace-1"},
+        {"schemaVersion":"2","sequence":2,"type":"chunk","status":"running","invocationId":"inv-1","rootTaskId":"task-1","traceId":"trace-1","chunkIndex":0,"chunk":{"value":"late"}}
+      ]
+    },
+    {
+      "id":"nested-error-correlation-invalid","valid":false,"events":[
+        {"schemaVersion":"2","sequence":0,"type":"accepted","status":"pending","invocationId":"inv-1","rootTaskId":"task-1","traceId":"trace-1"},
+        {"schemaVersion":"2","sequence":1,"type":"failed","status":"failed","invocationId":"inv-1","rootTaskId":"task-1","traceId":"trace-1","error":{"code":"AGENT_RESPONSE_TOO_LARGE","message":"The Agent response is too large.","traceId":"trace-1","invocationId":"inv-other","rootTaskId":"task-1"}}
+      ]
+    }
+  ]
+}

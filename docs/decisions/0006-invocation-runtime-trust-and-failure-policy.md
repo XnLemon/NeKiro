@@ -134,7 +134,9 @@ structurally required.
 
 The Go consumer exports validators for Platform Error v4 pre/correlated
 shapes, Invocation Event 0.3, Result Stream Event v2, nested child correlation,
-lifecycle sequences, and media negotiation. A versioned positive/negative
+lifecycle sequences, Result Stream event/chunk/first-terminal sequences, and
+media negotiation. Every nested Event/Stream error must repeat the outer
+Invocation/root Task/Trace exactly. A versioned positive/negative
 corpus covers fixed code/message pairs, required post-acceptance correlation,
 stable lineage/context, legal transitions, event/chunk order, first terminal,
 and the media matrix. JSON Schema alone is not treated as lifecycle evidence.
