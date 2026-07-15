@@ -1,25 +1,62 @@
-# Current Handoff: Issue 005 Install Agent and Pin Exact Version
+# Current Handoff: Issue #9 Workspace Acceptance
 
 **Updated**: 2026-07-15 (Asia/Hong_Kong)
 
-**State**: Issue #5 installation/pin runtime and its independent delivery gate
-are complete on the feature branch. Issues #3 and #4 are now merged into
-project main as the dependent base. Installation inspection/lifecycle,
-Invocation Dispatch, Router, Ledger, SDK, Sample Agents, and the complete E2E
-loop remain future scope.
+**State**: Issue #9 acceptance evidence is complete and independently reviewed.
+Issues #6, #7, and #8 are merged into project main as the dependent Workspace
+and Installation base. Invocation Dispatch, Router, Ledger, SDK, Sample Agents,
+Frontend, and the Agent-facing E2E loop remain future scope.
 
 ## Repository State
 
 - Upstream repository: `https://github.com/NeKiro-project/NeKiro.git`
 - Fork remote: `https://github.com/XnLemon/NeKiro.git`
-- Branch: `codex/005-install-agent-pin`
-- Base: `upstream/main` at `b351e40`
+- Branch: `codex/issue-9-acceptance`
+- Base: `origin/main` at `99e52aa`
 - Required local Git identity: `Nene7ko_ <1604009816@qq.com>`
 - Frontend remains paused.
 
 The handoff commit hash is intentionally not recorded because this file is part
 of that commit. Resolve the repository root on the current machine; do not
 assume a previous Windows path exists.
+
+## Issue #9 Acceptance Closure
+
+Issue #9 adds evidence, not a new runtime feature. The acceptance harness uses
+the real Catalog and Workspace PostgreSQL stores/services and composes both
+public and internal Gateway handlers under `httptest`.
+
+- Public capability discovery, Workspace creation, exact Installation pin,
+  inspection, lifecycle, terminal uninstall, and new-identity reinstall pass
+  in one workflow; Review-R1/R2 findings were remediated and Review-R3 passed
+  with no P0-P2 findings.
+- Internal resolution uses a separate authenticated principal and preserves
+  the request correlation identifiers. The fixture Agent endpoint records zero
+  requests.
+- Restart, history, Catalog disable, dependency, duplicate-install, lifecycle,
+  and uninstall/reinstall concurrency evidence remains covered by the existing
+  Workspace integration package; the lifecycle race now validates every
+  successful response and final legal history.
+- Active Northbound v3 and Control Plane Internal v2 contracts are reused.
+  No route, migration, fallback, retry, cache, alternate source, Router, or
+  Ledger behavior is added.
+
+Verification passed on a disposable PostgreSQL 17 `_test` database:
+
+```sh
+go test -tags=integration -count=1 ./apps/control-plane/internal/catalog/postgres
+go test -tags=integration -count=1 ./apps/control-plane/internal/workspace/postgres
+go test -tags=integration -count=1 ./apps/control-plane/internal/workspace/integration
+go test -tags=integration -count=1 ./tests/integration/catalog
+```
+
+Static verification also passed: `go test ./...`, race, `go vet`, `go build`,
+`go mod tidy -diff`, and `git diff --check`. The dedicated database is required
+for future acceptance runs; missing or unsafe configuration is not a pass.
+
+Fallback delta: removed `0`, retained `1`, added `0`, net `0`. Added fallback
+evidence: none. The retained behavior is the active contract's legitimate
+empty Installation list.
 
 ## Issue #5 Delivery
 
@@ -184,7 +221,7 @@ E2E loop remain unimplemented.
 
 Do not infer Invocation/Router runtime availability from active schemas or
 OpenAPI paths. Continue future implementation with a fresh Spec/worktree for
-Installation inspection or lifecycle after Issue #5 is accepted.
+Invocation Dispatch and the A2A Router after Issue #9 is accepted.
 
 ## Recovery
 

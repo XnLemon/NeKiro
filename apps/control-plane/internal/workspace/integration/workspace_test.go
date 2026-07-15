@@ -114,6 +114,60 @@ func TestConcurrentInstallLeavesOneCurrentInstallation(t *testing.T) {
 	}
 }
 
+func TestConcurrentWorkspaceCreateLeavesOneCommittedRow(t *testing.T) {
+	ctx := context.Background()
+	_, workspaceService := integrationServices(t, ctx)
+	owner := workspace.AuthenticatedCaller{ID: "owner-a"}
+
+	type createResult struct {
+		value contracts.Workspace
+		err   error
+	}
+	const callers = 100
+	results := make(chan createResult, callers)
+	var wait sync.WaitGroup
+	wait.Add(callers)
+	for range callers {
+		go func() {
+			defer wait.Done()
+			value, err := workspaceService.CreateWorkspace(ctx, owner, contracts.CreateWorkspaceRequest{WorkspaceID: "workspace-create-race"})
+			results <- createResult{value: value, err: err}
+		}()
+	}
+	wait.Wait()
+	close(results)
+
+	successes, conflicts := 0, 0
+	var created contracts.Workspace
+	for result := range results {
+		switch {
+		case result.err == nil:
+			successes++
+			created = result.value
+		case errors.Is(result.err, workspace.ErrConflict):
+			if result.value.WorkspaceID != "" {
+				t.Fatalf("conflicting create returned a Workspace: %#v", result.value)
+			}
+			conflicts++
+		default:
+			t.Fatalf("concurrent create error: %v", result.err)
+		}
+	}
+	if successes != 1 || conflicts != callers-1 {
+		t.Fatalf("concurrent creates successes=%d conflicts=%d", successes, conflicts)
+	}
+	if created.WorkspaceID != "workspace-create-race" || created.OwnerID != owner.ID {
+		t.Fatalf("created Workspace = %#v", created)
+	}
+	stored, err := workspaceService.GetWorkspace(ctx, owner, created.WorkspaceID)
+	if err != nil {
+		t.Fatalf("read committed Workspace: %v", err)
+	}
+	if !sameWorkspace(stored, created) {
+		t.Fatalf("stored Workspace = %#v, want %#v", stored, created)
+	}
+}
+
 func TestWorkspaceCreateReadSurvivesStoreReconstruction(t *testing.T) {
 	ctx := context.Background()
 	catalogService, workspaceService := integrationServices(t, ctx)
@@ -435,58 +489,101 @@ func TestConcurrentLifecycleAndReinstallRequestsPreserveOneCurrentRow(t *testing
 		t.Fatal(err)
 	}
 
+	type raceResult struct {
+		operation    string
+		installation contracts.Installation
+		err          error
+	}
+
 	var wait sync.WaitGroup
-	disableResults := make(chan error, 100)
+	disableResults := make(chan raceResult, 100)
 	for index := 0; index < 100; index++ {
 		wait.Add(1)
 		go func() {
 			defer wait.Done()
-			_, err := workspaceService.UpdateInstallation(ctx, owner, "workspace-lifecycle-race", original.InstallationID, "disabled")
-			disableResults <- err
+			value, err := workspaceService.UpdateInstallation(ctx, owner, "workspace-lifecycle-race", original.InstallationID, "disabled")
+			disableResults <- raceResult{operation: "disable", installation: value, err: err}
 		}()
 	}
 	wait.Wait()
 	close(disableResults)
 	disableSuccesses, disableConflicts := 0, 0
-	for err := range disableResults {
+	var disabled contracts.Installation
+	for result := range disableResults {
 		switch {
-		case err == nil:
+		case result.err == nil:
 			disableSuccesses++
-		case errors.Is(err, workspace.ErrConflict):
+			disabled = result.installation
+		case errors.Is(result.err, workspace.ErrConflict):
+			if result.installation.InstallationID != "" {
+				t.Fatalf("conflicting disable returned an Installation: %#v", result.installation)
+			}
 			disableConflicts++
 		default:
-			t.Fatalf("concurrent disable error: %v", err)
+			t.Fatalf("concurrent %s error: %v", result.operation, result.err)
 		}
 	}
 	if disableSuccesses != 1 || disableConflicts != 99 {
 		t.Fatalf("concurrent disable successes=%d conflicts=%d", disableSuccesses, disableConflicts)
 	}
+	if disabled.InstallationID != original.InstallationID || disabled.Status != "disabled" || disabled.UninstalledAt != nil || !disabled.UpdatedAt.After(original.UpdatedAt) || !sameInstallationImmutable(disabled, original) {
+		t.Fatalf("concurrent disable result = %#v, original = %#v", disabled, original)
+	}
 
-	results := make(chan error, 100)
+	results := make(chan raceResult, 100)
 	for index := 0; index < 100; index++ {
 		wait.Add(1)
 		if index%2 == 0 {
 			go func() {
 				defer wait.Done()
-				_, err := workspaceService.Uninstall(ctx, owner, "workspace-lifecycle-race", original.InstallationID)
-				results <- err
+				value, err := workspaceService.Uninstall(ctx, owner, "workspace-lifecycle-race", original.InstallationID)
+				results <- raceResult{operation: "uninstall", installation: value, err: err}
 			}()
 			continue
 		}
 		go func() {
 			defer wait.Done()
-			_, err := workspaceService.Install(ctx, owner, "workspace-lifecycle-race", contracts.InstallAgentRequest{
+			value, err := workspaceService.Install(ctx, owner, "workspace-lifecycle-race", contracts.InstallAgentRequest{
 				AgentID: "runtime-a", VersionConstraint: "^1.0.0", AcceptedPermissions: []string{"document.read"},
 			})
-			results <- err
+			results <- raceResult{operation: "reinstall", installation: value, err: err}
 		}()
 	}
 	wait.Wait()
 	close(results)
-	for err := range results {
-		if err != nil && !errors.Is(err, workspace.ErrConflict) {
-			t.Fatalf("concurrent uninstall/reinstall error: %v", err)
+	uninstallSuccesses, reinstallSuccesses, conflicts := 0, 0, 0
+	var terminal contracts.Installation
+	var reinstalled contracts.Installation
+	for result := range results {
+		switch {
+		case result.err == nil:
+			switch result.operation {
+			case "uninstall":
+				uninstallSuccesses++
+				terminal = result.installation
+			case "reinstall":
+				reinstallSuccesses++
+				reinstalled = result.installation
+			default:
+				t.Fatalf("unknown successful race operation %q", result.operation)
+			}
+		case errors.Is(result.err, workspace.ErrConflict):
+			if result.installation.InstallationID != "" {
+				t.Fatalf("conflicting %s returned an Installation: %#v", result.operation, result.installation)
+			}
+			conflicts++
+		default:
+			t.Fatalf("concurrent %s error: %v", result.operation, result.err)
 		}
+	}
+	if uninstallSuccesses != 1 || reinstallSuccesses > 1 || conflicts != 99-reinstallSuccesses {
+		t.Fatalf("concurrent uninstall/reinstall outcomes: uninstalls=%d reinstalls=%d conflicts=%d", uninstallSuccesses, reinstallSuccesses, conflicts)
+	}
+	if terminal.InstallationID != original.InstallationID || terminal.Status != "uninstalled" || terminal.UninstalledAt == nil || !terminal.UninstalledAt.Equal(terminal.UpdatedAt) || !terminal.UpdatedAt.After(disabled.UpdatedAt) || !sameInstallationImmutable(terminal, original) {
+		t.Fatalf("concurrent uninstall result = %#v, original = %#v, disabled = %#v", terminal, original, disabled)
+	}
+	if reinstallSuccesses == 1 && (reinstalled.InstallationID == original.InstallationID || reinstalled.Status != "enabled" || reinstalled.UninstalledAt != nil || !sameInstallationPin(reinstalled, original)) {
+		t.Fatalf("concurrent reinstall result = %#v, original = %#v", reinstalled, original)
 	}
 
 	listed, err := workspaceService.ListInstallations(ctx, owner, "workspace-lifecycle-race", 100, nil)
@@ -495,18 +592,25 @@ func TestConcurrentLifecycleAndReinstallRequestsPreserveOneCurrentRow(t *testing
 	}
 	current := 0
 	terminalCount := 0
+	seen := make(map[string]struct{}, len(listed.Items))
 	for _, value := range listed.Items {
+		if _, exists := seen[value.InstallationID]; exists {
+			t.Fatalf("lifecycle race history contains duplicate %s", value.InstallationID)
+		}
+		seen[value.InstallationID] = struct{}{}
 		switch value.Status {
 		case "enabled", "disabled":
 			current++
 		case "uninstalled":
 			terminalCount++
-			if value.InstallationID != original.InstallationID {
+			if value.InstallationID != original.InstallationID || !sameInstallationImmutable(value, original) || value.UninstalledAt == nil || !value.UninstalledAt.Equal(value.UpdatedAt) {
 				t.Fatalf("unexpected replacement terminal row: %#v", value)
 			}
+		default:
+			t.Fatalf("unexpected lifecycle race status %q in %#v", value.Status, value)
 		}
 	}
-	if terminalCount != 1 || current > 1 || len(listed.Items) > 2 {
+	if terminalCount != 1 || current != reinstallSuccesses || len(listed.Items) != 1+reinstallSuccesses {
 		t.Fatalf("lifecycle race history = %#v", listed.Items)
 	}
 }
@@ -624,15 +728,31 @@ func sameInstallation(left, right contracts.Installation) bool {
 	return true
 }
 
+func sameInstallationImmutable(left, right contracts.Installation) bool {
+	return left.InstallationID == right.InstallationID && sameInstallationPin(left, right)
+}
+
+func sameInstallationPin(left, right contracts.Installation) bool {
+	if left.WorkspaceID != right.WorkspaceID || left.AgentID != right.AgentID || left.VersionConstraint != right.VersionConstraint || left.InstalledVersion != right.InstalledVersion || len(left.AcceptedPermissions) != len(right.AcceptedPermissions) {
+		return false
+	}
+	for index := range left.AcceptedPermissions {
+		if left.AcceptedPermissions[index] != right.AcceptedPermissions[index] {
+			return false
+		}
+	}
+	return true
+}
+
 func registerPublishedCard(ctx context.Context, service *catalog.Service, card contracts.AgentCard) error {
 	body, err := json.Marshal(contracts.RegisterAgentRequest{Card: card})
 	if err != nil {
 		return err
 	}
-	if _, err := service.Register(ctx, catalog.AuthenticatedCaller{ID: "owner-a"}, body); err != nil && !errors.Is(err, catalog.ErrConflict) {
+	if _, err := service.Register(ctx, catalog.AuthenticatedCaller{ID: "owner-a"}, body); err != nil {
 		return fmt.Errorf("register Card: %w", err)
 	}
-	if _, err := service.Publish(ctx, catalog.AuthenticatedCaller{ID: "owner-a"}, card.AgentID, card.Version); err != nil && !errors.Is(err, catalog.ErrConflict) {
+	if _, err := service.Publish(ctx, catalog.AuthenticatedCaller{ID: "owner-a"}, card.AgentID, card.Version); err != nil {
 		return fmt.Errorf("publish Card: %w", err)
 	}
 	return nil
