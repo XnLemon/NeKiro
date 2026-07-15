@@ -319,7 +319,7 @@ SELECT
     format('varchar_opclass=%s timestamptz_opclass=%s C_collation=%s',
         (SELECT oid::text FROM pg_opclass WHERE opcmethod = (SELECT oid FROM pg_am WHERE amname = 'btree') AND opcnamespace = 'pg_catalog'::regnamespace AND opcname = 'varchar_ops'),
         (SELECT oid::text FROM pg_opclass WHERE opcmethod = (SELECT oid FROM pg_am WHERE amname = 'btree') AND opcnamespace = 'pg_catalog'::regnamespace AND opcname = 'timestamptz_ops'),
-		to_regcollation('pg_catalog."C"')::text))`).Scan(&currentIndexMetadata, &orderIndexMetadata, &expectedIndexMetadata)
+		to_regcollation('pg_catalog."C"')::text)`).Scan(&currentIndexMetadata, &orderIndexMetadata, &expectedIndexMetadata)
 		if metadataErr == nil {
 			return fmt.Errorf("%w: version=%d workspace=%t workspace_columns=%t workspace_constraints=%t installation=%t installation_columns=%t installation_constraints=%t current_index=%t order_index=%t current_index_metadata=%q order_index_metadata=%q expected_index_metadata=%q", ErrSchemaVersionMismatch, version, workspacePresent, workspaceColumnsPresent, workspaceConstraintsPresent, installationPresent, installationColumnsPresent, installationConstraintsPresent, currentIndexPresent, orderIndexPresent, currentIndexMetadata, orderIndexMetadata, expectedIndexMetadata)
 		}
