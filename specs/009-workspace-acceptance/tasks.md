@@ -93,10 +93,6 @@ product behavior is included.
 | FR-002 | T007, T012, T013 | Public create/install returns exact pin and permission snapshot. |
 | FR-003 | T007, T012, T013, T020 | HTTP list/detail/cursor traversal plus existing keyset/restart integration. |
 | FR-004 | T006, T007, T012, T013 | Legal/illegal lifecycle and committed timestamps. |
-| FR-005 | T007, T008, T012, T013 | Separate internal auth and exact resolution correlation. |
-| FR-006 | T006, T007, T013, T022 | Restart, enabled/disabled/terminal history, and new reinstall identity. |
-| FR-007 | T006, T013, T020 | 100-request create/install/lifecycle races and per-result legal outcome validation. |
-| FR-008 | T007, T008, T012 | Active v3/public and v2/internal HTTP routes only. |
 | FR-005 | T007, T008, T012, T013, T021, T023 | Separate internal auth and exact resolution correlation, including typed resolution failures and validation precedence. |
 | FR-006 | T006, T007, T013, T022 | Restart, enabled/disabled/terminal history, and new reinstall identity. |
 | FR-007 | T006, T013, T020 | 100-request create/install/lifecycle races and per-result legal outcome validation. |
@@ -221,3 +217,28 @@ and documentation write scopes.
 Fallback delta: removed 0, retained 1, added 0, net 0
 Added fallback evidence: none
 ```
+
+## Phase 5: Convergence
+
+- [X] T025 [Review-R6] Correct
+  `apps/control-plane/internal/workspace/postgres/migrations.go` so the exact
+  migrated Workspace schema passes readiness while every incomplete
+  Installation column, constraint, and index case remains rejected per SC-007
+  and FR-010 (contradicts).
+- [X] T026 [Review-R6] Rerun the real PostgreSQL suites and PR #18 project closure
+  checks, then obtain a fresh independent review of the T025 correction before
+  marking the Workspace parent ready to close per FR-012 (partial).
+- [X] T027 Update `specs/009-workspace-acceptance/spec.md`, this evidence
+  record, and `docs/handoffs/CURRENT.md` only after T026 is green; do not claim
+  completed verification from compile-only evidence per SC-007 (partial).
+
+### Latest CI Evidence
+
+PR #18 commit `33eb1ae` corrected the PostgreSQL default varchar index opclass.
+Run `29442651978` on 2026-07-16 passed `workspace-integration`, `go-quality`,
+`frontend`, and `compose-config`, and PR #18 merged as upstream commit `5f94565`.
+T025 is complete. T026 passed a fresh independent closure review over
+`8998916..5f94565` with no P0-P2 finding; OCR also produced zero comments.
+T027 refreshed Spec, tasks, handoff, and GitHub parent evidence, removed the
+obsolete blocked label, and closed Workspace parent Issue #2. The next runtime
+base is unblocked.

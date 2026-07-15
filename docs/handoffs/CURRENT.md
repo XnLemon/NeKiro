@@ -1,24 +1,46 @@
-# Current Handoff: Issue #9 Workspace Acceptance
+# Current Handoff: Workspace Closure and Invocation Planning
 
-**Updated**: 2026-07-15 (Asia/Hong_Kong)
+**Updated**: 2026-07-16 (Asia/Hong_Kong)
 
-**State**: Issue #9 acceptance evidence is complete and independently reviewed.
-Issues #6, #7, and #8 are merged into project main as the dependent Workspace
-and Installation base. Invocation Dispatch, Router, Ledger, SDK, Sample Agents,
-Frontend, and the Agent-facing E2E loop remain future scope.
+**State**: Issue #9 and readiness hardening PR #18 are merged with green project
+closure CI jobs. Workspace parent Issue #2 is independently reviewed and
+closed.
+Invocation Dispatch, Router, Ledger, SDK, Sample Agents, Frontend, and the
+Agent-facing E2E loop remain unimplemented. Spec 010 now plans the next backend
+`Invoke -> Record` parent and is ready for its T001 contract gate.
 
 ## Repository State
 
 - Upstream repository: `https://github.com/NeKiro-project/NeKiro.git`
 - Fork remote: `https://github.com/XnLemon/NeKiro.git`
-- Branch: `codex/issue-9-acceptance`
-- Base: `origin/main` at `99e52aa`
+- Branch: `codex/010-invocation-routing-ledger`
+- Base: `upstream/main` at `5f94565`
 - Required local Git identity: `Nene7ko_ <1604009816@qq.com>`
 - Frontend remains paused.
 
-The handoff commit hash is intentionally not recorded because this file is part
-of that commit. Resolve the repository root on the current machine; do not
-assume a previous Windows path exists.
+PR #18 merged as upstream commit `5f94565`, which is the planning branch base.
+The planning commit hash is intentionally not recorded because this file is
+part of that commit. Resolve the repository root on the current machine; do
+not assume a previous Windows path exists.
+
+## Workspace Closure and Next Plan
+
+- PR #18 run `29442651978` passes `workspace-integration`, `go-quality`,
+  `frontend`, and `compose-config`; commit `33eb1ae` fixes the PostgreSQL
+  default varchar index opclass and the PR is merged.
+- Spec 009 T025-T027 are complete. The fresh independent closure review found
+  no P0-P2 issue; OCR produced zero comments and all local static/race checks
+  passed against the merged code.
+- `specs/010-invocation-routing-ledger/` is the next planning source for the
+  backend Invocation Dispatch, A2A Router, Ledger, thin SDK, cross-Runtime
+  sample Agents, and acceptance parent.
+- GitHub parent [#19](https://github.com/NeKiro-project/NeKiro/issues/19) owns
+  eleven native Sub-issues [#20](https://github.com/NeKiro-project/NeKiro/issues/20)
+  through [#30](https://github.com/NeKiro-project/NeKiro/issues/30), with native
+  dependency relations matching Spec 010 `tasks.md`.
+- Workspace parent Issue #2 is closed. Spec 010 T001 contract review may start;
+  T002-T010 remain blocked by their recorded dependency graph.
+- Frontend remains paused and is not included in Spec 010.
 
 ## Issue #9 Acceptance Closure
 
@@ -50,7 +72,8 @@ public and internal Gateway handlers under `httptest`.
   No route, migration, fallback, retry, cache, alternate source, Router, or
   Ledger behavior is added.
 
-Verification passed on a disposable PostgreSQL 17 `_test` database:
+The Issue #9 verification and later PR #18 readiness correction passed against
+a disposable PostgreSQL 17 `_test` database:
 
 ```sh
 go test -tags=integration -count=1 ./apps/control-plane/internal/catalog/postgres
@@ -60,8 +83,10 @@ go test -tags=integration -count=1 ./tests/integration/catalog
 ```
 
 Static verification also passed: `go test ./...`, race, `go vet`, `go build`,
-`go mod tidy -diff`, and `git diff --check`. The dedicated database is required
-for future acceptance runs; missing or unsafe configuration is not a pass.
+`go mod tidy -diff`, and `git diff --check`. PR #18 then passed its project
+closure PostgreSQL and static CI jobs before merge. Missing or unsafe database
+configuration is not a pass. The non-required Codecov patch check remained red
+and is not presented as test success.
 
 Fallback delta: removed `0`, retained `1`, added `0`, net `0`. Added fallback
 evidence: none. The retained behavior is the active contract's legitimate
@@ -240,7 +265,7 @@ Set-Location NeKiro
 git remote add upstream https://github.com/NeKiro-project/NeKiro.git
 git fetch origin --prune
 git fetch upstream --prune
-git switch --track origin/codex/005-install-agent-pin
+git switch --track origin/codex/010-invocation-routing-ledger
 git config --local user.name Nene7ko_
 git config --local user.email 1604009816@qq.com
 git status --short --branch
@@ -252,12 +277,13 @@ Before modifying runtime code, read in full:
 - `AGENTS.md`
 - `.specify/memory/constitution.md`
 - this file
-- every artifact under `specs/005-install-agent-pin/`
-- every artifact under `specs/004-workspace-create-read/`
-- every artifact under `specs/003-workspace-installation-contracts/`
+- every artifact under `specs/009-workspace-acceptance/`
+- every artifact under `specs/010-invocation-routing-ledger/`
+- the active contracts under `contracts/openapi/`, `contracts/schemas/`,
+  `contracts/invocation/`, and `contracts/a2a-profile/`
 - `docs/decisions/0005-minimal-workspace-installation-boundary.md`
 - `docs/contracts/compatibility.md`
 
 Do not modify `pnpm-lock.yaml`, relax `minimumReleaseAge`, add a fallback data
-source, or begin Frontend/Router/Runtime work in the Workspace implementation
-slice.
+source, or begin Spec 010 runtime implementation before T001/#20 freezes and
+merges the shared contract and failure policy.
