@@ -93,6 +93,9 @@ func (handler *InvocationHandler) invoke(writer http.ResponseWriter, request *ht
 		}
 	}()
 	writer.Header().Set("Content-Type", response.ContentType)
+	if traceHeader := response.Headers.Get(TraceHeader); traceHeader != "" {
+		writer.Header().Set(TraceHeader, traceHeader)
+	}
 	writer.WriteHeader(response.StatusCode)
 	if response.ContentType == "text/event-stream" {
 		if err := proxySSE(writer, response.Body, handler.sseEventLimit); err != nil {

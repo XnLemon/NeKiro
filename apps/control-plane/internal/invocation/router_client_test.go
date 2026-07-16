@@ -21,6 +21,7 @@ func TestRouterClientUsesOnlyFrozenInternalV3Direction(t *testing.T) {
 			t.Error(err)
 		}
 		writer.Header().Set("Content-Type", "text/event-stream")
+		writer.Header().Set("x-nek-trace-id", "trace-router")
 		_, _ = io.WriteString(writer, "data: {}\n\n")
 	}))
 	defer server.Close()
@@ -34,7 +35,7 @@ func TestRouterClientUsesOnlyFrozenInternalV3Direction(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer response.Body.Close()
-	if received.InvocationID != request.InvocationID || response.StatusCode != 200 || response.ContentType != "text/event-stream" {
+	if received.InvocationID != request.InvocationID || response.StatusCode != 200 || response.ContentType != "text/event-stream" || response.Headers.Get("x-nek-trace-id") != "trace-router" {
 		t.Fatalf("received=%#v response=%#v", received, response)
 	}
 }

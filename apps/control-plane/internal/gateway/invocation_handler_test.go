@@ -92,7 +92,9 @@ func TestInvocationHandlerStrictlyRejectsPreDispatchRequests(t *testing.T) {
 
 func TestInvocationHandlerForwardsExactJSONAndTrustedArguments(t *testing.T) {
 	result := `{"schemaVersion":"1","invocationId":"inv-root","rootTaskId":"task-root","traceId":"trace-root","status":"succeeded","result":{"answer":42}}`
-	dispatcher := &invocationDispatcherStub{response: &invocation.RouterResponse{StatusCode: 200, ContentType: "application/json", Body: io.NopCloser(strings.NewReader(result))}}
+	headers := http.Header{}
+	headers.Set(TraceHeader, "router-trace")
+	dispatcher := &invocationDispatcherStub{response: &invocation.RouterResponse{StatusCode: 200, ContentType: "application/json", Headers: headers, Body: io.NopCloser(strings.NewReader(result))}}
 	handler := newInvocationTestHandler(t, invocationAuthenticatorStub{caller: catalog.AuthenticatedCaller{ID: "owner-a", AuthenticationKind: "development-static"}}, dispatcher, 4096)
 	request := httptest.NewRequest(http.MethodPost, "/v4/workspaces/workspace-a/invocations", strings.NewReader(validInvokeBody(false)))
 	request.Header.Set("Content-Type", "application/json")
@@ -101,6 +103,9 @@ func TestInvocationHandlerForwardsExactJSONAndTrustedArguments(t *testing.T) {
 	handler.ServeHTTP(response, request)
 	if response.Code != 200 || response.Body.String() != result || dispatcher.calls != 1 || dispatcher.caller.ID != "owner-a" || dispatcher.workspaceID != "workspace-a" || dispatcher.request.AgentID != "agent-a" || dispatcher.request.Capability != "capability.read" || dispatcher.request.Stream || string(dispatcher.input) != `{"query":"hello"}` || dispatcher.mode != contracts.InvocationResultModeJSON {
 		t.Fatalf("response=%d %q dispatcher=%#v", response.Code, response.Body.String(), dispatcher)
+	}
+	if response.Header().Get(TraceHeader) != "router-trace" {
+		t.Fatalf("trace header = %q, want Router trace", response.Header().Get(TraceHeader))
 	}
 }
 

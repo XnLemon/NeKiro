@@ -19,6 +19,7 @@ type HTTPDoer interface {
 type RouterResponse struct {
 	StatusCode  int
 	ContentType string
+	Headers     http.Header
 	Body        io.ReadCloser
 }
 
@@ -69,5 +70,5 @@ func (client *RouterClient) Dispatch(ctx context.Context, value contracts.Dispat
 		_ = response.Body.Close()
 		return nil, fmt.Errorf("Router response Content-Type %q does not match %q", contentType, want)
 	}
-	return &RouterResponse{StatusCode: response.StatusCode, ContentType: contentType, Body: response.Body}, nil
+	return &RouterResponse{StatusCode: response.StatusCode, ContentType: contentType, Headers: response.Header.Clone(), Body: response.Body}, nil
 }
