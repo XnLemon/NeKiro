@@ -47,7 +47,7 @@ func (handler *LedgerHandler) ServeInvocationRead(
 	if err := handler.validator.ValidateInvocationDetailResponseV4(workspaceID, result); err != nil {
 		return handler.writeReadError(w, traceID, ledger.ErrDependency)
 	}
-	return writeJSON(w, http.StatusOK, result)
+	return writeLedgerJSON(w, http.StatusOK, result)
 }
 
 // ServeTraceRead has the same authenticated integration precondition as
@@ -65,7 +65,7 @@ func (handler *LedgerHandler) ServeTraceRead(
 	if err := contracts.ValidateTraceResponseV4(workspaceID, traceID, result); err != nil {
 		return handler.writeReadError(w, traceID, ledger.ErrDependency)
 	}
-	return writeJSON(w, http.StatusOK, result)
+	return writeLedgerJSON(w, http.StatusOK, result)
 }
 
 func (handler *LedgerHandler) writeReadError(w http.ResponseWriter, traceID contracts.TraceID, err error) error {
@@ -80,10 +80,10 @@ func (handler *LedgerHandler) writeReadError(w http.ResponseWriter, traceID cont
 		w.WriteHeader(http.StatusInternalServerError)
 		return constructorErr
 	}
-	return writeJSON(w, status, platformError)
+	return writeLedgerJSON(w, status, platformError)
 }
 
-func writeJSON(w http.ResponseWriter, status int, value any) error {
+func writeLedgerJSON(w http.ResponseWriter, status int, value any) error {
 	body, err := json.Marshal(value)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
