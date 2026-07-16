@@ -4,6 +4,7 @@
 
 ```powershell
 go test -count=1 ./apps/a2a-router/internal/api ./apps/a2a-router/internal/transport/a2a ./agents/runtime-b
+go test -count=1 ./apps/a2a-router/internal/transport/a2a -run TestClientRejectsActiveA2ANegativeCorpus
 go test -count=1 ./...
 go vet ./...
 git diff --check
@@ -45,3 +46,7 @@ go test -tags=integration -count=1 ./apps/a2a-router/internal/ledger
 3. Router calls Runtime B through A2A `message/send` with platform context.
 4. Router commits required metadata-only Ledger facts.
 5. Router returns one JSON result and never stores Agent result content.
+
+The transport negative corpus also verifies that missing `result`/`error`,
+boolean/object/array response IDs, and trailing JSON data are rejected as
+`A2A_PROTOCOL_ERROR`.

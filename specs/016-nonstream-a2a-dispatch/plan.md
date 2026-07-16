@@ -28,8 +28,8 @@ existing Ledger store where a PostgreSQL database is available.
 
 **Testing**: Go `testing`, `httptest`, Runtime B sample endpoint, focused
 Router unit/HTTP tests, optional integration tests under the existing
-integration tag, race where practical, full `go test ./...`, vet, and diff
-checks.
+integration tag, active A2A negative corpus tests, race where practical, full
+`go test ./...`, vet, and diff checks.
 
 **Target Platform**: Windows developer shell and Linux/WSL/container runtime.
 

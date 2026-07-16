@@ -278,6 +278,68 @@ func TestClientRejectsMalformedJSONRPCEnvelope(t *testing.T) {
 	}
 }
 
+func TestClientRejectsActiveA2ANegativeCorpus(t *testing.T) {
+	tests := []struct {
+		name string
+		body func(requestID string) string
+	}{
+		{
+			name: "missing result and error",
+			body: func(requestID string) string {
+				return `{"jsonrpc":"2.0","id":` + requestID + `}`
+			},
+		},
+		{
+			name: "boolean response id",
+			body: func(string) string {
+				return `{"jsonrpc":"2.0","id":true,"result":{"kind":"message"}}`
+			},
+		},
+		{
+			name: "object response id",
+			body: func(string) string {
+				return `{"jsonrpc":"2.0","id":{"request":"message-send-1"},"result":{"kind":"message"}}`
+			},
+		},
+		{
+			name: "array response id",
+			body: func(string) string {
+				return `{"jsonrpc":"2.0","id":["message-send-1"],"result":{"kind":"message"}}`
+			},
+		},
+		{
+			name: "trailing data",
+			body: func(requestID string) string {
+				return `{"jsonrpc":"2.0","id":` + requestID + `,"result":{"kind":"message"}} trailing`
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+				var call struct {
+					ID json.RawMessage `json:"id"`
+				}
+				if err := json.NewDecoder(request.Body).Decode(&call); err != nil {
+					t.Fatalf("decode request: %v", err)
+				}
+				writer.Header().Set("Content-Type", "application/json")
+				_, _ = writer.Write([]byte(test.body(string(call.ID))))
+			}))
+			defer server.Close()
+
+			client, err := newTestClient(server.Client())
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = client.SendMessage(t.Context(), testTarget(server.URL), ContextHeaders{TraceID: "trace-a", InvocationID: "inv-a", RootTaskID: "task-a", WorkspaceID: "workspace-a"}, runtimeBMessageParams("message-a", "success", "ok"))
+			if got := errorCode(err); got != contracts.ErrorCodeA2AProtocol {
+				t.Fatalf("error code = %q, want %q, err=%v", got, contracts.ErrorCodeA2AProtocol, err)
+			}
+		})
+	}
+}
+
 func TestClientRejectsDuplicateJSONRPCEnvelopeMember(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		var call struct {

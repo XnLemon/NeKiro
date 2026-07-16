@@ -80,6 +80,11 @@ endpoint/profile/auth/capability targets while valid targets still reject
 oversized input before Ledger acceptance. Standards and spec review found no
 blocking issue.
 
+The active A2A negative corpus rejects missing `result`/`error`, boolean,
+object, and array response IDs, trailing JSON, duplicate or unknown envelope
+members, invalid version/media type, ID mismatch, and result/error XOR.
+Streaming event limits remain deferred to Spec 017.
+
 The non-stream slice now classifies target/profile errors as
 `A2A_PROTOCOL_ERROR`, unsupported auth as `AGENT_AUTH_UNSUPPORTED`, HTTP and
 network failures as `AGENT_UNAVAILABLE`, malformed results as

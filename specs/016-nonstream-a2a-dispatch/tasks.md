@@ -120,12 +120,12 @@ removed 0, retained 0, added 0, net 0; added fallback evidence: none.
 - [X] T015 [US3] Add required Agent response/A2A event byte-limit configuration and enforce the non-stream effective input/output bounds as the minimum of configured and exact Card limits.
 - [X] T016 [P1] Add a deployment-owned Ledger migration command/service before Router startup; the current Router intentionally fails readiness when the schema is absent and never auto-migrates.
 - [ ] T017 [P1] Implement A2A event/SSE byte-limit enforcement with streaming in Spec 017; T015 only establishes required configuration and non-stream Agent response enforcement.
-- [ ] T018 [P2] Execute the complete active A2A negative corpus matrix (missing result/error, invalid scalar IDs, and trailing data) as explicit Router transport tests.
+- [X] T018 [P2] Execute the complete active A2A negative corpus matrix (missing result/error, invalid scalar IDs, and trailing data) as explicit Router transport tests.
 
 ## Dependencies & Execution Order
 
 ```text
-T001 -> T002 -> T003 -> T004 -> T005 -> T006 -> T007 -> T008 -> T009 -> T010 -> T011 -> T012 -> T013 -> T014 -> T015 -> T016
+T001 -> T002 -> T003 -> T004 -> T005 -> T006 -> T007 -> T008 -> T009 -> T010 -> T011 -> T012 -> T013 -> T014 -> T015 -> T016 -> T018
 ```
 
 ## Requirement Coverage
@@ -138,12 +138,12 @@ T001 -> T002 -> T003 -> T004 -> T005 -> T006 -> T007 -> T008 -> T009 -> T010 -> 
 | FR-005 | T003, T009-T010, T015 |
 | FR-006, FR-007, FR-008 | T007-T008, T014 |
 | FR-009 | T001, T009-T011, T015 |
-| SC-001-SC-004 | T006, T008, T010-T015 |
+| SC-001-SC-004 | T006, T008, T010-T015, T018 |
 
 ## Completion State
 
-- Implementation and mapped tests: T005-T016 complete for the non-stream slice
-- Independent Review: complete; no P0 findings; remaining follow-ups are T017-T018
+- Implementation and mapped tests: T005-T016 and T018 complete for the non-stream slice
+- Independent Review: complete; no P0 findings; remaining follow-up is T017
 - Converge: complete for in-scope findings
 - Fallback delta: removed 0, retained 0, added 0, net 0; added fallback evidence: none
 
@@ -190,3 +190,11 @@ an oversized input and receives the correlated target failure plus Ledger
 terminal facts; a valid target with oversized input still returns the existing
 pre-correlation `PAYLOAD_TOO_LARGE` without accepting Ledger facts. Fresh
 standards/spec review after this change found no remaining blocking issue.
+
+T018 evidence: `TestClientRejectsActiveA2ANegativeCorpus` covers missing
+`result`/`error`, boolean/object/array response IDs, and trailing JSON data;
+each case maps to `A2A_PROTOCOL_ERROR`. The test runs against the active
+JSON-RPC transport path and complements the existing duplicate-member,
+unknown-field, version, media-type, ID-mismatch, and result/error-XOR cases.
+T017 remains deferred to a separate streaming Spec 017 because Spec 016 does
+not own streaming transport or event sequencing.

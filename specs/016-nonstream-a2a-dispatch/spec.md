@@ -4,7 +4,7 @@
 
 **Created**: 2026-07-16
 
-**Status**: Non-stream implementation complete; streaming follow-ups tracked in tasks T017-T018
+**Status**: Non-stream implementation and active A2A negative corpus complete; streaming follow-up tracked in task T017
 
 **Input**: Spec 010 T006: implement non-streaming exact A2A dispatch and
 transient result delivery with mapped Router unit, HTTP, PostgreSQL, and A2A
@@ -170,3 +170,6 @@ explicit for this non-stream slice:
   output.
 - Streaming A2A event/SSE enforcement remains an explicit follow-up in task
   T017, not hidden compatibility behavior in the non-stream transport.
+- The active Router transport negative corpus explicitly covers missing
+  `result`/`error`, invalid boolean/object/array response IDs, and trailing
+  JSON data; each case fails closed as `A2A_PROTOCOL_ERROR`.
