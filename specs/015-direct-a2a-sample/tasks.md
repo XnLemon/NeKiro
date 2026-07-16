@@ -59,7 +59,7 @@
 
 ## Phase 6: Verification and Handoff
 
-- [ ] T010 Run formatting, vet, package tests, race tests, and repository tests; record zero-fallback and write-scope evidence in `specs/015-direct-a2a-sample/tasks.md`
+- [X] T010 Run formatting, vet, package tests, race tests, and repository tests; record zero-fallback and write-scope evidence in `specs/015-direct-a2a-sample/tasks.md`
 - [ ] T011 Obtain fresh independent Review against Spec, Plan, Tasks, active contracts, and constitution; return findings to Spec/Tasks before fixes
 - [ ] T012 Run Converge after Review and append/resolve any remaining implementation tasks
 
@@ -91,8 +91,7 @@ parallel. Independent Review and Converge remain root-owned gates.
 - Independent Review: intentionally pending for a non-implementing agent
 - Converge: intentionally pending until Review completes
 - Fallback delta checkpoint: removed `0`, retained `0`, added `0`, net `0`
-- Final completion remains pending until T010 race verification, T011 Review,
-  and T012 Converge complete
+- Final completion remains pending until T011 Review and T012 Converge complete
 
 ## Verification Checkpoint
 
@@ -110,12 +109,16 @@ parallel. Independent Review and Converge remain root-owned gates.
   or platform-core dependency in runtime code. The only non-test keyword hits
   were explicit `switch default` invalid-fixture branches and the
   `JSON-compatible` validation message.
-- `go test -race ./agents/runtime-b` could not run in this environment:
+- Windows race verification remained unavailable:
   - with default CGO settings: `go: -race requires cgo`
   - with `CGO_ENABLED=1`: `cgo: C compiler "gcc" not found`
   - `where gcc`, `where clang`, and `where cl` found no C compiler on PATH
-  - observed toolchain: `go version go1.26.3 windows/amd64`,
+  - observed Windows toolchain: `go version go1.26.3 windows/amd64`,
     `CGO_ENABLED=0`, `CC=gcc`
+- WSL race verification passed without changing system configuration:
+  - WSL toolchain: `go version go1.26.0 linux/amd64`, `CGO_ENABLED=1`,
+    `CC=x86_64-linux-gnu-gcc`, `/usr/bin/gcc`
+  - `go test -race ./agents/runtime-b` passed under Ubuntu-26.04
 
-T010, T011, and T012 remain open until a race-capable Go toolchain is
-available, independent Review completes, and Converge closes findings.
+T011 and T012 remain open until independent Review completes and Converge
+closes findings.

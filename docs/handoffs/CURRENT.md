@@ -5,8 +5,8 @@
 **State**: Workspace closure is complete. Invocation runtime contracts,
 Control Plane Dispatch, Router Foundation, and Ledger each have implementation
 branches. Runtime B Direct A2A Sample is implemented on
-`codex/015-runtime-b-agent` and non-race verified, but race verification,
-independent Review, and Converge remain open.
+`codex/015-runtime-b-agent` and locally verified, but independent Review and
+Converge remain open.
 
 ## Repository State
 
@@ -35,17 +35,18 @@ Router transport acceptance:
 - Non-race verification passed: `gofmt -l agents/runtime-b` returned no files,
   `go test ./agents/runtime-b ./agents/runtime-b/cmd/runtime-b`,
   `go test ./...`, `go vet ./...`, and `git diff --check`.
-- Race verification is still pending because this Windows environment has no
-  C compiler for cgo: `go test -race` requires cgo, and `CGO_ENABLED=1` fails
+- Windows race verification remains unavailable because Windows lacks a C
+  compiler for cgo: `go test -race` requires cgo, and `CGO_ENABLED=1` fails
   with `gcc not found`; `where gcc`, `where clang`, and `where cl` also find
   no compiler on PATH.
+- WSL race verification passed under Ubuntu-26.04 with `go version go1.26.0
+  linux/amd64`, `CGO_ENABLED=1`, `CC=x86_64-linux-gnu-gcc`, and `/usr/bin/gcc`.
 - Fallback/write-scope checkpoint: runtime code has no platform database,
   Control Plane, Router, Ledger, SDK, retry, cache, alternate route,
   compatibility fallback, or platform-core dependency.
 
 Open Spec 015 gates:
 
-- T010: rerun verification in a race-capable Go environment.
 - T011: independent Review by a non-implementing agent.
 - T012: Converge review findings and repeat Review.
 
