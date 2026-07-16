@@ -124,6 +124,11 @@ Open Spec 015 gates:
 Review attempt note: T011 was attempted in the 2026-07-16 session after local
 verification passed, but the independent review agents did not return usable
 PASS/FAIL results before interruption. Treat T011 as still open and rerun an
+independent read-only Review from the branch head.
+
+Review attempt note: T011 was attempted in the 2026-07-16 session after local
+verification passed, but the independent review agents did not return usable
+PASS/FAIL results before interruption. Treat T011 as still open and rerun an
 independent read-only Review from branch head `cd65b7c` or later.
 
 ## Workspace Closure and Next Plan

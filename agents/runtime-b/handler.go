@@ -257,22 +257,103 @@ func statusEvent(task *a2a.Task, state a2a.TaskState, final bool) *a2a.TaskStatu
 
 func cloneTask(task *a2a.Task) *a2a.Task {
 	cloned := *task
+	cloned.Metadata = cloneJSONMap(task.Metadata)
+	cloned.Status = cloneTaskStatus(task.Status)
 	cloned.History = make([]*a2a.Message, len(task.History))
 	for index, message := range task.History {
 		cloned.History[index] = cloneMessage(message)
 	}
 	if task.Artifacts != nil {
-		cloned.Artifacts = append([]*a2a.Artifact(nil), task.Artifacts...)
+		cloned.Artifacts = make([]*a2a.Artifact, len(task.Artifacts))
+		for index, artifact := range task.Artifacts {
+			cloned.Artifacts[index] = cloneArtifact(artifact)
+		}
 	}
+	return &cloned
+}
+
+func cloneTaskStatus(status a2a.TaskStatus) a2a.TaskStatus {
+	cloned := status
+	if status.Message != nil {
+		cloned.Message = cloneMessage(status.Message)
+	}
+	if status.Timestamp != nil {
+		timestamp := *status.Timestamp
+		cloned.Timestamp = &timestamp
+	}
+	return cloned
+}
+
+func cloneArtifact(artifact *a2a.Artifact) *a2a.Artifact {
+	cloned := *artifact
+	cloned.Extensions = append([]string(nil), artifact.Extensions...)
+	cloned.Metadata = cloneJSONMap(artifact.Metadata)
+	cloned.Parts = cloneParts(artifact.Parts)
 	return &cloned
 }
 
 func cloneMessage(message *a2a.Message) *a2a.Message {
 	cloned := *message
-	cloned.Parts = append(a2a.ContentParts(nil), message.Parts...)
 	cloned.Extensions = append([]string(nil), message.Extensions...)
+	cloned.Metadata = cloneJSONMap(message.Metadata)
+	cloned.Parts = cloneParts(message.Parts)
 	cloned.ReferenceTasks = append([]a2a.TaskID(nil), message.ReferenceTasks...)
 	return &cloned
+}
+
+func cloneParts(parts a2a.ContentParts) a2a.ContentParts {
+	cloned := make(a2a.ContentParts, len(parts))
+	for index, part := range parts {
+		cloned[index] = clonePart(part)
+	}
+	return cloned
+}
+
+func clonePart(part a2a.Part) a2a.Part {
+	switch typed := part.(type) {
+	case a2a.DataPart:
+		cloned := typed
+		cloned.Data = cloneJSONMap(typed.Data)
+		cloned.Metadata = cloneJSONMap(typed.Metadata)
+		return cloned
+	case a2a.TextPart:
+		cloned := typed
+		cloned.Metadata = cloneJSONMap(typed.Metadata)
+		return cloned
+	case a2a.FilePart:
+		cloned := typed
+		cloned.Metadata = cloneJSONMap(typed.Metadata)
+		cloned.File = cloneFilePartContent(typed.File)
+		return cloned
+	default:
+		panic(fmt.Sprintf("unsupported a2a part type %T", part))
+	}
+}
+
+func cloneFilePartContent(content a2a.FilePartContent) a2a.FilePartContent {
+	switch typed := content.(type) {
+	case a2a.FileBytes:
+		return typed
+	case a2a.FileURI:
+		return typed
+	default:
+		panic(fmt.Sprintf("unsupported a2a file part content type %T", content))
+	}
+}
+
+func cloneJSONMap(source map[string]any) map[string]any {
+	if source == nil {
+		return nil
+	}
+	cloned, err := cloneJSONValue(source)
+	if err != nil {
+		panic(fmt.Sprintf("non-json a2a map value: %v", err))
+	}
+	clonedMap, ok := cloned.(map[string]any)
+	if !ok {
+		panic(fmt.Sprintf("cloned a2a map has type %T", cloned))
+	}
+	return clonedMap
 }
 
 func (*Handler) OnListTasks(context.Context, *a2a.ListTasksRequest) (*a2a.ListTasksResponse, error) {

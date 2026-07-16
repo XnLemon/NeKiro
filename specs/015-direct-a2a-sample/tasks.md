@@ -60,8 +60,8 @@
 ## Phase 6: Verification and Handoff
 
 - [X] T010 Run formatting, vet, package tests, race tests, and repository tests; record zero-fallback and write-scope evidence in `specs/015-direct-a2a-sample/tasks.md`
-- [ ] T011 Obtain fresh independent Review against Spec, Plan, Tasks, active contracts, and constitution; return findings to Spec/Tasks before fixes
-- [ ] T012 Run Converge after Review and append/resolve any remaining implementation tasks
+- [X] T011 Obtain fresh independent Review against Spec, Plan, Tasks, active contracts, and constitution; return findings to Spec/Tasks before fixes
+- [X] T012 Run Converge after Review and append/resolve any remaining implementation tasks
 
 ## Dependencies & Execution Order
 
@@ -91,7 +91,7 @@ parallel. Independent Review and Converge remain root-owned gates.
 - Independent Review: intentionally pending for a non-implementing agent
 - Converge: intentionally pending until Review completes
 - Fallback delta checkpoint: removed `0`, retained `0`, added `0`, net `0`
-- Final completion remains pending until T011 Review and T012 Converge complete
+- Final completion: Spec 015 implementation, verification, Review, and Converge complete in this branch
 
 ## Verification Checkpoint
 
@@ -120,16 +120,25 @@ parallel. Independent Review and Converge remain root-owned gates.
     `CC=x86_64-linux-gnu-gcc`, `/usr/bin/gcc`
   - `go test -race ./agents/runtime-b` passed under Ubuntu-26.04
 
-T011 and T012 remain open until independent Review completes and Converge
-closes findings.
+T011 independent Review and T012 Converge are complete. Review R1 returned two
+P2 findings; T013 and T014 record and close those findings. Review R2 returned
+PASS with no remaining P0-P2 findings.
 
-## Review Attempt Checkpoint
+## Review and Converge Checkpoint
 
 2026-07-16 session note:
 
-- T011 was attempted with independent read-only review agents after T010
-  verification passed.
-- No agent returned a usable PASS/FAIL review result before interruption;
-  therefore T011 remains open and no Converge findings are recorded.
-- Next run should repeat independent Review from the current branch head before
-  marking T011 complete or starting T012.
+- T011 independent Review R1 returned FAIL with two P2 findings:
+  - Runtime B task/message snapshots were shallow-cloned enough that returned
+    task history or original request data could mutate stored task history.
+  - The documented `historyLength` greater-than-available-history invalid
+    params edge case lacked a regression test.
+- T012 Converge appended and resolved T013/T014 below.
+- T011 independent Review R2 returned PASS with no remaining P0-P2 findings.
+- Fallback delta for the convergence fix: removed `0`, retained `0`, added
+  `0`, net `0`. Added fallback evidence: none.
+
+## Phase 7: Convergence
+
+- [X] T013 [Review] Deep-clone Runtime B task/message snapshots in `agents/runtime-b/handler.go` and add a regression test proving mutations to an original request or returned `tasks/get` snapshot cannot alter stored task history.
+- [X] T014 [Review] Add a Runtime B history-bounds regression test for `historyLength` greater than available history, asserting the documented invalid-params behavior.

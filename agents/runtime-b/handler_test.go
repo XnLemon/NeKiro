@@ -202,6 +202,75 @@ func TestHandlerTaskErrorsAndHistoryBounds(t *testing.T) {
 	if _, err := handler.OnGetTask(t.Context(), &a2a.TaskQueryParams{ID: "missing", HistoryLength: &negative}); !errors.Is(err, a2a.ErrInvalidParams) {
 		t.Fatalf("get negative history length = %v", err)
 	}
+	streamEvents, err := collectEvents(handler.OnSendMessageStream(t.Context(), fixtureParams("history-too-long", fixtureStreamSuccess, "payload")))
+	if err != nil {
+		t.Fatalf("stream success = %v", err)
+	}
+	task := requireTaskEvent(t, streamEvents[0])
+	tooLong := 2
+	if _, err := handler.OnGetTask(t.Context(), &a2a.TaskQueryParams{ID: task.ID, HistoryLength: &tooLong}); !errors.Is(err, a2a.ErrInvalidParams) {
+		t.Fatalf("get overlong history length = %v", err)
+	}
+}
+
+func TestHandlerTaskSnapshotsAreDeepCloned(t *testing.T) {
+	handler := NewHandler()
+	value := map[string]any{"nested": map[string]any{"field": "original"}}
+	params := fixtureParams("snapshot-clone", fixtureHold, value)
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	eventChannel := make(chan a2a.Event, 1)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for event, err := range handler.OnSendMessageStream(ctx, params) {
+			if err != nil {
+				return
+			}
+			eventChannel <- event
+		}
+	}()
+	working := requireTaskEvent(t, receiveEvent(t, eventChannel))
+
+	requestPart := requireDataPart(t, params.Message.Parts[0])
+	requestValue := requestPart.Data["value"].(map[string]any)
+	requestNested := requestValue["nested"].(map[string]any)
+	requestNested["field"] = "request-mutated"
+
+	historyLength := 1
+	first, err := handler.OnGetTask(t.Context(), &a2a.TaskQueryParams{ID: working.ID, HistoryLength: &historyLength})
+	if err != nil {
+		t.Fatalf("first get task = %v", err)
+	}
+	firstPart := requireDataPart(t, first.History[0].Parts[0])
+	firstValue := firstPart.Data["value"].(map[string]any)
+	firstNested := firstValue["nested"].(map[string]any)
+	if got := firstNested["field"]; got != "original" {
+		t.Fatalf("stored value after request mutation = %v, want original", got)
+	}
+	firstPart.Data["fixture"] = "mutated-fixture"
+	firstNested["field"] = "returned-mutated"
+
+	second, err := handler.OnGetTask(t.Context(), &a2a.TaskQueryParams{ID: working.ID, HistoryLength: &historyLength})
+	if err != nil {
+		t.Fatalf("second get task = %v", err)
+	}
+	secondPart := requireDataPart(t, second.History[0].Parts[0])
+	if got := secondPart.Data["fixture"]; got != string(fixtureHold) {
+		t.Fatalf("stored fixture after returned snapshot mutation = %v, want %q", got, fixtureHold)
+	}
+	secondValue := secondPart.Data["value"].(map[string]any)
+	secondNested := secondValue["nested"].(map[string]any)
+	if got := secondNested["field"]; got != "original" {
+		t.Fatalf("stored value after returned snapshot mutation = %v, want original", got)
+	}
+
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("hold stream did not stop after snapshot test")
+	}
 }
 
 func TestHandlerConcurrentSendIdentityIsolation(t *testing.T) {
