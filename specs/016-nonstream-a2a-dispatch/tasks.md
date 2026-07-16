@@ -183,3 +183,10 @@ The Ledger target-validation failure case now records exactly
 appends `started` or calls the Agent. `ValidateNonStreamingTarget` passes the
 dispatch capability to exact target construction, so malformed Cards cannot
 panic or silently select a different skill.
+
+Review follow-up: target validation now runs before non-streaming input
+preflight. An unsupported endpoint/profile/auth/capability therefore wins over
+an oversized input and receives the correlated target failure plus Ledger
+terminal facts; a valid target with oversized input still returns the existing
+pre-correlation `PAYLOAD_TOO_LARGE` without accepting Ledger facts. Fresh
+standards/spec review after this change found no remaining blocking issue.

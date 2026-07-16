@@ -74,6 +74,12 @@ Result v1 payload only after the terminal success fact is committed. Explicit
 transport failure classification remains part of the subsequent convergence
 work in this stacked delivery.
 
+The target-validation follow-up runs before input-size preflight, preserving
+correlated failure semantics and Ledger terminal facts for unsupported
+endpoint/profile/auth/capability targets while valid targets still reject
+oversized input before Ledger acceptance. Standards and spec review found no
+blocking issue.
+
 The non-stream slice now classifies target/profile errors as
 `A2A_PROTOCOL_ERROR`, unsupported auth as `AGENT_AUTH_UNSUPPORTED`, HTTP and
 network failures as `AGENT_UNAVAILABLE`, malformed results as
