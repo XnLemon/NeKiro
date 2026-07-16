@@ -1,0 +1,93 @@
+# Tasks: Deterministic Direct A2A Sample
+
+**Input**: Design documents from `specs/015-direct-a2a-sample/`
+
+**Prerequisites**: `spec.md`, `research.md`, `data-model.md`, `plan.md`,
+`quickstart.md`
+
+**Tests**: Required after corresponding approved implementation.
+
+**Organization**: Tasks are grouped by independently testable user story.
+
+## Phase 1: Setup
+
+- [ ] T001 Create the Runtime B package and required-listener executable skeleton in `agents/runtime-b/server.go` and `agents/runtime-b/cmd/runtime-b/main.go`
+
+---
+
+## Phase 2: Foundational
+
+- [ ] T002 Implement strict structured fixture parsing and domain-separated deterministic identities in `agents/runtime-b/fixture.go` and `agents/runtime-b/identity.go`
+- [ ] T003 Implement mutex-protected process-local task snapshots, explicit transitions, clones, and history bounds in `agents/runtime-b/handler.go`
+
+**Checkpoint**: Strict request and state foundations exist before operation behavior.
+
+---
+
+## Phase 3: User Story 1 - Invoke the Direct Callee (Priority: P1)
+
+**Goal**: Deterministic JSON success and explicit failure through `message/send`.
+
+**Independent Test**: Invoke success, failure, and invalid inputs through the official client/server path.
+
+- [ ] T004 [US1] Implement `message/send`, exact structured result, and distinct invalid/failure semantics in `agents/runtime-b/handler.go`
+- [ ] T005 [US1] Add mapped JSON success, failure, invalid-input, required-config, and concurrent identity tests in `agents/runtime-b/handler_test.go` and `agents/runtime-b/server_test.go`
+
+---
+
+## Phase 4: User Story 2 - Consume an Ordered Stream (Priority: P1)
+
+**Goal**: Exact successful stream and explicit held-task cancellation.
+
+**Independent Test**: Verify the five-event completed stream and same-task canceled stream.
+
+- [ ] T006 [US2] Implement `message/stream` success/hold fixtures and immutable completed/canceled terminal behavior in `agents/runtime-b/handler.go`
+- [ ] T007 [US2] Add mapped event-order, terminal uniqueness, cancellation, request-context termination, and race tests in `agents/runtime-b/handler_test.go` and `agents/runtime-b/server_test.go`
+
+---
+
+## Phase 5: User Story 3 - Inspect Active A2A Tasks (Priority: P1)
+
+**Goal**: Conforming get/cancel operations and complete active-profile evidence.
+
+**Independent Test**: Query/cancel created tasks, exercise task errors, and verify all operations and context headers.
+
+- [ ] T008 [US3] Implement strict `tasks/get`, `tasks/cancel`, unsupported-operation behavior, and HTTP handler assembly in `agents/runtime-b/handler.go` and `agents/runtime-b/server.go`
+- [ ] T009 [US3] Add mapped get/cancel/history/error, all-four-operation, SSE framing, and five-context-header conformance tests in `agents/runtime-b/handler_test.go` and `agents/runtime-b/server_test.go`
+
+---
+
+## Phase 6: Verification and Handoff
+
+- [ ] T010 Run formatting, vet, package tests, race tests, and repository tests; record zero-fallback and write-scope evidence in `specs/015-direct-a2a-sample/tasks.md`
+- [ ] T011 Obtain fresh independent Review against Spec, Plan, Tasks, active contracts, and constitution; return findings to Spec/Tasks before fixes
+- [ ] T012 Run Converge after Review and append/resolve any remaining implementation tasks
+
+## Dependencies & Execution Order
+
+```text
+T001 -> T002 -> T003 -> T004 -> T005 -> T006 -> T007 -> T008 -> T009 -> T010 -> T011 -> T012
+```
+
+Tests follow approved implementation. This narrow slice has one implementation
+owner and overlapping `handler.go` behavior, so no within-branch task is marked
+parallel. Independent Review and Converge remain root-owned gates.
+
+## Requirement Coverage
+
+| Requirement | Tasks |
+| --- | --- |
+| FR-001, FR-002, FR-009, FR-010 | T001, T008, T009 |
+| FR-003, FR-004 | T002, T004, T005 |
+| FR-005, FR-006 | T003, T006, T007 |
+| FR-007, FR-008 | T003, T008, T009 |
+| FR-011 | T005, T007, T009, T010 |
+| FR-012 | T002-T010 fallback inventory |
+| SC-001-SC-005 | T005, T007, T009, T010 |
+
+## Completion State
+
+- Implementation and mapped tests: pending
+- Independent Review: intentionally pending for a non-implementing agent
+- Converge: intentionally pending until Review completes
+- Fallback delta: pending final implementation audit
