@@ -158,8 +158,8 @@ The in-scope findings were resolved by raw A2A JSON-RPC envelope/media
 validation, `CANCELED` HTTP 409 mapping, production Ledger constructor wiring,
 strict database/limit configuration, bounded Agent response reads, and
 configured/Card minimum input/output bounds. The remaining streaming event
-enforcement and exhaustive corpus cases are explicitly tracked as T017-T018
-rather than silently declared complete.
+enforcement remains explicitly tracked as T017; the active negative corpus is
+complete in T018 rather than silently left unverified.
 
 T016 deployment evidence: the Router binary exposes `migrate up` and `serve`
 commands; `a2a-router-migrate` runs the embedded Ledger migration and the
@@ -193,8 +193,10 @@ standards/spec review after this change found no remaining blocking issue.
 
 T018 evidence: `TestClientRejectsActiveA2ANegativeCorpus` covers missing
 `result`/`error`, boolean/object/array response IDs, and trailing JSON data;
-each case maps to `A2A_PROTOCOL_ERROR`. The test runs against the active
-JSON-RPC transport path and complements the existing duplicate-member,
+each case maps to `A2A_PROTOCOL_ERROR`; response ID type validation runs before
+request/response ID equality, so invalid IDs cannot pass only by mismatch. The
+test runs against the active JSON-RPC transport path and complements the
+existing duplicate-member,
 unknown-field, version, media-type, ID-mismatch, and result/error-XOR cases.
 T017 remains deferred to a separate streaming Spec 017 because Spec 016 does
 not own streaming transport or event sequencing.

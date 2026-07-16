@@ -85,6 +85,10 @@ object, and array response IDs, trailing JSON, duplicate or unknown envelope
 members, invalid version/media type, ID mismatch, and result/error XOR.
 Streaming event limits remain deferred to Spec 017.
 
+Response ID type validation runs before ID equality, so boolean/object/array
+IDs are rejected as `A2A_PROTOCOL_ERROR` rather than being compared as valid
+correlations.
+
 The non-stream slice now classifies target/profile errors as
 `A2A_PROTOCOL_ERROR`, unsupported auth as `AGENT_AUTH_UNSUPPORTED`, HTTP and
 network failures as `AGENT_UNAVAILABLE`, malformed results as

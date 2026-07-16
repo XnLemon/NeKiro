@@ -3,8 +3,10 @@ package a2a
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	runtimeb "github.com/Nene7ko/NeKiro/agents/runtime-b"
@@ -280,8 +282,9 @@ func TestClientRejectsMalformedJSONRPCEnvelope(t *testing.T) {
 
 func TestClientRejectsActiveA2ANegativeCorpus(t *testing.T) {
 	tests := []struct {
-		name string
-		body func(requestID string) string
+		name           string
+		body           func(requestID string) string
+		causeSubstring string
 	}{
 		{
 			name: "missing result and error",
@@ -290,19 +293,22 @@ func TestClientRejectsActiveA2ANegativeCorpus(t *testing.T) {
 			},
 		},
 		{
-			name: "boolean response id",
+			name:           "boolean response id",
+			causeSubstring: "unsupported JSON type",
 			body: func(string) string {
 				return `{"jsonrpc":"2.0","id":true,"result":{"kind":"message"}}`
 			},
 		},
 		{
-			name: "object response id",
+			name:           "object response id",
+			causeSubstring: "unsupported JSON type",
 			body: func(string) string {
 				return `{"jsonrpc":"2.0","id":{"request":"message-send-1"},"result":{"kind":"message"}}`
 			},
 		},
 		{
-			name: "array response id",
+			name:           "array response id",
+			causeSubstring: "unsupported JSON type",
 			body: func(string) string {
 				return `{"jsonrpc":"2.0","id":["message-send-1"],"result":{"kind":"message"}}`
 			},
@@ -335,6 +341,12 @@ func TestClientRejectsActiveA2ANegativeCorpus(t *testing.T) {
 			_, err = client.SendMessage(t.Context(), testTarget(server.URL), ContextHeaders{TraceID: "trace-a", InvocationID: "inv-a", RootTaskID: "task-a", WorkspaceID: "workspace-a"}, runtimeBMessageParams("message-a", "success", "ok"))
 			if got := errorCode(err); got != contracts.ErrorCodeA2AProtocol {
 				t.Fatalf("error code = %q, want %q, err=%v", got, contracts.ErrorCodeA2AProtocol, err)
+			}
+			if test.causeSubstring != "" {
+				var classified *classifiedError
+				if !errors.As(err, &classified) || !strings.Contains(classified.cause.Error(), test.causeSubstring) {
+					t.Fatalf("error cause = %v, want substring %q", err, test.causeSubstring)
+				}
 			}
 		})
 	}

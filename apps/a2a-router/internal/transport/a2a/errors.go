@@ -94,6 +94,9 @@ func validateJSONRPCResponseEnvelope(request jsonRPCEnvelope, responseBody []byt
 	if response.JSONRPC != "2.0" {
 		return errors.New("A2A JSON-RPC response version is invalid")
 	}
+	if err := validateJSONRPCID(response.ID); err != nil {
+		return err
+	}
 	if !equalJSONRPCID(request.ID, response.ID) {
 		return errors.New("A2A JSON-RPC response id does not match the request")
 	}
@@ -103,6 +106,28 @@ func validateJSONRPCResponseEnvelope(request jsonRPCEnvelope, responseBody []byt
 		return errors.New("A2A JSON-RPC response must contain exactly one result or error")
 	}
 	return nil
+}
+
+func validateJSONRPCID(value json.RawMessage) error {
+	if len(bytes.TrimSpace(value)) == 0 {
+		return errors.New("A2A JSON-RPC response id is missing")
+	}
+	decoder := json.NewDecoder(bytes.NewReader(value))
+	decoder.UseNumber()
+	var decoded any
+	if err := decoder.Decode(&decoded); err != nil {
+		return errors.New("A2A JSON-RPC response id is invalid")
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		return errors.New("A2A JSON-RPC response id contains trailing data")
+	}
+	switch decoded.(type) {
+	case nil, string, json.Number:
+		return nil
+	default:
+		return errors.New("A2A JSON-RPC response id has unsupported JSON type")
+	}
 }
 
 func equalJSONRPCID(left, right json.RawMessage) bool {
