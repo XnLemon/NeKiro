@@ -6,7 +6,9 @@
 Control Plane Dispatch, and Router Foundation have local implementation
 branches. Invocation Ledger is implemented on `codex/014-invocation-ledger`
 and non-integration verified, but its real PostgreSQL integration run,
-independent Review, and Converge remain open.
+independent Review, and Converge remain open. Runtime B Direct A2A Sample is
+implemented and locally verified; its independent Review and Converge remain
+open.
 
 ## Spec 012 Control Plane Invocation Dispatch
 
@@ -103,10 +105,12 @@ Router transport acceptance:
 - Non-race verification passed: `gofmt -l agents/runtime-b` returned no files,
   `go test ./agents/runtime-b ./agents/runtime-b/cmd/runtime-b`,
   `go test ./...`, `go vet ./...`, and `git diff --check`.
-- Race verification is still pending because this Windows environment has no
-  C compiler for cgo: `go test -race` requires cgo, and `CGO_ENABLED=1` fails
+- Windows race verification remains unavailable because Windows lacks a C
+  compiler for cgo: `go test -race` requires cgo, and `CGO_ENABLED=1` fails
   with `gcc not found`; `where gcc`, `where clang`, and `where cl` also find
   no compiler on PATH.
+- WSL race verification passed under Ubuntu-26.04 with `go version go1.26.0
+  linux/amd64`, `CGO_ENABLED=1`, `CC=x86_64-linux-gnu-gcc`, and `/usr/bin/gcc`.
 - Runtime code has no platform database, Control Plane, Router, Ledger, SDK,
   retry, cache, alternate route, compatibility fallback, or platform-core
   dependency.
