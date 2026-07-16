@@ -11,14 +11,14 @@
 
 ## Phase 1: Setup
 
-- [ ] T001 Create the Runtime B package and required-listener executable skeleton in `agents/runtime-b/server.go` and `agents/runtime-b/cmd/runtime-b/main.go`
+- [X] T001 Create the Runtime B package and required-listener executable skeleton in `agents/runtime-b/server.go` and `agents/runtime-b/cmd/runtime-b/main.go`
 
 ---
 
 ## Phase 2: Foundational
 
-- [ ] T002 Implement strict structured fixture parsing and domain-separated deterministic identities in `agents/runtime-b/fixture.go` and `agents/runtime-b/identity.go`
-- [ ] T003 Implement mutex-protected process-local task snapshots, explicit transitions, clones, and history bounds in `agents/runtime-b/handler.go`
+- [X] T002 Implement strict structured fixture parsing and domain-separated deterministic identities in `agents/runtime-b/fixture.go` and `agents/runtime-b/identity.go`
+- [X] T003 Implement mutex-protected process-local task snapshots, explicit transitions, clones, and history bounds in `agents/runtime-b/handler.go`
 
 **Checkpoint**: Strict request and state foundations exist before operation behavior.
 
@@ -30,8 +30,8 @@
 
 **Independent Test**: Invoke success, failure, and invalid inputs through the official client/server path.
 
-- [ ] T004 [US1] Implement `message/send`, exact structured result, and distinct invalid/failure semantics in `agents/runtime-b/handler.go`
-- [ ] T005 [US1] Add mapped JSON success, failure, invalid-input, required-config, and concurrent identity tests in `agents/runtime-b/handler_test.go` and `agents/runtime-b/server_test.go`
+- [X] T004 [US1] Implement `message/send`, exact structured result, and distinct invalid/failure semantics in `agents/runtime-b/handler.go`
+- [X] T005 [US1] Add mapped JSON success, failure, invalid-input, required-config, and concurrent identity tests in `agents/runtime-b/handler_test.go` and `agents/runtime-b/server_test.go`
 
 ---
 
@@ -41,8 +41,8 @@
 
 **Independent Test**: Verify the five-event completed stream and same-task canceled stream.
 
-- [ ] T006 [US2] Implement `message/stream` success/hold fixtures and immutable completed/canceled terminal behavior in `agents/runtime-b/handler.go`
-- [ ] T007 [US2] Add mapped event-order, terminal uniqueness, cancellation, request-context termination, and race tests in `agents/runtime-b/handler_test.go` and `agents/runtime-b/server_test.go`
+- [X] T006 [US2] Implement `message/stream` success/hold fixtures and immutable completed/canceled terminal behavior in `agents/runtime-b/handler.go`
+- [X] T007 [US2] Add mapped event-order, terminal uniqueness, cancellation, request-context termination, and race tests in `agents/runtime-b/handler_test.go` and `agents/runtime-b/server_test.go`
 
 ---
 
@@ -52,8 +52,8 @@
 
 **Independent Test**: Query/cancel created tasks, exercise task errors, and verify all operations and context headers.
 
-- [ ] T008 [US3] Implement strict `tasks/get`, `tasks/cancel`, unsupported-operation behavior, and HTTP handler assembly in `agents/runtime-b/handler.go` and `agents/runtime-b/server.go`
-- [ ] T009 [US3] Add mapped get/cancel/history/error, all-four-operation, SSE framing, and five-context-header conformance tests in `agents/runtime-b/handler_test.go` and `agents/runtime-b/server_test.go`
+- [X] T008 [US3] Implement strict `tasks/get`, `tasks/cancel`, unsupported-operation behavior, and HTTP handler assembly in `agents/runtime-b/handler.go` and `agents/runtime-b/server.go`
+- [X] T009 [US3] Add mapped get/cancel/history/error, all-four-operation, SSE framing, and five-context-header conformance tests in `agents/runtime-b/handler_test.go` and `agents/runtime-b/server_test.go`
 
 ---
 
@@ -87,7 +87,35 @@ parallel. Independent Review and Converge remain root-owned gates.
 
 ## Completion State
 
-- Implementation and mapped tests: pending
+- Implementation and mapped tests: T001-T009 complete in the WIP branch
 - Independent Review: intentionally pending for a non-implementing agent
 - Converge: intentionally pending until Review completes
-- Fallback delta: pending final implementation audit
+- Fallback delta checkpoint: removed `0`, retained `0`, added `0`, net `0`
+- Final completion remains pending until T010 race verification, T011 Review,
+  and T012 Converge complete
+
+## Verification Checkpoint
+
+2026-07-16 checkpoint:
+
+- `.specify/feature.json` now points to `specs/015-direct-a2a-sample`.
+- Non-race verification passed:
+  - `gofmt -l agents/runtime-b` returned no files requiring formatting
+  - `go test ./agents/runtime-b ./agents/runtime-b/cmd/runtime-b`
+  - `go test ./...`
+  - `go vet ./...`
+  - `git diff --check`
+- Fallback/write-scope scan found no platform database access, Control Plane,
+  Router, Ledger, SDK, retry, cache, alternate route, compatibility fallback,
+  or platform-core dependency in runtime code. The only non-test keyword hits
+  were explicit `switch default` invalid-fixture branches and the
+  `JSON-compatible` validation message.
+- `go test -race ./agents/runtime-b` could not run in this environment:
+  - with default CGO settings: `go: -race requires cgo`
+  - with `CGO_ENABLED=1`: `cgo: C compiler "gcc" not found`
+  - `where gcc`, `where clang`, and `where cl` found no C compiler on PATH
+  - observed toolchain: `go version go1.26.3 windows/amd64`,
+    `CGO_ENABLED=0`, `CC=gcc`
+
+T010, T011, and T012 remain open until a race-capable Go toolchain is
+available, independent Review completes, and Converge closes findings.

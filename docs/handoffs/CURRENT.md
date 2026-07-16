@@ -1,27 +1,53 @@
-# Current Handoff: Workspace Closure and Invocation Planning
+# Current Handoff: Runtime B Direct A2A Sample Checkpoint
 
 **Updated**: 2026-07-16 (Asia/Hong_Kong)
 
-**State**: Issue #9 and readiness hardening PR #18 are merged with green project
-closure CI jobs. Workspace parent Issue #2 is independently reviewed and
-closed.
-Invocation Dispatch, Router, Ledger, SDK, Sample Agents, Frontend, and the
-Agent-facing E2E loop remain unimplemented. Spec 010 now plans the next backend
-`Invoke -> Record` parent and is ready for its T001 contract gate.
+**State**: Workspace closure is complete. Invocation runtime contracts,
+Control Plane Dispatch, Router Foundation, and Ledger each have implementation
+branches. Runtime B Direct A2A Sample is implemented on
+`codex/015-runtime-b-agent` and non-race verified, but race verification,
+independent Review, and Converge remain open.
 
 ## Repository State
 
 - Upstream repository: `https://github.com/NeKiro-project/NeKiro.git`
 - Fork remote: `https://github.com/XnLemon/NeKiro.git`
-- Branch: `codex/010-invocation-routing-ledger`
-- Base: `upstream/main` at `5f94565`
+- Branch: `codex/015-runtime-b-agent`
+- Base: `origin/main` at `99e52aa`
 - Required local Git identity: `Nene7ko_ <1604009816@qq.com>`
 - Frontend remains paused.
 
-PR #18 merged as upstream commit `5f94565`, which is the planning branch base.
-The planning commit hash is intentionally not recorded because this file is
-part of that commit. Resolve the repository root on the current machine; do
-not assume a previous Windows path exists.
+Resolve the repository root on the current machine; do not assume a previous
+Windows path exists.
+
+## Spec 015 Runtime B Direct A2A Sample Progress
+
+Spec 015 owns the deterministic direct-library Runtime B callee for later
+Router transport acceptance:
+
+- `agents/runtime-b` implements strict fixture parsing, domain-separated
+  deterministic IDs, process-local task snapshots, `message/send`,
+  `message/stream`, `tasks/get`, `tasks/cancel`, and JSON-RPC/SSE server
+  assembly.
+- Tests cover JSON success/failure/invalid input, ordered streaming,
+  cancellation, terminal task errors, history bounds, concurrent identity
+  isolation, and five platform context headers.
+- Non-race verification passed: `gofmt -l agents/runtime-b` returned no files,
+  `go test ./agents/runtime-b ./agents/runtime-b/cmd/runtime-b`,
+  `go test ./...`, `go vet ./...`, and `git diff --check`.
+- Race verification is still pending because this Windows environment has no
+  C compiler for cgo: `go test -race` requires cgo, and `CGO_ENABLED=1` fails
+  with `gcc not found`; `where gcc`, `where clang`, and `where cl` also find
+  no compiler on PATH.
+- Fallback/write-scope checkpoint: runtime code has no platform database,
+  Control Plane, Router, Ledger, SDK, retry, cache, alternate route,
+  compatibility fallback, or platform-core dependency.
+
+Open Spec 015 gates:
+
+- T010: rerun verification in a race-capable Go environment.
+- T011: independent Review by a non-implementing agent.
+- T012: Converge review findings and repeat Review.
 
 ## Workspace Closure and Next Plan
 
