@@ -122,3 +122,14 @@ parallel. Independent Review and Converge remain root-owned gates.
 
 T011 and T012 remain open until independent Review completes and Converge
 closes findings.
+
+## Review Attempt Checkpoint
+
+2026-07-16 session note:
+
+- T011 was attempted with independent read-only review agents after T010
+  verification passed.
+- No agent returned a usable PASS/FAIL review result before interruption;
+  therefore T011 remains open and no Converge findings are recorded.
+- Next run should repeat independent Review from the current branch head before
+  marking T011 complete or starting T012.
