@@ -33,7 +33,7 @@ internal imports or Agent side effects.
 
 **Independent Test**: Runtime B `httptest` endpoint receives one call with platform context and the Router returns the deterministic result.
 
-- [ ] T004 [US1] Implement A2A `message/send` client behavior in `apps/a2a-router/internal/transport/a2a/`.
+- [X] T004 [US1] Implement A2A `message/send` client behavior in `apps/a2a-router/internal/transport/a2a/`.
 - [ ] T005 [US1] Wire successful non-streaming transport into `apps/a2a-router/internal/api/dispatch_handler.go` while preserving existing validation/resolution failures.
 - [ ] T006 [US1] Add mapped Runtime B success and context propagation tests in `apps/a2a-router/internal/api/dispatch_handler_test.go` and/or `apps/a2a-router/internal/transport/a2a/` tests.
 
