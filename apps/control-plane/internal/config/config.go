@@ -32,6 +32,14 @@ type Config struct {
 	InternalPrincipals []StaticPrincipal
 }
 
+type InvocationRuntimeConfig struct {
+	RouterInternalURL       string
+	RouterBearerToken       string
+	PublicRequestLimitBytes int64
+	SSEEventLimitBytes      int64
+	DeadlineMS              int64
+}
+
 type jsonFrame struct {
 	object    bool
 	expecting bool
@@ -107,6 +115,59 @@ func LoadDatabaseURL() (string, error) {
 		return "", errors.New("NEKIRO_DATABASE_URL is invalid")
 	}
 	return databaseURL, nil
+}
+
+func LoadInvocationRuntime() (InvocationRuntimeConfig, error) {
+	routerURL, err := requiredEnv("NEKIRO_ROUTER_INTERNAL_URL")
+	if err != nil {
+		return InvocationRuntimeConfig{}, err
+	}
+	parsed, err := url.Parse(routerURL)
+	if err != nil || parsed.Scheme != "http" && parsed.Scheme != "https" || parsed.Host == "" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" || parsed.Path != "/internal/v3/invocations" {
+		return InvocationRuntimeConfig{}, errors.New("NEKIRO_ROUTER_INTERNAL_URL is invalid")
+	}
+	token, err := requiredEnv("NEKIRO_ROUTER_INTERNAL_BEARER_TOKEN")
+	if err != nil {
+		return InvocationRuntimeConfig{}, err
+	}
+	for _, character := range []byte(token) {
+		if character < 0x21 || character > 0x7e {
+			return InvocationRuntimeConfig{}, errors.New("NEKIRO_ROUTER_INTERNAL_BEARER_TOKEN is invalid")
+		}
+	}
+	if strings.ContainsAny(token, " \t\r\n") {
+		return InvocationRuntimeConfig{}, errors.New("NEKIRO_ROUTER_INTERNAL_BEARER_TOKEN is invalid")
+	}
+	requestLimit, err := requiredStrictInt64("NEKIRO_GATEWAY_INVOCATION_REQUEST_MAX_BYTES", 1, 2147483647)
+	if err != nil {
+		return InvocationRuntimeConfig{}, err
+	}
+	sseLimit, err := requiredStrictInt64("NEKIRO_GATEWAY_SSE_EVENT_MAX_BYTES", 1, 2147483647)
+	if err != nil {
+		return InvocationRuntimeConfig{}, err
+	}
+	deadline, err := requiredStrictInt64("NEKIRO_GATEWAY_INVOCATION_DEADLINE_MS", 1, 600000)
+	if err != nil {
+		return InvocationRuntimeConfig{}, err
+	}
+	return InvocationRuntimeConfig{RouterInternalURL: routerURL, RouterBearerToken: token, PublicRequestLimitBytes: requestLimit, SSEEventLimitBytes: sseLimit, DeadlineMS: deadline}, nil
+}
+
+func requiredStrictInt64(name string, minimum, maximum int64) (int64, error) {
+	value, err := requiredEnv(name)
+	if err != nil {
+		return 0, err
+	}
+	for _, character := range []byte(value) {
+		if character < '0' || character > '9' {
+			return 0, fmt.Errorf("%s must be a base-10 integer", name)
+		}
+	}
+	parsed, err := strconv.ParseInt(value, 10, 64)
+	if err != nil || parsed < minimum || parsed > maximum {
+		return 0, fmt.Errorf("%s must be between %d and %d", name, minimum, maximum)
+	}
+	return parsed, nil
 }
 
 func requiredEnv(name string) (string, error) {

@@ -15,6 +15,7 @@ import (
 	catalogpostgres "github.com/Nene7ko/NeKiro/apps/control-plane/internal/catalog/postgres"
 	"github.com/Nene7ko/NeKiro/apps/control-plane/internal/config"
 	"github.com/Nene7ko/NeKiro/apps/control-plane/internal/gateway"
+	"github.com/Nene7ko/NeKiro/apps/control-plane/internal/invocation"
 	"github.com/Nene7ko/NeKiro/apps/control-plane/internal/workspace"
 	workspacepostgres "github.com/Nene7ko/NeKiro/apps/control-plane/internal/workspace/postgres"
 	"github.com/Nene7ko/NeKiro/contracts"
@@ -57,6 +58,10 @@ func run(ctx context.Context, arguments []string, logger *slog.Logger) error {
 
 func serve(ctx context.Context, logger *slog.Logger) error {
 	cfg, err := config.Load()
+	if err != nil {
+		return err
+	}
+	invocationConfig, err := config.LoadInvocationRuntime()
 	if err != nil {
 		return err
 	}
@@ -116,9 +121,22 @@ func serve(ctx context.Context, logger *slog.Logger) error {
 	if err != nil {
 		return err
 	}
+	routerClient, err := invocation.NewRouterClient(&http.Client{}, invocationConfig.RouterInternalURL, invocationConfig.RouterBearerToken)
+	if err != nil {
+		return err
+	}
+	invocationService, err := invocation.NewService(workspaceService, routerClient, invocation.NewRandomIDGenerator())
+	if err != nil {
+		return err
+	}
+	invocationHandler, err := gateway.NewInvocationHandler(authenticator, invocationService, traces, logger, invocationConfig.PublicRequestLimitBytes, invocationConfig.SSEEventLimitBytes, time.Duration(invocationConfig.DeadlineMS)*time.Millisecond)
+	if err != nil {
+		return err
+	}
 	mux := http.NewServeMux()
 	catalogHandler.RegisterRoutes(mux)
 	workspaceHandler.RegisterRoutes(mux)
+	invocationHandler.RegisterRoutes(mux)
 
 	server := &http.Server{
 		Addr:              cfg.ListenAddress,

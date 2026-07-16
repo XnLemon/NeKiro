@@ -410,6 +410,27 @@ func TestInstallPreservesExplicitEmptyPermissions(t *testing.T) {
 	}
 }
 
+func TestAuthorizeInvocationReturnsExactCurrentPinAfterOwnerAndCapabilityPolicy(t *testing.T) {
+	card := testWorkspaceCard("agent-dispatch", "1.4.2", []string{"document.read"}, []string{"document.read"})
+	reader := &memoryCatalog{versions: map[string]catalog.AgentVersion{"agent-dispatch/1.4.2": {Card: card, Status: catalog.PublicationPublished}}}
+	store := newMemoryStore()
+	store.workspaces["workspace-dispatch"] = contracts.Workspace{WorkspaceID: "workspace-dispatch", OwnerID: "owner-a"}
+	store.installations["installation-dispatch"] = contracts.Installation{InstallationID: "installation-dispatch", WorkspaceID: "workspace-dispatch", AgentID: "agent-dispatch", InstalledVersion: "1.4.2", AcceptedPermissions: []string{"document.read"}, Status: "enabled"}
+	service := newWorkspaceTestService(t, store, reader)
+
+	result, err := service.AuthorizeInvocation(context.Background(), AuthenticatedCaller{ID: "owner-a"}, "workspace-dispatch", "agent-dispatch", "capability.read")
+	if err != nil || result.AgentCardVersion != "1.4.2" || reader.getCalls != 1 {
+		t.Fatalf("authorization result=%#v err=%v catalog calls=%d", result, err, reader.getCalls)
+	}
+	if _, err := service.AuthorizeInvocation(context.Background(), AuthenticatedCaller{ID: "owner-b"}, "workspace-dispatch", "agent-dispatch", "capability.read"); !errors.Is(err, ErrForbidden) {
+		t.Fatalf("foreign caller error = %v", err)
+	}
+	store.installations["installation-dispatch"] = contracts.Installation{InstallationID: "installation-dispatch", WorkspaceID: "workspace-dispatch", AgentID: "agent-dispatch", InstalledVersion: "1.4.2", AcceptedPermissions: []string{}, Status: "enabled"}
+	if _, err := service.AuthorizeInvocation(context.Background(), AuthenticatedCaller{ID: "owner-a"}, "workspace-dispatch", "agent-dispatch", "capability.read"); !errors.Is(err, ErrCapabilityNotAllowed) {
+		t.Fatalf("permission error = %v", err)
+	}
+}
+
 func TestInstallRejectsUnknownPermissionBeforePersistence(t *testing.T) {
 	card := testWorkspaceCard("agent-permission", "1.0.0", []string{"declared"}, nil)
 	reader := &memoryCatalog{candidates: []catalog.AgentVersion{{Card: card, Status: catalog.PublicationPublished}}}

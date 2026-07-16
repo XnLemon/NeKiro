@@ -27,6 +27,10 @@ type AuthenticatedCaller struct {
 	AuthenticationKind string
 }
 
+type AuthorizedInvocation struct {
+	AgentCardVersion string
+}
+
 type Clock func() time.Time
 type IDGenerator func() (string, error)
 

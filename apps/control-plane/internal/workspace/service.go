@@ -242,6 +242,54 @@ func (service *Service) Resolve(ctx context.Context, request contracts.ResolveAg
 	return response, nil
 }
 
+// AuthorizeInvocation is the public Dispatch authorization boundary. It owns
+// Workspace policy and returns only the exact pin needed by Control Plane.
+func (service *Service) AuthorizeInvocation(ctx context.Context, caller AuthenticatedCaller, workspaceID, agentID, capability string) (AuthorizedInvocation, error) {
+	if !ValidIdentifier(workspaceID) || !ValidIdentifier(caller.ID) || !ValidIdentifier(agentID) || !ValidIdentifier(capability) {
+		return AuthorizedInvocation{}, ErrInvalid
+	}
+	value, err := service.store.GetWorkspace(ctx, workspaceID)
+	if err != nil {
+		return AuthorizedInvocation{}, err
+	}
+	if err := service.authorizer.Authorize(value.OwnerID, caller.ID); err != nil {
+		return AuthorizedInvocation{}, err
+	}
+	installation, err := service.store.GetCurrentInstallation(ctx, workspaceID, agentID)
+	if errors.Is(err, ErrNotFound) {
+		return AuthorizedInvocation{}, ErrAgentNotInstalled
+	}
+	if err != nil {
+		return AuthorizedInvocation{}, err
+	}
+	if installation.Status != "enabled" {
+		return AuthorizedInvocation{}, ErrInstallationDisabled
+	}
+	version, err := service.catalog.GetVersion(ctx, agentID, installation.InstalledVersion)
+	if errors.Is(err, catalog.ErrNotFound) {
+		return AuthorizedInvocation{}, ErrDependency
+	}
+	if err != nil {
+		return AuthorizedInvocation{}, mapCatalogError(err)
+	}
+	if version.Status != catalog.PublicationPublished {
+		return AuthorizedInvocation{}, ErrAgentDisabled
+	}
+	var required []string
+	found := false
+	for _, skill := range version.Card.Skills {
+		if skill.ID == capability {
+			required = skill.RequiredPermissions
+			found = true
+			break
+		}
+	}
+	if !found || !containsAll(installation.AcceptedPermissions, required) {
+		return AuthorizedInvocation{}, ErrCapabilityNotAllowed
+	}
+	return AuthorizedInvocation{AgentCardVersion: installation.InstalledVersion}, nil
+}
+
 func validConstraint(value string) bool {
 	if strings.TrimSpace(value) == "" {
 		return false
