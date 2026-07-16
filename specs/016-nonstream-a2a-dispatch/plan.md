@@ -83,6 +83,8 @@ apps/a2a-router/internal/api/dispatch_handler_test.go
 apps/a2a-router/internal/transport/a2a/
 apps/a2a-router/internal/ledger/
 agents/runtime-b/
+apps/a2a-router/cmd/a2a-router/
+apps/a2a-router/internal/config/
 ```
 
 **Structure Decision**: Add a narrow Router-owned `transport/a2a` package for
@@ -106,11 +108,21 @@ unit tests can assert ordering without a PostgreSQL dependency.
 - Owned: `specs/016-nonstream-a2a-dispatch/**`,
   `apps/a2a-router/internal/api/dispatch_handler.go`,
   `apps/a2a-router/internal/api/dispatch_handler_test.go`,
-  `apps/a2a-router/internal/transport/a2a/**`, and focused test fixtures.
-- Referenced but not re-owned: `apps/a2a-router/internal/ledger/**`,
-  `agents/runtime-b/**`, and `contracts/**`.
+  `apps/a2a-router/internal/transport/a2a/**`,
+  `apps/a2a-router/cmd/a2a-router/**`,
+  `apps/a2a-router/internal/config/**`, the narrow Runtime B HTTP media-type
+  adapter, and focused test fixtures.
+- Referenced but not re-owned: `apps/a2a-router/internal/ledger/**` and
+  `contracts/**`.
 - Not owned: Control Plane internals, SDK, Runtime A, streaming/cancellation,
-  Console, deployment E2E, or contract version changes.
+  Console, deployment migration orchestration, or contract version changes.
+
+Converge additions require `NEKIRO_DATABASE_URL`,
+`NEKIRO_ROUTER_AGENT_RESPONSE_LIMIT_BYTES`, and
+`NEKIRO_ROUTER_A2A_EVENT_LIMIT_BYTES` at Router startup. The Router checks the
+Ledger schema and fails closed; it does not auto-migrate. The current Compose
+file now orders `a2a-router-migrate` before the Router `serve` service. Standalone
+deployments must provide equivalent ordering.
 
 ## Complexity Tracking
 

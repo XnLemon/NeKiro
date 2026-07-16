@@ -63,6 +63,47 @@ services:
       retries: 12
       start_period: 5s
 
+  a2a-router-migrate:
+    build:
+      context: ..
+      dockerfile: apps/a2a-router/Dockerfile
+    command: ["migrate", "up"]
+    environment:
+      NEKIRO_DATABASE_URL: "${NEKIRO_COMPOSE_DATABASE_URL:?NEKIRO_COMPOSE_DATABASE_URL must be set and non-empty}"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - platform-internal
+    restart: "no"
+
+  a2a-router:
+    build:
+      context: ..
+      dockerfile: apps/a2a-router/Dockerfile
+    command: ["serve"]
+    environment:
+      NEKIRO_ROUTER_LISTEN_ADDRESS: "0.0.0.0:8081"
+      NEKIRO_ROUTER_SERVICE_PRINCIPALS_JSON: "${NEKIRO_ROUTER_SERVICE_PRINCIPALS_JSON:?NEKIRO_ROUTER_SERVICE_PRINCIPALS_JSON must be set and non-empty}"
+      NEKIRO_DATABASE_URL: "${NEKIRO_COMPOSE_DATABASE_URL:?NEKIRO_COMPOSE_DATABASE_URL must be set and non-empty}"
+      NEKIRO_CONTROL_PLANE_RESOLVE_URL: "http://control-plane:8080/internal/v2/resolve-agent"
+      NEKIRO_CONTROL_PLANE_SERVICE_TOKEN: "${NEKIRO_CONTROL_PLANE_SERVICE_TOKEN:?NEKIRO_CONTROL_PLANE_SERVICE_TOKEN must be set and non-empty}"
+      NEKIRO_ROUTER_INTERNAL_REQUEST_LIMIT_BYTES: "${NEKIRO_ROUTER_INTERNAL_REQUEST_LIMIT_BYTES:?NEKIRO_ROUTER_INTERNAL_REQUEST_LIMIT_BYTES must be set and non-empty}"
+      NEKIRO_ROUTER_CONTROL_PLANE_RESPONSE_LIMIT_BYTES: "${NEKIRO_ROUTER_CONTROL_PLANE_RESPONSE_LIMIT_BYTES:?NEKIRO_ROUTER_CONTROL_PLANE_RESPONSE_LIMIT_BYTES must be set and non-empty}"
+      NEKIRO_ROUTER_AGENT_RESPONSE_LIMIT_BYTES: "${NEKIRO_ROUTER_AGENT_RESPONSE_LIMIT_BYTES:?NEKIRO_ROUTER_AGENT_RESPONSE_LIMIT_BYTES must be set and non-empty}"
+      NEKIRO_ROUTER_A2A_EVENT_LIMIT_BYTES: "${NEKIRO_ROUTER_A2A_EVENT_LIMIT_BYTES:?NEKIRO_ROUTER_A2A_EVENT_LIMIT_BYTES must be set and non-empty}"
+      NEKIRO_ROUTER_RESOLUTION_DEADLINE_MS: "${NEKIRO_ROUTER_RESOLUTION_DEADLINE_MS:?NEKIRO_ROUTER_RESOLUTION_DEADLINE_MS must be set and non-empty}"
+    ports:
+      - "127.0.0.1:${A2A_ROUTER_PORT:?A2A_ROUTER_PORT must be set and non-empty}:8081"
+    depends_on:
+      a2a-router-migrate:
+        condition: service_completed_successfully
+      control-plane:
+        condition: service_healthy
+    networks:
+      - platform-internal
+      - local-access
+
 volumes:
   postgres-data:
 

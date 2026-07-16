@@ -4,7 +4,7 @@
 
 **Created**: 2026-07-16
 
-**Status**: Ready for implementation
+**Status**: Non-stream implementation complete; streaming follow-ups tracked in tasks T017-T018
 
 **Input**: Spec 010 T006: implement non-streaming exact A2A dispatch and
 transient result delivery with mapped Router unit, HTTP, PostgreSQL, and A2A
@@ -148,8 +148,25 @@ outside Ledger ownership.
 - **SC-001**: Focused Router non-streaming tests prove one valid Runtime B call
   returns the exact deterministic result and context propagation.
 - **SC-002**: Failure tests cover resolution, endpoint dependency, protocol,
-  Agent business, and Ledger persistence errors without fallback success.
+  Agent business, response overflow, and Ledger persistence errors without
+  fallback success.
 - **SC-003**: `go test ./apps/a2a-router/... ./agents/runtime-b/...`,
   `go test ./...`, `go vet ./...`, and `git diff --check` pass.
 - **SC-004**: Fallback delta reports added `0`; no result content is stored in
   Ledger rows or documented storage structures.
+
+## Converge Additions
+
+The implementation review made the following runtime-boundary obligations
+explicit for this non-stream slice:
+
+- The production Router assembly requires a DB-backed Ledger appender and
+  fails startup when the Ledger schema is not ready; it does not use a no-op
+  recorder or auto-migrate a deployment-owned schema.
+- Agent response and A2A event byte limits are required strict configuration
+  with no defaults. Non-stream Agent input/output uses the lesser of the
+  configured Router bound and the exact resolved Agent Card bound; overflow is
+  explicit `PAYLOAD_TOO_LARGE` for input or `AGENT_RESPONSE_TOO_LARGE` for
+  output.
+- Streaming A2A event/SSE enforcement remains an explicit follow-up in task
+  T017, not hidden compatibility behavior in the non-stream transport.

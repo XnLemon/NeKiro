@@ -1,6 +1,7 @@
 package a2a
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -14,12 +15,13 @@ import (
 func TestClientSendMessageCallsRuntimeBWithPlatformContext(t *testing.T) {
 	captured := make(http.Header)
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		writer.Header().Set("Content-Type", "application/json")
 		captured = request.Header.Clone()
 		runtimeb.NewHTTPHandler(runtimeb.NewHandler()).ServeHTTP(writer, request)
 	}))
 	t.Cleanup(server.Close)
 
-	client, err := NewClient(server.Client())
+	client, err := newTestClient(server.Client())
 	if err != nil {
 		t.Fatalf("NewClient = %v", err)
 	}
@@ -51,12 +53,13 @@ func TestClientSendMessageCallsRuntimeBWithPlatformContext(t *testing.T) {
 func TestClientSendNonStreamingMapsDispatchToRuntimeB(t *testing.T) {
 	captured := make(http.Header)
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		writer.Header().Set("Content-Type", "application/json")
 		captured = request.Header.Clone()
 		runtimeb.NewHTTPHandler(runtimeb.NewHandler()).ServeHTTP(writer, request)
 	}))
 	t.Cleanup(server.Close)
 
-	client, err := NewClient(server.Client())
+	client, err := newTestClient(server.Client())
 	if err != nil {
 		t.Fatalf("NewClient = %v", err)
 	}
@@ -83,23 +86,270 @@ func TestClientSendNonStreamingMapsDispatchToRuntimeB(t *testing.T) {
 }
 
 func TestClientSendMessageRequiresExplicitDependencies(t *testing.T) {
-	if _, err := NewClient(nil); err == nil {
+	if _, err := NewClient(nil, 4096, 4096); err == nil {
 		t.Fatal("NewClient(nil) succeeded, want error")
 	}
-	client, err := NewClient(http.DefaultClient)
+	client, err := newTestClient(http.DefaultClient)
 	if err != nil {
 		t.Fatalf("NewClient = %v", err)
 	}
 	if _, err := client.SendMessage(t.Context(), Target{}, ContextHeaders{TraceID: "trace-a", InvocationID: "inv-a", RootTaskID: "task-a", WorkspaceID: "workspace-a"}, runtimeBMessageParams("message-a", "success", "ok")); err == nil {
 		t.Fatal("SendMessage without target endpoint succeeded, want error")
 	}
-	target := Target{Endpoint: "http://127.0.0.1:1"}
+	target := testTarget("http://127.0.0.1:1")
 	if _, err := client.SendMessage(t.Context(), target, ContextHeaders{}, runtimeBMessageParams("message-a", "success", "ok")); err == nil {
 		t.Fatal("SendMessage without context headers succeeded, want error")
 	}
 	if _, err := client.SendMessage(t.Context(), target, ContextHeaders{TraceID: "trace-a", InvocationID: "inv-a", RootTaskID: "task-a", WorkspaceID: "workspace-a"}, nil); err == nil {
 		t.Fatal("SendMessage without params succeeded, want error")
 	}
+}
+
+func TestClientClassifiesA2AJSONRPCFailureAsAgentExecutionFailed(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		writer.Header().Set("Content-Type", "application/json")
+		var call struct {
+			ID string `json:"id"`
+		}
+		if err := json.NewDecoder(request.Body).Decode(&call); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+		_ = json.NewEncoder(writer).Encode(map[string]any{
+			"jsonrpc": "2.0", "id": call.ID,
+			"error": map[string]any{"code": -32603, "message": "agent failed"},
+		})
+	}))
+	t.Cleanup(server.Close)
+	client, err := newTestClient(server.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = client.SendMessage(t.Context(), testTarget(server.URL), ContextHeaders{TraceID: "trace-a", InvocationID: "inv-a", RootTaskID: "task-a", WorkspaceID: "workspace-a"}, runtimeBMessageParams("message-a", "success", "ok"))
+	if got := errorCode(err); got != contracts.ErrorCodeAgentExecutionFailed {
+		t.Fatalf("error code = %q, want %q, err=%v", got, contracts.ErrorCodeAgentExecutionFailed, err)
+	}
+}
+
+func TestClientClassifiesMalformedA2AResultAsProtocolError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		writer.Header().Set("Content-Type", "application/json")
+		var call struct {
+			ID string `json:"id"`
+		}
+		if err := json.NewDecoder(request.Body).Decode(&call); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+		_ = json.NewEncoder(writer).Encode(map[string]any{
+			"jsonrpc": "2.0", "id": call.ID,
+			"result": map[string]any{"kind": "unsupported"},
+		})
+	}))
+	t.Cleanup(server.Close)
+	client, err := newTestClient(server.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = client.SendMessage(t.Context(), testTarget(server.URL), ContextHeaders{TraceID: "trace-a", InvocationID: "inv-a", RootTaskID: "task-a", WorkspaceID: "workspace-a"}, runtimeBMessageParams("message-a", "success", "ok"))
+	if got := errorCode(err); got != contracts.ErrorCodeA2AProtocol {
+		t.Fatalf("error code = %q, want %q, err=%v", got, contracts.ErrorCodeA2AProtocol, err)
+	}
+}
+
+func TestClientRejectsMalformedMessageResultInNonStreamingDispatch(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		writer.Header().Set("Content-Type", "application/json")
+		var call struct {
+			ID string `json:"id"`
+		}
+		if err := json.NewDecoder(request.Body).Decode(&call); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+		_ = json.NewEncoder(writer).Encode(map[string]any{
+			"jsonrpc": "2.0", "id": call.ID,
+			"result": map[string]any{"kind": "message", "id": "agent-message", "role": "agent", "parts": []any{}},
+		})
+	}))
+	t.Cleanup(server.Close)
+	client, err := newTestClient(server.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = client.SendNonStreaming(t.Context(), contracts.DispatchInvocationRequestV3{
+		InvocationID: "inv-a", RootTaskID: "task-a", TraceID: "trace-a",
+		Caller: contracts.Caller{Type: "user", ID: "owner-a"}, WorkspaceID: "workspace-a",
+		TargetAgentID: "agent-a", AgentCardVersion: "1.0.0", Capability: "capability-a",
+		Input: json.RawMessage(`{"fixture":"success"}`),
+	}, contracts.ResolveAgentResponse{Card: targetCard(server.URL, "none", "capability-a")})
+	if got := errorCode(err); got != contracts.ErrorCodeA2AProtocol {
+		t.Fatalf("error code = %q, want %q, err=%v", got, contracts.ErrorCodeA2AProtocol, err)
+	}
+}
+
+func TestClientClassifiesHTTPFailureAsAgentUnavailable(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		http.Error(writer, "offline", http.StatusBadGateway)
+	}))
+	t.Cleanup(server.Close)
+	client, err := newTestClient(server.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = client.SendMessage(t.Context(), testTarget(server.URL), ContextHeaders{TraceID: "trace-a", InvocationID: "inv-a", RootTaskID: "task-a", WorkspaceID: "workspace-a"}, runtimeBMessageParams("message-a", "success", "ok"))
+	if got := errorCode(err); got != contracts.ErrorCodeAgentUnavailable {
+		t.Fatalf("error code = %q, want %q, err=%v", got, contracts.ErrorCodeAgentUnavailable, err)
+	}
+}
+
+func TestClientClassifiesOversizedAgentResponse(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		var call struct {
+			ID string `json:"id"`
+		}
+		if err := json.NewDecoder(request.Body).Decode(&call); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+		writer.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(writer).Encode(map[string]any{
+			"jsonrpc": "2.0", "id": call.ID,
+			"result": map[string]any{"kind": "message", "id": "agent-message", "role": "agent", "parts": []any{map[string]any{"kind": "text", "text": "response larger than configured limit"}}},
+		})
+	}))
+	defer server.Close()
+	client, err := NewClient(server.Client(), 4096, 32)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = client.SendMessage(t.Context(), testTarget(server.URL), ContextHeaders{TraceID: "trace-a", InvocationID: "inv-a", RootTaskID: "task-a", WorkspaceID: "workspace-a"}, runtimeBMessageParams("message-a", "success", "ok"))
+	if got := errorCode(err); got != contracts.ErrorCodeAgentResponseTooLarge {
+		t.Fatalf("error code = %q, want %q, err=%v", got, contracts.ErrorCodeAgentResponseTooLarge, err)
+	}
+}
+
+func TestClientRejectsMalformedJSONRPCEnvelope(t *testing.T) {
+	tests := []struct {
+		name       string
+		jsonrpc    string
+		responseID string
+		both       bool
+		unknown    bool
+	}{
+		{name: "invalid version", jsonrpc: "1.0", responseID: "match"},
+		{name: "mismatched id", jsonrpc: "2.0", responseID: "other"},
+		{name: "result and error", jsonrpc: "2.0", responseID: "match", both: true},
+		{name: "unknown member", jsonrpc: "2.0", responseID: "match", unknown: true},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+				writer.Header().Set("Content-Type", "application/json")
+				var call struct {
+					ID string `json:"id"`
+				}
+				if err := json.NewDecoder(request.Body).Decode(&call); err != nil {
+					t.Fatalf("decode request: %v", err)
+				}
+				responseID := call.ID
+				if test.responseID == "other" {
+					responseID = "other"
+				}
+				response := map[string]any{
+					"jsonrpc": test.jsonrpc,
+					"id":      responseID,
+					"result":  map[string]any{"kind": "message", "id": "agent-message", "role": "agent", "parts": []any{map[string]any{"kind": "text", "text": "ok"}}},
+				}
+				if test.both {
+					response["error"] = map[string]any{"code": -32603, "message": "agent failed"}
+				}
+				if test.unknown {
+					response["extra"] = true
+				}
+				_ = json.NewEncoder(writer).Encode(response)
+			}))
+			defer server.Close()
+			client, err := newTestClient(server.Client())
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = client.SendMessage(t.Context(), testTarget(server.URL), ContextHeaders{TraceID: "trace-a", InvocationID: "inv-a", RootTaskID: "task-a", WorkspaceID: "workspace-a"}, runtimeBMessageParams("message-a", "success", "ok"))
+			if got := errorCode(err); got != contracts.ErrorCodeA2AProtocol {
+				t.Fatalf("error code = %q, want %q, err=%v", got, contracts.ErrorCodeA2AProtocol, err)
+			}
+		})
+	}
+}
+
+func TestClientRejectsDuplicateJSONRPCEnvelopeMember(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		var call struct {
+			ID string `json:"id"`
+		}
+		if err := json.NewDecoder(request.Body).Decode(&call); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+		writer.Header().Set("Content-Type", "application/json")
+		_, _ = writer.Write([]byte(`{"jsonrpc":"2.0","jsonrpc":"2.0","id":"` + call.ID + `","result":{"kind":"message","id":"agent-message","role":"agent","parts":[{"kind":"text","text":"ok"}]}}`))
+	}))
+	defer server.Close()
+	client, err := newTestClient(server.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = client.SendMessage(t.Context(), testTarget(server.URL), ContextHeaders{TraceID: "trace-a", InvocationID: "inv-a", RootTaskID: "task-a", WorkspaceID: "workspace-a"}, runtimeBMessageParams("message-a", "success", "ok"))
+	if got := errorCode(err); got != contracts.ErrorCodeA2AProtocol {
+		t.Fatalf("error code = %q, want %q, err=%v", got, contracts.ErrorCodeA2AProtocol, err)
+	}
+}
+
+func TestClientRejectsNonJSONRPCResponseMediaType(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		var call struct {
+			ID string `json:"id"`
+		}
+		if err := json.NewDecoder(request.Body).Decode(&call); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+		writer.Header().Set("Content-Type", "text/plain")
+		_ = json.NewEncoder(writer).Encode(map[string]any{
+			"jsonrpc": "2.0", "id": call.ID,
+			"result": map[string]any{"kind": "message", "id": "agent-message", "role": "agent", "parts": []any{map[string]any{"kind": "text", "text": "ok"}}},
+		})
+	}))
+	defer server.Close()
+	client, err := newTestClient(server.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = client.SendMessage(t.Context(), testTarget(server.URL), ContextHeaders{TraceID: "trace-a", InvocationID: "inv-a", RootTaskID: "task-a", WorkspaceID: "workspace-a"}, runtimeBMessageParams("message-a", "success", "ok"))
+	if got := errorCode(err); got != contracts.ErrorCodeA2AProtocol {
+		t.Fatalf("error code = %q, want %q, err=%v", got, contracts.ErrorCodeA2AProtocol, err)
+	}
+}
+
+func TestClientClassifiesDeadlineAsTimeout(t *testing.T) {
+	client, err := newTestClient(&http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+		return nil, context.DeadlineExceeded
+	})})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = client.SendMessage(t.Context(), testTarget("http://agent.example/a2a"), ContextHeaders{TraceID: "trace-a", InvocationID: "inv-a", RootTaskID: "task-a", WorkspaceID: "workspace-a"}, runtimeBMessageParams("message-a", "success", "ok"))
+	if got := errorCode(err); got != contracts.ErrorCodeTimeout {
+		t.Fatalf("error code = %q, want %q, err=%v", got, contracts.ErrorCodeTimeout, err)
+	}
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (fn roundTripFunc) RoundTrip(request *http.Request) (*http.Response, error) {
+	return fn(request)
+}
+
+func newTestClient(httpClient *http.Client) (*Client, error) {
+	return NewClient(httpClient, 4096, 4096)
+}
+
+func testTarget(endpoint string) Target {
+	return Target{Endpoint: endpoint, MaxInputBytes: 4096, MaxOutputBytes: 4096}
 }
 
 func runtimeBMessageParams(messageID, kind string, value any) *a2ago.MessageSendParams {

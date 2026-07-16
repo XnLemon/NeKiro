@@ -35,18 +35,51 @@ exact A2A dispatch and transient result delivery:
 - Available contracts: Invocation runtime semantic rules, Router Internal v3,
   Router Agent v1, result stream event v2, invocation event v0.3, and platform
   error v4.
-- Current Spec 016 progress: T001-T008 are complete. The Router now wires an
+- Current Spec 016 progress: T001-T016 are complete for the non-stream slice.
+  The Router now wires an
   explicit non-streaming A2A transport into dispatch, maps a validated
   `stream=false` request to one A2A `message/send`, appends metadata-only
   Ledger lifecycle facts for accepted non-streaming dispatch, and returns the
   transient Invocation Result v1 payload only after the terminal success fact
   is committed.
-- Pending Spec 016 work: T009-T010 must add explicit transport failure
-  classification/fallback evidence before final verification, independent
-  Review, and Converge.
+- Transport failure mapping is now explicit: target/profile contract errors
+  are `A2A_PROTOCOL_ERROR`, unsupported auth is `AGENT_AUTH_UNSUPPORTED`, HTTP
+  and network failure is `AGENT_UNAVAILABLE`, malformed A2A result is
+  `A2A_PROTOCOL_ERROR`, JSON-RPC `*a2a.Error` is `AGENT_EXECUTION_FAILED`, and
+  deadline is `TIMEOUT`; canceled Agent tasks map to `CANCELED`/HTTP 409. The
+  API consumes only the generic
+  `PlatformErrorCode()` capability and maps these to the active 502/503/504
+  response statuses (and 409 for canceled).
+- Production assembly now requires `NEKIRO_DATABASE_URL`, opens the
+  Router-owned Ledger store, checks schema readiness, and injects the Ledger
+  appender. It fails closed if the schema is absent; it does not no-op or
+  auto-migrate. Required Router limits are
+  `NEKIRO_ROUTER_AGENT_RESPONSE_LIMIT_BYTES` and
+  `NEKIRO_ROUTER_A2A_EVENT_LIMIT_BYTES`; non-stream input/output uses the
+  configured/Card minimum and response overflow maps to
+  `AGENT_RESPONSE_TOO_LARGE`.
+- Pending follow-ups: T017 streaming A2A/SSE event limits and T018 exhaustive
+  active A2A negative corpus tests. T016 now provides the deployment-owned
+  `migrate up` command and Compose ordering before Router `serve`.
 - Open risk: Spec 014 real PostgreSQL integration remains environment-pending;
   use non-integration Ledger evidence unless a PostgreSQL test database becomes
   available.
+
+Final post-review verification after the target-validation lifecycle fix and
+local Router runbook update passed:
+
+```text
+go test -count=1 ./...
+go vet ./...
+git diff --check
+wsl.exe -d Ubuntu-26.04 -- bash -lc 'cd /mnt/e/NeKiro && go test -race -count=1 ./apps/a2a-router/... ./agents/runtime-b'
+docker compose --file deploy/compose.yaml config --quiet
+```
+
+The Ledger target-validation failure case records exactly
+`created -> routing -> failed`, preserves `AGENT_AUTH_UNSUPPORTED`, and does
+not append `started` or call the Agent. Exact target construction now receives
+the dispatch capability instead of selecting a Card skill by position.
 
 ## Recently Closed Gates
 
@@ -58,6 +91,41 @@ exact A2A dispatch and transient result delivery:
   independently reviewed, converged, and merged into this branch.
 - Fallback delta for the Spec 016 baseline merge: removed 0, retained 0,
   added 0, net 0. Added fallback evidence: none.
+
+Spec 016 T009-T010 evidence:
+
+- Focused failure matrix: `go test -count=1 ./apps/a2a-router/internal/api`
+  and `go test -count=1 ./apps/a2a-router/internal/transport/a2a` pass.
+- Transport tests cover unsupported profile/auth, malformed message/result and
+  JSON-RPC envelope/media, A2A JSON-RPC Agent failure, HTTP failure, response
+  overflow, and deadline mapping.
+- Implementation-only fallback/write-scope scan found no Control Plane import,
+  direct database access, result persistence, retry, cache, alternate endpoint,
+  compatibility branch, default credential, or fallback endpoint. The only
+  broader scan match is the pre-existing test name
+  `TestDispatchMapsResolutionDependencyWithoutRetry`.
+- Fallback delta: removed 0, retained 0, added 0, net 0; added fallback
+  evidence: none.
+
+Independent Review and Converge completed: no P0 findings. In-scope findings
+(raw envelope validation, CANCELED 409, production Ledger injection, strict
+DB/limit configuration, bounded response, and Card/config input/output bounds)
+were resolved. T016-T018 remain explicit rather than silently claimed.
+
+Spec 016 T011 verification passed:
+
+```text
+go test -count=1 ./apps/a2a-router/... ./agents/runtime-b/...
+go test -count=1 ./...
+go vet ./...
+git diff --check
+wsl.exe -d Ubuntu-26.04 -- bash -lc 'cd /mnt/e/NeKiro && go test -race -count=1 ./apps/a2a-router/... ./agents/runtime-b'
+```
+
+The focused Router/Runtime B tests, full repository tests, vet, diff check,
+and WSL race run all passed. The WSL race command was rerun after the final
+Ledger wiring, strict config, Card-bound preflight, response-limit, and A2A
+envelope changes.
 ## Workspace Closure and Next Plan
 
 - PR #18 run `29442651978` passes `workspace-integration`, `go-quality`,

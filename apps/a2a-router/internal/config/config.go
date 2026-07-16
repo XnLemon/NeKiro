@@ -15,15 +15,19 @@ import (
 
 	"github.com/Nene7ko/NeKiro/apps/a2a-router/internal/auth"
 	"github.com/Nene7ko/NeKiro/contracts"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type Config struct {
 	ListenAddress                  string
 	RouterPrincipals               []auth.Principal
+	DatabaseURL                    string
 	ControlPlaneResolveURL         string
 	ControlPlaneServiceToken       string
 	InternalRequestLimitBytes      int64
 	ControlPlaneResponseLimitBytes int64
+	AgentResponseLimitBytes        int64
+	A2AEventLimitBytes             int64
 	ResolutionDeadline             time.Duration
 }
 
@@ -63,6 +67,10 @@ func Load() (Config, error) {
 	if err := validateVisibleASCII("NEKIRO_CONTROL_PLANE_SERVICE_TOKEN", token); err != nil {
 		return Config{}, err
 	}
+	databaseURL, err := LoadDatabaseURL()
+	if err != nil {
+		return Config{}, err
+	}
 	requestLimit, err := requiredInt64("NEKIRO_ROUTER_INTERNAL_REQUEST_LIMIT_BYTES", contracts.RuntimeByteLimitMinimum, contracts.RuntimeByteLimitMaximum)
 	if err != nil {
 		return Config{}, err
@@ -71,11 +79,33 @@ func Load() (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	agentResponseLimit, err := requiredInt64("NEKIRO_ROUTER_AGENT_RESPONSE_LIMIT_BYTES", contracts.RuntimeByteLimitMinimum, contracts.RuntimeByteLimitMaximum)
+	if err != nil {
+		return Config{}, err
+	}
+	a2aEventLimit, err := requiredInt64("NEKIRO_ROUTER_A2A_EVENT_LIMIT_BYTES", contracts.RuntimeByteLimitMinimum, contracts.RuntimeByteLimitMaximum)
+	if err != nil {
+		return Config{}, err
+	}
 	deadlineMS, err := requiredInt64("NEKIRO_ROUTER_RESOLUTION_DEADLINE_MS", contracts.RuntimeDeadlineMinimumMS, contracts.RuntimeDeadlineMaximumMS)
 	if err != nil {
 		return Config{}, err
 	}
-	return Config{ListenAddress: listen, RouterPrincipals: principals, ControlPlaneResolveURL: resolveURL, ControlPlaneServiceToken: token, InternalRequestLimitBytes: requestLimit, ControlPlaneResponseLimitBytes: responseLimit, ResolutionDeadline: time.Duration(deadlineMS) * time.Millisecond}, nil
+	return Config{ListenAddress: listen, RouterPrincipals: principals, DatabaseURL: databaseURL, ControlPlaneResolveURL: resolveURL, ControlPlaneServiceToken: token, InternalRequestLimitBytes: requestLimit, ControlPlaneResponseLimitBytes: responseLimit, AgentResponseLimitBytes: agentResponseLimit, A2AEventLimitBytes: a2aEventLimit, ResolutionDeadline: time.Duration(deadlineMS) * time.Millisecond}, nil
+}
+
+// LoadDatabaseURL validates the database boundary shared by the serving and
+// migration commands. The migration command must not require serving-only
+// credentials or endpoint configuration.
+func LoadDatabaseURL() (string, error) {
+	databaseURL, err := requiredEnv("NEKIRO_DATABASE_URL")
+	if err != nil {
+		return "", err
+	}
+	if err := validateDatabaseURL(databaseURL); err != nil {
+		return "", fmt.Errorf("NEKIRO_DATABASE_URL is invalid: %w", err)
+	}
+	return databaseURL, nil
 }
 
 func requiredEnv(name string) (string, error) {
@@ -111,6 +141,21 @@ func validateResolveURL(value string) error {
 	parsed, err := url.Parse(value)
 	if err != nil || parsed.Scheme != "http" && parsed.Scheme != "https" || parsed.Host == "" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" || parsed.Path != "/internal/v2/resolve-agent" {
 		return errors.New("must be an absolute HTTP(S) Control Plane resolve URL without userinfo, query, or fragment")
+	}
+	return nil
+}
+
+func validateDatabaseURL(value string) error {
+	parsed, err := url.Parse(value)
+	if err != nil || (parsed.Scheme != "postgres" && parsed.Scheme != "postgresql") || parsed.Hostname() == "" || parsed.Port() == "" || parsed.Path == "" || parsed.Path == "/" || parsed.User == nil || parsed.User.Username() == "" {
+		return errors.New("must be an absolute PostgreSQL URL with explicit user, host, port, and database")
+	}
+	password, hasPassword := parsed.User.Password()
+	if !hasPassword || password == "" || parsed.Query().Get("sslmode") == "" {
+		return errors.New("PostgreSQL URL must include a non-empty password and sslmode")
+	}
+	if _, err := pgxpool.ParseConfig(value); err != nil {
+		return errors.New("PostgreSQL URL is not accepted by pgxpool")
 	}
 	return nil
 }

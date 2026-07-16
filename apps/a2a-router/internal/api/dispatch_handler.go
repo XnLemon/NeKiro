@@ -30,11 +30,17 @@ type Resolver interface {
 }
 
 type NonStreamingTransport interface {
+	ValidateNonStreamingTarget(contracts.DispatchInvocationRequestV3, contracts.ResolveAgentResponse) error
 	SendNonStreaming(context.Context, contracts.DispatchInvocationRequestV3, contracts.ResolveAgentResponse) (json.RawMessage, error)
+	ValidateNonStreamingInput(contracts.DispatchInvocationRequestV3, contracts.ResolveAgentResponse) error
 }
 
 type InvocationLedgerAppender interface {
 	Append(context.Context, contracts.InvocationEventV03) error
+}
+
+type platformErrorCoder interface {
+	PlatformErrorCode() contracts.PlatformErrorCode
 }
 
 type DispatchHandler struct {
@@ -128,16 +134,19 @@ func (handler *DispatchHandler) dispatch(writer http.ResponseWriter, request *ht
 		return
 	}
 	if handler.transport != nil && !dispatchRequest.Stream {
+		if err := handler.transport.ValidateNonStreamingInput(dispatchRequest, resolved); err != nil {
+			handler.writePreError(writer, dispatchRequest.TraceID, dispatchErrorCode(err))
+			return
+		}
+	}
+	if handler.transport != nil && !dispatchRequest.Stream {
 		if handler.ledger != nil {
 			handler.dispatchNonStreamingWithLedger(ctx, writer, dispatchRequest, resolved)
 			return
 		}
 		result, err := handler.transport.SendNonStreaming(ctx, dispatchRequest, resolved)
 		if err != nil {
-			code := contracts.ErrorCodeDependency
-			if errors.Is(err, context.DeadlineExceeded) {
-				code = contracts.ErrorCodeTimeout
-			}
+			code := dispatchErrorCode(err)
 			handler.writeCorrelatedError(writer, dispatchRequest, code)
 			return
 		}
@@ -246,23 +255,38 @@ func (handler *DispatchHandler) dispatchNonStreamingWithLedger(ctx context.Conte
 	for _, event := range []contracts.InvocationEventV03{
 		lifecycleEvent(request, 0, "created", "pending", startedAt),
 		lifecycleEvent(request, 1, "routing", "routing", startedAt.Add(time.Microsecond)),
-		lifecycleEvent(request, 2, "started", "running", startedAt.Add(2*time.Microsecond)),
 	} {
 		if err := handler.ledger.Append(ctx, event); err != nil {
 			handler.writeCorrelatedError(writer, request, contracts.ErrorCodeDependency)
 			return
 		}
 	}
+	if err := handler.transport.ValidateNonStreamingTarget(request, resolved); err != nil {
+		code := dispatchErrorCode(err)
+		event, buildErr := terminalLifecycleEvent(request, 2, "failed", "failed", startedAt.Add(2*time.Microsecond), 0, code)
+		if buildErr != nil || handler.ledger.Append(ctx, event) != nil {
+			handler.writeCorrelatedError(writer, request, contracts.ErrorCodeDependency)
+			return
+		}
+		handler.writeCorrelatedError(writer, request, code)
+		return
+	}
+	if err := handler.ledger.Append(ctx, lifecycleEvent(request, 2, "started", "running", startedAt.Add(2*time.Microsecond))); err != nil {
+		handler.writeCorrelatedError(writer, request, contracts.ErrorCodeDependency)
+		return
+	}
 
 	result, err := handler.transport.SendNonStreaming(ctx, request, resolved)
 	latencyMS := time.Since(startedAt).Milliseconds()
 	terminalAt := startedAt.Add(3 * time.Microsecond)
 	if err != nil {
-		code := contracts.ErrorCodeDependency
+		code := dispatchErrorCode(err)
 		eventType, status := "failed", "failed"
-		if errors.Is(err, context.DeadlineExceeded) {
-			code = contracts.ErrorCodeTimeout
+		switch code {
+		case contracts.ErrorCodeTimeout:
 			eventType, status = "timed_out", "timed_out"
+		case contracts.ErrorCodeCanceled:
+			eventType, status = "canceled", "canceled"
 		}
 		event, buildErr := terminalLifecycleEvent(request, 3, eventType, status, terminalAt, latencyMS, code)
 		if buildErr != nil || handler.ledger.Append(ctx, event) != nil {
@@ -342,6 +366,8 @@ func errorStatus(code contracts.PlatformErrorCode) int {
 	switch code {
 	case contracts.ErrorCodeValidationError:
 		return http.StatusBadRequest
+	case contracts.ErrorCodeConflict, contracts.ErrorCodeCanceled:
+		return http.StatusConflict
 	case contracts.ErrorCodeUnauthenticated:
 		return http.StatusUnauthorized
 	case contracts.ErrorCodeForbidden, contracts.ErrorCodeCapabilityNotAllowed, contracts.ErrorCodeInstallationDisabled, contracts.ErrorCodeAgentDisabled:
@@ -350,6 +376,8 @@ func errorStatus(code contracts.PlatformErrorCode) int {
 		return http.StatusNotFound
 	case contracts.ErrorCodeNotAcceptable:
 		return http.StatusNotAcceptable
+	case contracts.ErrorCodeAgentAuthUnsupported, contracts.ErrorCodeAgentResponseTooLarge, contracts.ErrorCodeAgentExecutionFailed, contracts.ErrorCodeA2AProtocol:
+		return http.StatusBadGateway
 	case contracts.ErrorCodePayloadTooLarge:
 		return http.StatusRequestEntityTooLarge
 	case contracts.ErrorCodeTimeout:
@@ -357,6 +385,17 @@ func errorStatus(code contracts.PlatformErrorCode) int {
 	default:
 		return http.StatusServiceUnavailable
 	}
+}
+
+func dispatchErrorCode(err error) contracts.PlatformErrorCode {
+	if errors.Is(err, context.DeadlineExceeded) {
+		return contracts.ErrorCodeTimeout
+	}
+	var coded platformErrorCoder
+	if errors.As(err, &coded) {
+		return coded.PlatformErrorCode()
+	}
+	return contracts.ErrorCodeDependency
 }
 
 var traceSource io.Reader = rand.Reader

@@ -34,6 +34,16 @@ Every current variable is required:
 | `NEKIRO_INTERNAL_AUTH_MODE` | Explicit internal service authentication mode; currently `development-static` |
 | `NEKIRO_INTERNAL_DEV_AUTH_PRINCIPALS_JSON` | Separate strict principal array for Router/internal callers |
 | `CONTROL_PLANE_PORT` | Available host loopback port for the Control Plane |
+| `A2A_ROUTER_PORT` | Available host loopback port for the A2A Router |
+| `NEKIRO_ROUTER_LISTEN_ADDRESS` | Router bind address and port for host-process serving |
+| `NEKIRO_ROUTER_SERVICE_PRINCIPALS_JSON` | Strict principal array trusted by the Router's internal endpoint |
+| `NEKIRO_CONTROL_PLANE_RESOLVE_URL` | Control Plane exact-resolution URL used by the Router |
+| `NEKIRO_CONTROL_PLANE_SERVICE_TOKEN` | Raw service token the Router presents to the Control Plane; keep it out of logs and commits |
+| `NEKIRO_ROUTER_INTERNAL_REQUEST_LIMIT_BYTES` | Maximum Router dispatch request body size |
+| `NEKIRO_ROUTER_CONTROL_PLANE_RESPONSE_LIMIT_BYTES` | Maximum Control Plane resolution response size |
+| `NEKIRO_ROUTER_AGENT_RESPONSE_LIMIT_BYTES` | Maximum non-streaming Agent response size |
+| `NEKIRO_ROUTER_A2A_EVENT_LIMIT_BYTES` | Maximum A2A event size reserved for the streaming profile |
+| `NEKIRO_ROUTER_RESOLUTION_DEADLINE_MS` | Resolution deadline in milliseconds |
 
 Choose non-empty values locally. Do not commit `.env`, reuse these credentials
 for production, or place production credentials in this Compose deployment.
@@ -104,6 +114,42 @@ docker compose --env-file .env --file deploy/compose.yaml ps
 Committed Catalog rows remain in the PostgreSQL volume across process and
 container restarts. Logs and fixed errors omit bearer credentials, principal
 digests, Card bodies, schemas, SQL, DSNs, and raw dependency details.
+
+## Migrate and run the A2A Router
+
+The Router owns its Ledger schema. Apply its migration before starting the
+server, and keep the same PostgreSQL URL as the Control Plane:
+
+```powershell
+$env:NEKIRO_DATABASE_URL = 'postgresql://<user>:<url-encoded-password>@127.0.0.1:<port>/<database>?sslmode=disable'
+go run ./apps/a2a-router/cmd/a2a-router migrate up
+```
+
+For a host process, set the Router's remaining required values explicitly:
+
+```powershell
+$env:NEKIRO_ROUTER_LISTEN_ADDRESS = '127.0.0.1:18081'
+$env:NEKIRO_ROUTER_SERVICE_PRINCIPALS_JSON = '<strict Router principal JSON from .env>'
+$env:NEKIRO_CONTROL_PLANE_RESOLVE_URL = 'http://127.0.0.1:18080/internal/v2/resolve-agent'
+$env:NEKIRO_CONTROL_PLANE_SERVICE_TOKEN = '<raw token matching the configured internal principal digest>'
+$env:NEKIRO_ROUTER_INTERNAL_REQUEST_LIMIT_BYTES = '1048576'
+$env:NEKIRO_ROUTER_CONTROL_PLANE_RESPONSE_LIMIT_BYTES = '1048576'
+$env:NEKIRO_ROUTER_AGENT_RESPONSE_LIMIT_BYTES = '1048576'
+$env:NEKIRO_ROUTER_A2A_EVENT_LIMIT_BYTES = '1048576'
+$env:NEKIRO_ROUTER_RESOLUTION_DEADLINE_MS = '5000'
+go run ./apps/a2a-router/cmd/a2a-router serve
+```
+
+`serve` checks Ledger schema readiness and dependency configuration but never
+creates or upgrades schema. The Router exposes `/readyz` and accepts internal
+dispatches at `/internal/v3/invocations`. Its non-streaming input and output
+limits are the minimum of the configured limit and the exact Agent Card limit.
+Missing or invalid values fail startup; there is no no-op Ledger, fallback
+endpoint, or default credential.
+
+The Compose deployment performs the equivalent ordering automatically:
+`a2a-router-migrate` must complete successfully before `a2a-router` starts,
+and the Router also waits for the healthy Control Plane.
 
 ## Integration acceptance
 

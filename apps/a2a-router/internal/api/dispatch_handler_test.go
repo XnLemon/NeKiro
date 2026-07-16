@@ -38,11 +38,34 @@ func (stub *resolverStub) Resolve(_ context.Context, request contracts.ResolveAg
 }
 
 type transportStub struct {
-	dispatch contracts.DispatchInvocationRequestV3
-	resolved contracts.ResolveAgentResponse
-	result   json.RawMessage
-	calls    int
-	err      error
+	dispatch  contracts.DispatchInvocationRequestV3
+	resolved  contracts.ResolveAgentResponse
+	result    json.RawMessage
+	calls     int
+	err       error
+	targetErr error
+}
+
+type inputPreflightTransportStub struct {
+	transportStub
+	preflightErr   error
+	preflightCalls int
+}
+
+func (stub *inputPreflightTransportStub) ValidateNonStreamingInput(contracts.DispatchInvocationRequestV3, contracts.ResolveAgentResponse) error {
+	stub.preflightCalls++
+	return stub.preflightErr
+}
+
+type codedTransportError struct {
+	code  contracts.PlatformErrorCode
+	cause error
+}
+
+func (err codedTransportError) Error() string { return string(err.code) }
+func (err codedTransportError) Unwrap() error { return err.cause }
+func (err codedTransportError) PlatformErrorCode() contracts.PlatformErrorCode {
+	return err.code
 }
 
 func (stub *transportStub) SendNonStreaming(_ context.Context, dispatch contracts.DispatchInvocationRequestV3, resolved contracts.ResolveAgentResponse) (json.RawMessage, error) {
@@ -50,6 +73,14 @@ func (stub *transportStub) SendNonStreaming(_ context.Context, dispatch contract
 	stub.dispatch = dispatch
 	stub.resolved = resolved
 	return stub.result, stub.err
+}
+
+func (stub *transportStub) ValidateNonStreamingTarget(contracts.DispatchInvocationRequestV3, contracts.ResolveAgentResponse) error {
+	return stub.targetErr
+}
+
+func (stub *transportStub) ValidateNonStreamingInput(contracts.DispatchInvocationRequestV3, contracts.ResolveAgentResponse) error {
+	return nil
 }
 
 type ledgerRecorder struct {
@@ -230,6 +261,27 @@ func TestDispatchWithLedgerPreTransportFailureSkipsAgentCall(t *testing.T) {
 	}
 }
 
+func TestDispatchWithLedgerRecordsTargetValidationFailureWithoutStartingAgent(t *testing.T) {
+	resolver := &resolverStub{response: contracts.ResolveAgentResponse{Card: dispatchResolvedCard("https://agent.example/a2a")}}
+	transport := &transportStub{targetErr: codedTransportError{code: contracts.ErrorCodeAgentAuthUnsupported}}
+	ledger := &ledgerRecorder{}
+	handler := newDispatchLedgerTestHandler(t, authStub{caller: auth.Caller{ID: "control-plane"}}, resolver, transport, ledger, 4096)
+
+	response := invokeDispatch(handler, "application/json", "application/json", validDispatchBody(false))
+	var platformError contracts.CorrelatedPlatformErrorV4
+	if response.Code != http.StatusBadGateway || json.Unmarshal(response.Body.Bytes(), &platformError) != nil || platformError.Code != contracts.ErrorCodeAgentAuthUnsupported {
+		t.Fatalf("status=%d error=%#v body=%s", response.Code, platformError, response.Body.String())
+	}
+	assertLedgerLifecycle(t, ledger.events, []string{"created", "routing", "failed"})
+	terminal := ledger.events[len(ledger.events)-1]
+	if terminal.Error == nil || terminal.Error.Code != contracts.ErrorCodeAgentAuthUnsupported || terminal.LatencyMS == nil {
+		t.Fatalf("terminal event=%#v", terminal)
+	}
+	if transport.calls != 0 {
+		t.Fatalf("transport calls=%d, want 0", transport.calls)
+	}
+}
+
 func TestDispatchPreservesTypedResolutionFailures(t *testing.T) {
 	body := []byte(`{"code":"CAPABILITY_NOT_ALLOWED","message":"The requested capability is not allowed.","traceId":"trace-control","invocationId":"inv-a","rootTaskId":"task-a"}`)
 	resolver := &resolverStub{err: &resolution.Failure{StatusCode: http.StatusForbidden, Code: contracts.ErrorCodeCapabilityNotAllowed, TraceID: "trace-control", Body: body}}
@@ -263,6 +315,53 @@ func TestDispatchMapsResolutionDependencyWithoutRetry(t *testing.T) {
 	var platformError contracts.CorrelatedPlatformErrorV4
 	if response.Code != http.StatusServiceUnavailable || json.Unmarshal(response.Body.Bytes(), &platformError) != nil || platformError.Code != contracts.ErrorCodeDependency || resolver.calls != 1 {
 		t.Fatalf("status=%d error=%#v calls=%d", response.Code, platformError, resolver.calls)
+	}
+}
+
+func TestDispatchMapsTransportFailureMatrix(t *testing.T) {
+	tests := []struct {
+		name   string
+		code   contracts.PlatformErrorCode
+		status int
+		cause  error
+	}{
+		{name: "unsupported auth", code: contracts.ErrorCodeAgentAuthUnsupported, status: http.StatusBadGateway},
+		{name: "response too large", code: contracts.ErrorCodeAgentResponseTooLarge, status: http.StatusBadGateway},
+		{name: "protocol", code: contracts.ErrorCodeA2AProtocol, status: http.StatusBadGateway},
+		{name: "agent unavailable", code: contracts.ErrorCodeAgentUnavailable, status: http.StatusServiceUnavailable},
+		{name: "agent execution", code: contracts.ErrorCodeAgentExecutionFailed, status: http.StatusBadGateway},
+		{name: "timeout", code: contracts.ErrorCodeTimeout, status: http.StatusGatewayTimeout, cause: context.DeadlineExceeded},
+		{name: "canceled", code: contracts.ErrorCodeCanceled, status: http.StatusConflict},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			resolver := &resolverStub{response: contracts.ResolveAgentResponse{Card: dispatchResolvedCard("https://agent.example/a2a")}}
+			transport := &transportStub{err: codedTransportError{code: test.code, cause: test.cause}}
+			handler := newDispatchTransportTestHandler(t, authStub{caller: auth.Caller{ID: "control-plane"}}, resolver, transport, 4096)
+			response := invokeDispatch(handler, "application/json", "application/json", validDispatchBody(false))
+			var platformError contracts.CorrelatedPlatformErrorV4
+			if response.Code != test.status || json.Unmarshal(response.Body.Bytes(), &platformError) != nil || platformError.Code != test.code {
+				t.Fatalf("status=%d code=%q want status=%d code=%q body=%s", response.Code, platformError.Code, test.status, test.code, response.Body.String())
+			}
+		})
+	}
+}
+
+func TestDispatchRejectsCardInputOverflowBeforeLedgerAcceptance(t *testing.T) {
+	resolver := &resolverStub{response: contracts.ResolveAgentResponse{Card: dispatchResolvedCard("https://agent.example/a2a")}}
+	transport := &inputPreflightTransportStub{
+		transportStub: transportStub{result: json.RawMessage(`{"kind":"message"}`)},
+		preflightErr:  codedTransportError{code: contracts.ErrorCodePayloadTooLarge},
+	}
+	ledger := &ledgerRecorder{}
+	handler := newDispatchLedgerTestHandler(t, authStub{caller: auth.Caller{ID: "control-plane"}}, resolver, transport, ledger, 4096)
+	response := invokeDispatch(handler, "application/json", "application/json", validDispatchBody(false))
+	var platformError contracts.PreCorrelationPlatformErrorV4
+	if response.Code != http.StatusRequestEntityTooLarge || json.Unmarshal(response.Body.Bytes(), &platformError) != nil || platformError.Code != contracts.ErrorCodePayloadTooLarge {
+		t.Fatalf("status=%d error=%#v body=%s", response.Code, platformError, response.Body.String())
+	}
+	if transport.preflightCalls != 1 || transport.calls != 0 || len(ledger.events) != 0 {
+		t.Fatalf("preflight=%d transport=%d ledger=%d", transport.preflightCalls, transport.calls, len(ledger.events))
 	}
 }
 

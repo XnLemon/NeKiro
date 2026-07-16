@@ -13,7 +13,11 @@ import (
 const ListenAddressEnvironment = "RUNTIME_B_LISTEN_ADDR"
 
 func NewHTTPHandler(handler *Handler) http.Handler {
-	return a2asrv.NewJSONRPCHandler(handler)
+	jsonRPCHandler := a2asrv.NewJSONRPCHandler(handler)
+	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		writer.Header().Set("Content-Type", "application/json")
+		jsonRPCHandler.ServeHTTP(writer, request)
+	})
 }
 
 func ListenAddressFromEnvironment(lookup func(string) (string, bool)) (string, error) {
