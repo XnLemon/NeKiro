@@ -52,9 +52,22 @@
 
 ## Phase 6: Verification And Independent Gates
 
-- [ ] T020 Run formatting, focused/full tests, vet, fallback audit, and compatibility/write-scope review across the repository
-- [ ] T021 Complete independent Review by a non-implementing agent (root-owned)
-- [ ] T022 Converge findings and repeat independent Review (root-owned)
+- [X] T020 Run formatting, focused/full tests, vet, fallback audit, and compatibility/write-scope review across the repository
+- [X] T021 Complete independent Review by a non-implementing agent (root-owned)
+- [X] T022 Converge findings and repeat independent Review (root-owned)
+
+## Verification Evidence
+
+The source implementation gate passed focused Control Plane tests, full
+`go test ./...`, `go vet ./...`, and `git diff --check`. The same checks were
+rerun after integration with the current Router/Streaming branch and passed.
+The review follow-up preserves the approved Router `x-nek-trace-id` header
+through the response adapter and Gateway proxy. No retry, cache, alternate
+Router, direct Agent path, degraded success, or configuration default was
+introduced.
+
+Fallback delta: removed `0`, retained `0`, added `0`, net `0`. Added fallback
+evidence: none.
 
 ## Dependencies And Parallelism
 
@@ -62,7 +75,7 @@
 - T005-T007 establish the shared boundary before user-story completion.
 - US1 establishes Dispatch; US2 and US3 refine its public invalid/failure/result surfaces.
 - T011/T012, then T018/T019 are parallel test tasks because their files and owners are disjoint.
-- T021/T022 remain blocked on T020 and are owned by root supervision.
+- T021/T022 were completed after T020 and the trace-header review follow-up.
 
 ## Implementation Strategy
 
