@@ -58,8 +58,19 @@ Router dispatch/transport fallback scan with no hits.
 
 **Independent Test**: Strict recorder verifies ordering and metadata-only terminal facts for success and accepted failure.
 
-- [ ] T007 [US2] Add Router Ledger append orchestration for accepted non-streaming dispatch in `apps/a2a-router/internal/api/dispatch_handler.go`.
-- [ ] T008 [US2] Add mapped success, accepted failure, and Ledger failure tests proving terminal success is not emitted before required Ledger commit.
+- [X] T007 [US2] Add Router Ledger append orchestration for accepted non-streaming dispatch in `apps/a2a-router/internal/api/dispatch_handler.go`.
+- [X] T008 [US2] Add mapped success, accepted failure, and Ledger failure tests proving terminal success is not emitted before required Ledger commit.
+
+Checkpoint evidence: `NewDispatchHandlerWithTransportAndLedger` now appends
+metadata-only Invocation Event v0.3 facts for accepted non-streaming dispatch:
+`created -> routing -> started -> succeeded/failed/timed_out`. The success
+path appends the terminal `succeeded` fact before returning the live
+Invocation Result v1 payload; Ledger append failures return correlated
+`DEPENDENCY_ERROR` and do not expose a successful result. Recorder tests cover
+success ordering, transport failure terminalization, terminal Ledger failure,
+and pre-transport Ledger failure skipping the Agent call. Focused verification
+passed: `go test -count=1 ./apps/a2a-router/internal/api` and
+`go test -count=1 ./apps/a2a-router/... ./agents/runtime-b/...`.
 
 ---
 
@@ -100,7 +111,7 @@ T001 -> T002 -> T003 -> T004 -> T005 -> T006 -> T007 -> T008 -> T009 -> T010 -> 
 
 ## Completion State
 
-- Implementation and mapped tests: T005-T006 complete; T007-T010 pending
+- Implementation and mapped tests: T005-T008 complete; T009-T010 pending
 - Independent Review: pending
 - Converge: pending
 - Fallback delta: pending final implementation audit

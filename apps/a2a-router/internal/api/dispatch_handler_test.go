@@ -52,6 +52,20 @@ func (stub *transportStub) SendNonStreaming(_ context.Context, dispatch contract
 	return stub.result, stub.err
 }
 
+type ledgerRecorder struct {
+	events       []contracts.InvocationEventV03
+	failSequence int64
+	err          error
+}
+
+func (recorder *ledgerRecorder) Append(_ context.Context, event contracts.InvocationEventV03) error {
+	if recorder.err != nil && event.Sequence == recorder.failSequence {
+		return recorder.err
+	}
+	recorder.events = append(recorder.events, event)
+	return nil
+}
+
 func TestDispatchRejectsInvalidRequestsBeforeResolution(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -140,6 +154,82 @@ func TestDispatchUsesNonStreamingTransportAndReturnsInvocationResult(t *testing.
 	}
 }
 
+func TestDispatchWithLedgerCommitsTerminalSuccessBeforeResult(t *testing.T) {
+	resolver := &resolverStub{response: contracts.ResolveAgentResponse{Card: dispatchResolvedCard("https://agent.example/a2a")}}
+	transport := &transportStub{result: json.RawMessage("{\"kind\":\"message\",\"messageId\":\"agent-message\",\"role\":\"agent\",\"parts\":[{\"kind\":\"data\",\"data\":{\"ok\":true}}]}")}
+	ledger := &ledgerRecorder{}
+	handler := newDispatchLedgerTestHandler(t, authStub{caller: auth.Caller{ID: "control-plane"}}, resolver, transport, ledger, 4096)
+
+	response := invokeDispatch(handler, "application/json", "application/json", validDispatchBody(false))
+	if response.Code != http.StatusOK || transport.calls != 1 {
+		t.Fatalf("status=%d transport=%d body=%s", response.Code, transport.calls, response.Body.String())
+	}
+	assertLedgerLifecycle(t, ledger.events, []string{"created", "routing", "started", "succeeded"})
+	terminal := ledger.events[len(ledger.events)-1]
+	if terminal.Error != nil || terminal.LatencyMS == nil {
+		t.Fatalf("terminal event=%#v", terminal)
+	}
+	var result contracts.InvocationResult
+	if err := json.Unmarshal(response.Body.Bytes(), &result); err != nil || result.Status != "succeeded" {
+		t.Fatalf("result=%#v err=%v body=%s", result, err, response.Body.String())
+	}
+}
+
+func TestDispatchWithLedgerRecordsTerminalFailureForTransportError(t *testing.T) {
+	resolver := &resolverStub{response: contracts.ResolveAgentResponse{Card: dispatchResolvedCard("https://agent.example/a2a")}}
+	transport := &transportStub{err: errors.New("agent endpoint offline")}
+	ledger := &ledgerRecorder{}
+	handler := newDispatchLedgerTestHandler(t, authStub{caller: auth.Caller{ID: "control-plane"}}, resolver, transport, ledger, 4096)
+
+	response := invokeDispatch(handler, "application/json", "application/json", validDispatchBody(false))
+	var platformError contracts.CorrelatedPlatformErrorV4
+	if response.Code != http.StatusServiceUnavailable || json.Unmarshal(response.Body.Bytes(), &platformError) != nil || platformError.Code != contracts.ErrorCodeDependency {
+		t.Fatalf("status=%d error=%#v body=%s", response.Code, platformError, response.Body.String())
+	}
+	assertLedgerLifecycle(t, ledger.events, []string{"created", "routing", "started", "failed"})
+	terminal := ledger.events[len(ledger.events)-1]
+	if terminal.Error == nil || terminal.Error.Code != contracts.ErrorCodeDependency || terminal.LatencyMS == nil {
+		t.Fatalf("terminal event=%#v", terminal)
+	}
+}
+
+func TestDispatchWithLedgerFailureDoesNotExposeSuccessfulResult(t *testing.T) {
+	resolver := &resolverStub{response: contracts.ResolveAgentResponse{Card: dispatchResolvedCard("https://agent.example/a2a")}}
+	transport := &transportStub{result: json.RawMessage("{\"kind\":\"message\",\"messageId\":\"agent-message\",\"role\":\"agent\",\"parts\":[{\"kind\":\"data\",\"data\":{\"ok\":true}}]}")}
+	ledger := &ledgerRecorder{failSequence: 3, err: errors.New("ledger down")}
+	handler := newDispatchLedgerTestHandler(t, authStub{caller: auth.Caller{ID: "control-plane"}}, resolver, transport, ledger, 4096)
+
+	response := invokeDispatch(handler, "application/json", "application/json", validDispatchBody(false))
+	var platformError contracts.CorrelatedPlatformErrorV4
+	if response.Code != http.StatusServiceUnavailable || json.Unmarshal(response.Body.Bytes(), &platformError) != nil || platformError.Code != contracts.ErrorCodeDependency {
+		t.Fatalf("status=%d error=%#v body=%s", response.Code, platformError, response.Body.String())
+	}
+	if strings.Contains(response.Body.String(), "\"status\":\"succeeded\"") || strings.Contains(response.Body.String(), "\"result\"") {
+		t.Fatalf("successful result exposed after terminal Ledger failure: %s", response.Body.String())
+	}
+	assertLedgerLifecycle(t, ledger.events, []string{"created", "routing", "started"})
+	if transport.calls != 1 {
+		t.Fatalf("transport calls=%d", transport.calls)
+	}
+}
+
+func TestDispatchWithLedgerPreTransportFailureSkipsAgentCall(t *testing.T) {
+	resolver := &resolverStub{response: contracts.ResolveAgentResponse{Card: dispatchResolvedCard("https://agent.example/a2a")}}
+	transport := &transportStub{result: json.RawMessage("{\"kind\":\"message\"}")}
+	ledger := &ledgerRecorder{failSequence: 1, err: errors.New("ledger down")}
+	handler := newDispatchLedgerTestHandler(t, authStub{caller: auth.Caller{ID: "control-plane"}}, resolver, transport, ledger, 4096)
+
+	response := invokeDispatch(handler, "application/json", "application/json", validDispatchBody(false))
+	var platformError contracts.CorrelatedPlatformErrorV4
+	if response.Code != http.StatusServiceUnavailable || json.Unmarshal(response.Body.Bytes(), &platformError) != nil || platformError.Code != contracts.ErrorCodeDependency {
+		t.Fatalf("status=%d error=%#v body=%s", response.Code, platformError, response.Body.String())
+	}
+	assertLedgerLifecycle(t, ledger.events, []string{"created"})
+	if transport.calls != 0 {
+		t.Fatalf("transport calls=%d, want 0", transport.calls)
+	}
+}
+
 func TestDispatchPreservesTypedResolutionFailures(t *testing.T) {
 	body := []byte(`{"code":"CAPABILITY_NOT_ALLOWED","message":"The requested capability is not allowed.","traceId":"trace-control","invocationId":"inv-a","rootTaskId":"task-a"}`)
 	resolver := &resolverStub{err: &resolution.Failure{StatusCode: http.StatusForbidden, Code: contracts.ErrorCodeCapabilityNotAllowed, TraceID: "trace-control", Body: body}}
@@ -196,6 +286,43 @@ func newDispatchTransportTestHandler(t *testing.T, authenticator Authenticator, 
 	mux := http.NewServeMux()
 	handler.RegisterRoutes(mux)
 	return mux
+}
+
+func newDispatchLedgerTestHandler(t *testing.T, authenticator Authenticator, resolver Resolver, transport NonStreamingTransport, ledger InvocationLedgerAppender, limit int64) http.Handler {
+	t.Helper()
+	handler, err := NewDispatchHandlerWithTransportAndLedger(authenticator, resolver, transport, ledger, limit, time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mux := http.NewServeMux()
+	handler.RegisterRoutes(mux)
+	return mux
+}
+
+func assertLedgerLifecycle(t *testing.T, events []contracts.InvocationEventV03, types []string) {
+	t.Helper()
+	if len(events) != len(types) {
+		t.Fatalf("events len=%d want=%d events=%#v", len(events), len(types), events)
+	}
+	validator, err := contracts.NewRuntimeContractValidator()
+	if err != nil {
+		t.Fatal(err)
+	}
+	sequence, err := contracts.NewRuntimeInvocationSequenceValidator(validator)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for index, event := range events {
+		if event.Type != types[index] {
+			t.Fatalf("event %d type=%q want=%q events=%#v", index, event.Type, types[index], events)
+		}
+		if event.ChunkIndex != nil || event.ChunkBytes != nil {
+			t.Fatalf("event %d stores content metadata fields: %#v", index, event)
+		}
+		if err := sequence.Accept(event); err != nil {
+			t.Fatalf("event %d invalid: %v event=%#v", index, err, event)
+		}
+	}
 }
 
 func invokeDispatch(handler http.Handler, contentType, accept, body string) *httptest.ResponseRecorder {

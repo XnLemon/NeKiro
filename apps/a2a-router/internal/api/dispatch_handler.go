@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -40,6 +41,7 @@ type DispatchHandler struct {
 	authenticator Authenticator
 	resolver      Resolver
 	transport     NonStreamingTransport
+	ledger        InvocationLedgerAppender
 	requestLimit  int64
 	deadline      time.Duration
 }
@@ -60,6 +62,18 @@ func NewDispatchHandlerWithTransport(authenticator Authenticator, resolver Resol
 		return nil, errors.New("Router non-streaming transport is required")
 	}
 	handler.transport = transport
+	return handler, nil
+}
+
+func NewDispatchHandlerWithTransportAndLedger(authenticator Authenticator, resolver Resolver, transport NonStreamingTransport, ledger InvocationLedgerAppender, requestLimit int64, deadline time.Duration) (*DispatchHandler, error) {
+	handler, err := NewDispatchHandlerWithTransport(authenticator, resolver, transport, requestLimit, deadline)
+	if err != nil {
+		return nil, err
+	}
+	if ledger == nil {
+		return nil, errors.New("Router invocation ledger appender is required")
+	}
+	handler.ledger = ledger
 	return handler, nil
 }
 
@@ -114,6 +128,10 @@ func (handler *DispatchHandler) dispatch(writer http.ResponseWriter, request *ht
 		return
 	}
 	if handler.transport != nil && !dispatchRequest.Stream {
+		if handler.ledger != nil {
+			handler.dispatchNonStreamingWithLedger(ctx, writer, dispatchRequest, resolved)
+			return
+		}
 		result, err := handler.transport.SendNonStreaming(ctx, dispatchRequest, resolved)
 		if err != nil {
 			code := contracts.ErrorCodeDependency
@@ -221,6 +239,82 @@ func (handler *DispatchHandler) writeInvocationResult(writer http.ResponseWriter
 		Result:        result,
 	}
 	writeJSON(writer, http.StatusOK, request.TraceID, payload)
+}
+
+func (handler *DispatchHandler) dispatchNonStreamingWithLedger(ctx context.Context, writer http.ResponseWriter, request contracts.DispatchInvocationRequestV3, resolved contracts.ResolveAgentResponse) {
+	startedAt := time.Now().UTC().Truncate(time.Microsecond)
+	for _, event := range []contracts.InvocationEventV03{
+		lifecycleEvent(request, 0, "created", "pending", startedAt),
+		lifecycleEvent(request, 1, "routing", "routing", startedAt.Add(time.Microsecond)),
+		lifecycleEvent(request, 2, "started", "running", startedAt.Add(2*time.Microsecond)),
+	} {
+		if err := handler.ledger.Append(ctx, event); err != nil {
+			handler.writeCorrelatedError(writer, request, contracts.ErrorCodeDependency)
+			return
+		}
+	}
+
+	result, err := handler.transport.SendNonStreaming(ctx, request, resolved)
+	latencyMS := time.Since(startedAt).Milliseconds()
+	terminalAt := startedAt.Add(3 * time.Microsecond)
+	if err != nil {
+		code := contracts.ErrorCodeDependency
+		eventType, status := "failed", "failed"
+		if errors.Is(err, context.DeadlineExceeded) {
+			code = contracts.ErrorCodeTimeout
+			eventType, status = "timed_out", "timed_out"
+		}
+		event, buildErr := terminalLifecycleEvent(request, 3, eventType, status, terminalAt, latencyMS, code)
+		if buildErr != nil || handler.ledger.Append(ctx, event) != nil {
+			handler.writeCorrelatedError(writer, request, contracts.ErrorCodeDependency)
+			return
+		}
+		handler.writeCorrelatedError(writer, request, code)
+		return
+	}
+
+	event := lifecycleEvent(request, 3, "succeeded", "succeeded", terminalAt)
+	event.LatencyMS = &latencyMS
+	if err := handler.ledger.Append(ctx, event); err != nil {
+		handler.writeCorrelatedError(writer, request, contracts.ErrorCodeDependency)
+		return
+	}
+	handler.writeInvocationResult(writer, request, result)
+}
+
+func lifecycleEvent(request contracts.DispatchInvocationRequestV3, sequence int64, eventType, status string, occurredAt time.Time) contracts.InvocationEventV03 {
+	return contracts.InvocationEventV03{
+		SchemaVersion:    contracts.RuntimeInvocationEventSchemaVersion,
+		EventID:          lifecycleEventID(request.InvocationID, sequence, eventType),
+		Sequence:         sequence,
+		OccurredAt:       occurredAt.UTC().Format(time.RFC3339Nano),
+		Type:             eventType,
+		Status:           status,
+		InvocationID:     request.InvocationID,
+		RootTaskID:       request.RootTaskID,
+		TraceID:          request.TraceID,
+		Caller:           request.Caller,
+		WorkspaceID:      request.WorkspaceID,
+		TargetAgentID:    request.TargetAgentID,
+		AgentCardVersion: request.AgentCardVersion,
+		Capability:       request.Capability,
+	}
+}
+
+func terminalLifecycleEvent(request contracts.DispatchInvocationRequestV3, sequence int64, eventType, status string, occurredAt time.Time, latencyMS int64, code contracts.PlatformErrorCode) (contracts.InvocationEventV03, error) {
+	event := lifecycleEvent(request, sequence, eventType, status, occurredAt)
+	event.LatencyMS = &latencyMS
+	platformError, err := contracts.NewCorrelatedPlatformErrorV4(code, request.TraceID, request.InvocationID, request.RootTaskID)
+	if err != nil {
+		return contracts.InvocationEventV03{}, err
+	}
+	event.Error = &platformError
+	return event, nil
+}
+
+func lifecycleEventID(invocationID string, sequence int64, eventType string) string {
+	sum := sha256.Sum256([]byte(fmt.Sprintf("%s:%d:%s", invocationID, sequence, eventType)))
+	return fmt.Sprintf("evt-%s-%d", hex.EncodeToString(sum[:8]), sequence)
 }
 
 func writeJSON(writer http.ResponseWriter, status int, traceID contracts.TraceID, payload any) {

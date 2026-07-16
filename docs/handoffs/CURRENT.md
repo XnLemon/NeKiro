@@ -68,10 +68,10 @@ Open Spec 014 gates:
 
 Spec 016 is the active Router transport slice. The Router now wires an
 explicit non-streaming A2A transport into dispatch, maps a validated
-`stream=false` request to one A2A `message/send`, returns a transient
-Invocation Result v1 payload, and covers handler plus Runtime B context
-propagation tests. Metadata-only Ledger lifecycle orchestration and explicit
-transport failure classification remain part of the subsequent convergence
+`stream=false` request to one A2A `message/send`, appends metadata-only Ledger
+lifecycle facts for accepted dispatch, and returns the transient Invocation
+Result v1 payload only after the terminal success fact is committed. Explicit
+transport failure classification remains part of the subsequent convergence
 work in this stacked delivery.
 
 ## Spec 013 A2A Router Foundation Progress
