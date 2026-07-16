@@ -4,7 +4,7 @@
 
 **Created**: 2026-07-16
 
-**Status**: Ready for implementation
+**Status**: Implemented in WIP branch; package/full/vet verified; pending race-capable environment, Review, and Converge
 
 **Input**: GitHub Issue #24 / Spec 010 T005: build an independent deterministic
 callee Agent that supplies active-profile conformance evidence and stable
