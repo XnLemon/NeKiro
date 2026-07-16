@@ -1,75 +1,58 @@
-# Current Handoff: Invocation Ledger Checkpoint
+# Current Handoff: Spec 016 Non-Streaming A2A Dispatch Baseline
 
 **Updated**: 2026-07-16 (Asia/Hong_Kong)
 
 **State**: Workspace closure is complete. Invocation runtime contracts,
-Control Plane Dispatch, and Router Foundation have local implementation
-branches. Invocation Ledger is implemented on `codex/014-invocation-ledger`
-and non-integration verified, but its real PostgreSQL integration run,
-independent Review, and Converge remain open.
+A2A Router Foundation, Invocation Ledger, and Runtime B Direct A2A Sample have
+been merged into codex/016-nonstream-a2a-dispatch as the local baseline for
+the next Invoke slice. Control Plane Dispatch remains a separate local branch
+and is not required for the Router-owned non-streaming transport implementation
+unless Spec 016 discovers a contract dependency.
 
 ## Repository State
 
-- Upstream repository: `https://github.com/NeKiro-project/NeKiro.git`
-- Fork remote: `https://github.com/XnLemon/NeKiro.git`
-- Branch: `codex/014-invocation-ledger`
-- Base: `origin/main` at `99e52aa`
-- Required local Git identity: `Nene7ko_ <1604009816@qq.com>`
+- Upstream repository: https://github.com/NeKiro-project/NeKiro.git
+- Fork remote: https://github.com/XnLemon/NeKiro.git
+- Branch: codex/016-nonstream-a2a-dispatch
+- Base lineage: codex/013-router-foundation plus merged
+  codex/011-invocation-runtime-contracts,
+  codex/014-invocation-ledger, and codex/015-runtime-b-agent
+- Required local Git identity: Nene7ko_ <1604009816@qq.com>
 - Frontend remains paused.
+- Active feature: specs/016-nonstream-a2a-dispatch
 
 Resolve the repository root on the current machine; do not assume a previous
 Windows path exists.
 
-## Spec 014 Invocation Ledger Progress
+## Spec 016 Baseline Progress
 
-Spec 014 owns the Router-side metadata-only `Record` boundary:
+Spec 016 is now the active local feature target for Router-owned non-streaming
+exact A2A dispatch and transient result delivery:
 
-- Explicit Ledger migration/readiness, append-only events, transactional
-  projection, nested parent lineage checks, restart-safe Workspace-scoped
-  Invocation/Trace reads, and Router Internal v3 read adapter are implemented
-  in `apps/a2a-router/internal/ledger` and `apps/a2a-router/internal/api`.
-- PostgreSQL integration tests exist for lifecycle atomicity, strict readiness,
-  nested lineage, restart/order/isolation, prohibited content columns,
-  dependency failure, and concurrency.
-- Non-integration verification passed: `go test ./apps/a2a-router/internal/ledger ./apps/a2a-router/internal/api`,
-  `go test ./...`, `go vet ./...`, and `git diff --check`.
-- Real integration verification is still pending: `NEKIRO_TEST_DATABASE_URL`
-  is unset and Docker daemon access failed while attempting to start a
-  disposable PostgreSQL 17 container.
+- Available baseline code: apps/a2a-router foundation, strict Router config
+  and auth, Control Plane resolution client, Router dispatch placeholder,
+  Router-owned Ledger package/API, and agents/runtime-b direct A2A callee.
+- Available contracts: Invocation runtime semantic rules, Router Internal v3,
+  Router Agent v1, result stream event v2, invocation event v0.3, and platform
+  error v4.
+- Pending work: create specs/016-nonstream-a2a-dispatch artifacts, map exact
+  non-streaming dispatch requirements to Router transport code, implement the
+  A2A client path, persist metadata-only Ledger lifecycle events where the
+  active contract requires them, and add mapped post-implementation tests.
+- Open risk: Spec 014 real PostgreSQL integration remains environment-pending;
+  use non-integration Ledger evidence unless a PostgreSQL test database becomes
+  available.
 
-Open Spec 014 gates:
+## Recently Closed Gates
 
-- T012: run formatting/unit/integration/race/vet/full/fallback checks once a
-  real PostgreSQL test database is available.
-- T013: independent Review by a non-implementing agent.
-- T014: Converge review findings and repeat Review.
-
-## Spec 013 A2A Router Foundation Progress
-
-Spec 013 now adds the first standalone Data Plane Router foundation on branch
-`codex/013-router-foundation`:
-
-- Created `specs/013-a2a-router-foundation/` with Spec, Plan, research,
-  data model, contract guide, quickstart, checklist, and executable tasks.
-- Added `apps/a2a-router` process assembly, strict no-default config,
-  Router service bearer auth, readiness handler, Router Internal v3 dispatch
-  validation, Control Plane Internal v2 resolution client, and correlated
-  `ROUTE_NOT_FOUND` post-resolution placeholder.
-- Preserves boundaries: no Control Plane internal imports, no Agent endpoint
-  call, no Ledger path/write, no retry/cache/alternate source, and no shared
-  contract mutation.
-- Local verification passed: focused Router tests, `go test ./...`,
-  `go vet ./...`, and `git diff --check`.
-
-Independent Review-R1 found and converged three blockers: duplicate
-`Authorization` header acceptance, reconstructed Control Plane resolution
-errors, and a fabricated entropy-failure trace fallback. The fixes require
-exactly one Authorization value, preserve exact Control Plane failure
-status/body/trace through the Router, and fail closed when pre-correlation
-trace entropy is unavailable. Focused Router tests, `go test ./...`,
-`go vet ./...`, and `git diff --check` passed after convergence. Follow-up
-Review returned PASS with no remaining P0-P2 blocker.
-
+- Spec 011 Invocation Runtime Contracts: closed and merged into this branch.
+- Spec 013 A2A Router Foundation: closed and used as this branch base.
+- Spec 014 Invocation Ledger: merged as a checkpoint; real PostgreSQL
+  integration/Review/Converge remain documented as pending in its own tasks.
+- Spec 015 Runtime B Direct A2A Sample: implemented, WSL race verified,
+  independently reviewed, converged, and merged into this branch.
+- Fallback delta for the Spec 016 baseline merge: removed 0, retained 0,
+  added 0, net 0. Added fallback evidence: none.
 ## Workspace Closure and Next Plan
 
 - PR #18 run `29442651978` passes `workspace-integration`, `go-quality`,
@@ -334,3 +317,4 @@ Before modifying runtime code, read in full:
 Do not modify `pnpm-lock.yaml`, relax `minimumReleaseAge`, add a fallback data
 source, or begin Spec 010 runtime implementation before T001/#20 freezes and
 merges the shared contract and failure policy.
+
