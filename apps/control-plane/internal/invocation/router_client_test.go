@@ -34,7 +34,7 @@ func TestRouterClientUsesOnlyFrozenInternalV3Direction(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 	if received.InvocationID != request.InvocationID || response.StatusCode != 200 || response.ContentType != "text/event-stream" || response.Headers.Get("x-nek-trace-id") != "trace-router" {
 		t.Fatalf("received=%#v response=%#v", received, response)
 	}
