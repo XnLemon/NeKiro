@@ -52,6 +52,10 @@ type DispatchHandler struct {
 	deadline      time.Duration
 }
 
+// ledgerCommitGrace bounds the one terminal-fact persistence attempt after a
+// caller deadline/cancellation without turning it into an unbounded write.
+const ledgerCommitGrace = time.Second
+
 func NewDispatchHandler(authenticator Authenticator, resolver Resolver, requestLimit int64, deadline time.Duration) (*DispatchHandler, error) {
 	if authenticator == nil || resolver == nil || requestLimit < contracts.RuntimeByteLimitMinimum || requestLimit > contracts.RuntimeByteLimitMaximum || deadline < time.Duration(contracts.RuntimeDeadlineMinimumMS)*time.Millisecond || deadline > time.Duration(contracts.RuntimeDeadlineMaximumMS)*time.Millisecond {
 		return nil, errors.New("router dispatch dependencies are required")
@@ -258,6 +262,11 @@ func (handler *DispatchHandler) writeInvocationResult(writer http.ResponseWriter
 }
 
 func (handler *DispatchHandler) dispatchNonStreamingWithLedger(ctx context.Context, writer http.ResponseWriter, request contracts.DispatchInvocationRequestV3, resolved contracts.ResolveAgentResponse, targetErr error) {
+	appendTerminal := func(event contracts.InvocationEventV03) error {
+		appendCtx, release := ledgerContext(ctx)
+		defer release()
+		return handler.ledger.Append(appendCtx, event)
+	}
 	startedAt := time.Now().UTC().Truncate(time.Microsecond)
 	for _, event := range []contracts.InvocationEventV03{
 		lifecycleEvent(request, 0, "created", "pending", startedAt),
@@ -271,7 +280,7 @@ func (handler *DispatchHandler) dispatchNonStreamingWithLedger(ctx context.Conte
 	if targetErr != nil {
 		code := dispatchErrorCode(targetErr)
 		event, buildErr := terminalLifecycleEvent(request, 2, "failed", "failed", startedAt.Add(2*time.Microsecond), 0, code)
-		if buildErr != nil || handler.ledger.Append(ctx, event) != nil {
+		if buildErr != nil || appendTerminal(event) != nil {
 			handler.writeCorrelatedError(writer, request, contracts.ErrorCodeDependency)
 			return
 		}
@@ -296,7 +305,7 @@ func (handler *DispatchHandler) dispatchNonStreamingWithLedger(ctx context.Conte
 			eventType, status = "canceled", "canceled"
 		}
 		event, buildErr := terminalLifecycleEvent(request, 3, eventType, status, terminalAt, latencyMS, code)
-		if buildErr != nil || handler.ledger.Append(ctx, event) != nil {
+		if buildErr != nil || appendTerminal(event) != nil {
 			handler.writeCorrelatedError(writer, request, contracts.ErrorCodeDependency)
 			return
 		}
@@ -306,11 +315,18 @@ func (handler *DispatchHandler) dispatchNonStreamingWithLedger(ctx context.Conte
 
 	event := lifecycleEvent(request, 3, "succeeded", "succeeded", terminalAt)
 	event.LatencyMS = &latencyMS
-	if err := handler.ledger.Append(ctx, event); err != nil {
+	if err := appendTerminal(event); err != nil {
 		handler.writeCorrelatedError(writer, request, contracts.ErrorCodeDependency)
 		return
 	}
 	handler.writeInvocationResult(writer, request, result)
+}
+
+func ledgerContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	if ctx.Err() == nil {
+		return ctx, func() {}
+	}
+	return context.WithTimeout(context.WithoutCancel(ctx), ledgerCommitGrace)
 }
 
 func lifecycleEvent(request contracts.DispatchInvocationRequestV3, sequence int64, eventType, status string, occurredAt time.Time) contracts.InvocationEventV03 {

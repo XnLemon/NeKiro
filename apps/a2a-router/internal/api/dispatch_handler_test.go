@@ -89,6 +89,33 @@ type ledgerRecorder struct {
 	err          error
 }
 
+type deadlineAwareLedgerRecorder struct {
+	events []contracts.InvocationEventV03
+}
+
+func (recorder *deadlineAwareLedgerRecorder) Append(ctx context.Context, event contracts.InvocationEventV03) error {
+	if event.Sequence >= 3 && ctx.Err() != nil {
+		return ctx.Err()
+	}
+	recorder.events = append(recorder.events, event)
+	return nil
+}
+
+type deadlineTransportStub struct{}
+
+func (deadlineTransportStub) ValidateNonStreamingTarget(contracts.DispatchInvocationRequestV3, contracts.ResolveAgentResponse) error {
+	return nil
+}
+
+func (deadlineTransportStub) ValidateNonStreamingInput(contracts.DispatchInvocationRequestV3, contracts.ResolveAgentResponse) error {
+	return nil
+}
+
+func (deadlineTransportStub) SendNonStreaming(ctx context.Context, _ contracts.DispatchInvocationRequestV3, _ contracts.ResolveAgentResponse) (json.RawMessage, error) {
+	<-ctx.Done()
+	return nil, codedTransportError{code: contracts.ErrorCodeTimeout, cause: ctx.Err()}
+}
+
 func (recorder *ledgerRecorder) Append(_ context.Context, event contracts.InvocationEventV03) error {
 	if recorder.err != nil && event.Sequence == recorder.failSequence {
 		return recorder.err
@@ -220,6 +247,28 @@ func TestDispatchWithLedgerRecordsTerminalFailureForTransportError(t *testing.T)
 	assertLedgerLifecycle(t, ledger.events, []string{"created", "routing", "started", "failed"})
 	terminal := ledger.events[len(ledger.events)-1]
 	if terminal.Error == nil || terminal.Error.Code != contracts.ErrorCodeDependency || terminal.LatencyMS == nil {
+		t.Fatalf("terminal event=%#v", terminal)
+	}
+}
+
+func TestDispatchWithLedgerCommitsTimeoutTerminalAfterContextDeadline(t *testing.T) {
+	resolver := &resolverStub{response: contracts.ResolveAgentResponse{Card: dispatchResolvedCard("https://agent.example/a2a")}}
+	ledger := &deadlineAwareLedgerRecorder{}
+	handlerValue, err := NewDispatchHandlerWithTransportAndLedger(
+		authStub{caller: auth.Caller{ID: "control-plane"}}, resolver, deadlineTransportStub{}, ledger, 4096, 20*time.Millisecond,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mux := http.NewServeMux()
+	handlerValue.RegisterRoutes(mux)
+	response := invokeDispatch(mux, "application/json", "application/json", validDispatchBody(false))
+	var platformError contracts.CorrelatedPlatformErrorV4
+	if response.Code != http.StatusGatewayTimeout || json.Unmarshal(response.Body.Bytes(), &platformError) != nil || platformError.Code != contracts.ErrorCodeTimeout {
+		t.Fatalf("status=%d error=%#v body=%s", response.Code, platformError, response.Body.String())
+	}
+	assertLedgerLifecycle(t, ledger.events, []string{"created", "routing", "started", "timed_out"})
+	if terminal := ledger.events[len(ledger.events)-1]; terminal.Error == nil || terminal.Error.Code != contracts.ErrorCodeTimeout {
 		t.Fatalf("terminal event=%#v", terminal)
 	}
 }
