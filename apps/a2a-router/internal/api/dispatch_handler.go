@@ -181,10 +181,10 @@ func NewDispatchHandlerWithTransportAndLedgerAndStreaming(authenticator Authenti
 	}
 	streaming, ok := transport.(StreamingTransport)
 	if !ok {
-		return nil, errors.New("Router streaming transport is required")
+		return nil, errors.New("router streaming transport is required")
 	}
 	if sseEventLimitBytes < contracts.RuntimeByteLimitMinimum || sseEventLimitBytes > contracts.RuntimeByteLimitMaximum {
-		return nil, errors.New("Router SSE event limit is invalid")
+		return nil, errors.New("router SSE event limit is invalid")
 	}
 	handler.streaming = streaming
 	handler.sseEventLimitBytes = sseEventLimitBytes
