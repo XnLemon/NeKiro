@@ -48,7 +48,7 @@ func (client *Client) SendNonStreaming(ctx context.Context, dispatch contracts.D
 			return nil, classify(contracts.ErrorCodeA2AProtocol, errors.New("non-streaming dispatch received a non-terminal A2A task"))
 		}
 		if mapping.ErrorCode != "" {
-			return nil, classify(mapping.ErrorCode, errors.New("Agent returned a terminal A2A task failure"))
+			return nil, classify(mapping.ErrorCode, errors.New("agent returned a terminal A2A task failure"))
 		}
 	default:
 		return nil, classify(contracts.ErrorCodeA2AProtocol, errors.New("A2A message/send returned an unsupported result"))

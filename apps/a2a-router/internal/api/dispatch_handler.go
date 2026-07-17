@@ -153,7 +153,7 @@ func NewDispatchHandlerWithTransport(authenticator Authenticator, resolver Resol
 		return nil, err
 	}
 	if transport == nil {
-		return nil, errors.New("Router non-streaming transport is required")
+		return nil, errors.New("router non-streaming transport is required")
 	}
 	handler.transport = transport
 	if streaming, ok := transport.(StreamingTransport); ok {

@@ -70,7 +70,7 @@ func NewTarget(resolved contracts.ResolveAgentResponse, capability string) (Targ
 func parseCardLimit(value string) (int64, error) {
 	parsed, ok := new(big.Int).SetString(value, 10)
 	if !ok || parsed.Sign() <= 0 {
-		return 0, errors.New("Agent Card limit must be a positive base-10 integer")
+		return 0, errors.New("agent Card limit must be a positive base-10 integer")
 	}
 	if parsed.BitLen() > 63 {
 		return math.MaxInt64, nil
