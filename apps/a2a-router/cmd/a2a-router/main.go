@@ -61,7 +61,7 @@ func serve(ctx context.Context, logger *slog.Logger) error {
 		return err
 	}
 	if err := ledgerStore.Check(ctx); err != nil {
-		return fmt.Errorf("Router Ledger schema is not ready: %w", err)
+		return fmt.Errorf("router Ledger schema is not ready: %w", err)
 	}
 	handler, err := newHandler(cfg, http.DefaultClient, http.DefaultClient, ledgerStore)
 	if err != nil {
@@ -92,7 +92,7 @@ func migrate(ctx context.Context, direction string) (returnErr error) {
 		}
 	}()
 	if err := ledger.Migrate(ctx, connection, direction); err != nil {
-		return errors.New("Router Ledger migration failed")
+		return errors.New("router Ledger migration failed")
 	}
 	return nil
 }
@@ -112,7 +112,7 @@ func newHandler(cfg config.Config, doer resolution.HTTPDoer, agentHTTPClient *ht
 	}
 	var dispatch *api.DispatchHandler
 	if ledgerAppender == nil {
-		return nil, errors.New("Router Ledger appender is required")
+		return nil, errors.New("router Ledger appender is required")
 	}
 	dispatch, err = api.NewDispatchHandlerWithTransportAndLedgerAndStreaming(authenticator, resolver, transport, ledgerAppender, cfg.SSEEventLimitBytes, cfg.InternalRequestLimitBytes, cfg.ResolutionDeadline)
 	if err != nil {
