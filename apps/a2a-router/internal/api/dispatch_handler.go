@@ -77,7 +77,7 @@ func NewDispatchHandlerWithTransportAndLedger(authenticator Authenticator, resol
 		return nil, err
 	}
 	if ledger == nil {
-		return nil, errors.New("Router invocation ledger appender is required")
+		return nil, errors.New("router invocation ledger appender is required")
 	}
 	handler.ledger = ledger
 	return handler, nil
