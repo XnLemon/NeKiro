@@ -116,7 +116,7 @@ func newHandler(cfg config.Config, doer resolution.HTTPDoer, agentHTTPClient *ht
 	}
 	ledgerReader, ok := ledgerAppender.(api.LedgerReader)
 	if !ok {
-		return nil, errors.New("Router Ledger reader is required")
+		return nil, errors.New("router Ledger reader is required")
 	}
 	dispatch, err = api.NewDispatchHandlerWithTransportAndLedgerAndStreaming(authenticator, resolver, transport, ledgerAppender, cfg.SSEEventLimitBytes, cfg.InternalRequestLimitBytes, cfg.ResolutionDeadline)
 	if err != nil {
