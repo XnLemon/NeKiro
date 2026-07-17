@@ -86,8 +86,8 @@ SELECT version,
        (SELECT count(*) FROM pg_constraint WHERE conrelid = to_regclass('ledger.invocations')),
        (SELECT count(*) FROM pg_constraint WHERE conrelid = to_regclass('ledger.invocation_events')),
        (SELECT array_agg(conname::text ORDER BY conname) = ARRAY[
-           'invocations_caller_type','invocations_identifier_format','invocations_latency_nonnegative',
-           'invocations_error_code','invocations_parent_fk','invocations_pkey','invocations_status','invocations_terminal_shape',
+           'invocations_caller_type','invocations_error_code','invocations_identifier_format',
+           'invocations_latency_nonnegative','invocations_parent_fk','invocations_pkey','invocations_status','invocations_terminal_shape',
            'invocations_timestamp_order','invocations_trace_format'
         ] FROM pg_constraint WHERE conrelid = to_regclass('ledger.invocations')),
        (SELECT array_agg(conname::text ORDER BY conname) = ARRAY[
