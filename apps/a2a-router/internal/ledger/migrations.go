@@ -78,7 +78,7 @@ SELECT version,
         WHERE table_schema = 'ledger' AND table_name = 'invocation_events'
           AND ((column_name IN ('event_id','invocation_id','root_task_id','parent_invocation_id','trace_id','caller_id','workspace_id','target_agent_id','agent_card_version','capability')
                 AND data_type = 'character varying' AND character_maximum_length = 128 AND collation_name = 'C')
-            OR (column_name IN ('event_type','status') AND data_type = 'character varying' AND character_maximum_length = 16 AND collation_name = 'C')
+            OR (column_name IN ('event_type','status','caller_type') AND data_type = 'character varying' AND character_maximum_length = 16 AND collation_name = 'C')
             OR (column_name = 'error_code' AND data_type = 'character varying' AND character_maximum_length = 64 AND collation_name = 'C')
             OR (column_name IN ('sequence','chunk_index','chunk_bytes','latency_ms') AND data_type = 'bigint')
             OR (column_name = 'occurred_at' AND data_type = 'timestamp with time zone' AND datetime_precision = 6))
