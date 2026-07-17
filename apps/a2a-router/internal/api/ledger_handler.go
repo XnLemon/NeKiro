@@ -38,10 +38,10 @@ func NewLedgerHandler(reader LedgerReader) (*LedgerHandler, error) {
 // validating and reading its owned metadata.
 func (handler *LedgerHandler) RegisterRoutes(mux *http.ServeMux, authenticator Authenticator) error {
 	if mux == nil {
-		return errors.New("Router read mux is required")
+		return errors.New("router read mux is required")
 	}
 	if authenticator == nil {
-		return errors.New("Router read authenticator is required")
+		return errors.New("router read authenticator is required")
 	}
 	mux.HandleFunc("GET /internal/v3/workspaces/{workspaceId}/invocations/{invocationId}", func(writer http.ResponseWriter, request *http.Request) {
 		handler.serveInvocationRoute(writer, request, authenticator)

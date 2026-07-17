@@ -156,7 +156,7 @@ func (handler *InvocationReadHandler) validateMetadataBody(body []byte, resource
 		}
 		requested, err := contracts.ParseTraceID(resourceID)
 		if err != nil || trace.TraceID != requested {
-			return errors.New("Trace response identity does not match request")
+			return errors.New("trace response identity does not match request")
 		}
 		return contracts.ValidateTraceResponseV4(workspaceID, requested, trace)
 	default:
