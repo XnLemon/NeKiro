@@ -179,7 +179,7 @@ func TestOfficialServerUsesStrictOneLineSSEFrames(t *testing.T) {
 	if err != nil {
 		t.Fatalf("stream request: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 	body, err := io.ReadAll(response.Body)
 	if err != nil {
 		t.Fatalf("read stream: %v", err)
