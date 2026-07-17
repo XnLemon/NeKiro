@@ -54,13 +54,6 @@ func NewClient(httpClient *http.Client, inputLimitBytes, responseLimitBytes, a2a
 	return &Client{httpClient: &client, inputLimitBytes: inputLimitBytes, responseLimitBytes: responseLimitBytes, a2aEventLimitBytes: a2aEventLimitBytes, sseEventLimitBytes: sseEventLimitBytes}, nil
 }
 
-// streamTransportLimits exposes the independent configured limits to the
-// streaming implementation without making them mutable or global.
-func (client *Client) streamTransportLimits() (int64, int64) {
-	return client.a2aEventLimitBytes, client.sseEventLimitBytes
-}
-
-
 func (client *Client) SendMessage(ctx context.Context, target Target, headers ContextHeaders, params *a2ago.MessageSendParams) (a2ago.SendMessageResult, error) {
 	if target.Endpoint == "" {
 		return nil, classify(contracts.ErrorCodeA2AProtocol, errors.New("A2A target endpoint is required"))

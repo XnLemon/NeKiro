@@ -483,7 +483,10 @@ func (handler *DispatchHandler) dispatchStreamingWithLedger(ctx context.Context,
 	}
 	streamWriter, err := newResultStreamWriter(response, handler.sseEventLimitBytes)
 	if err != nil {
-		handler.appendStreamingTerminal(ctx, request, 3, startedAt, 0, contracts.ErrorCodeDependency, "failed", "failed")
+		if appendErr := handler.appendStreamingTerminal(ctx, request, 3, startedAt, 0, contracts.ErrorCodeDependency, "failed", "failed"); appendErr != nil {
+			handler.writeCorrelatedError(response, request, contracts.ErrorCodeDependency)
+			return
+		}
 		handler.writeCorrelatedError(response, request, contracts.ErrorCodeDependency)
 		return
 	}
@@ -504,7 +507,10 @@ func (handler *DispatchHandler) dispatchStreamingWithLedger(ctx context.Context,
 	if err := streamWriter.Write(accepted); err != nil {
 		code := streamWriteErrorCode(ctx, err)
 		if !streamWriter.committed {
-			handler.appendStreamingTerminal(ctx, request, 3, startedAt, 0, code, "failed", "failed")
+			if appendErr := handler.appendStreamingTerminal(ctx, request, 3, startedAt, 0, code, "failed", "failed"); appendErr != nil {
+				handler.writeCorrelatedError(response, request, contracts.ErrorCodeDependency)
+				return
+			}
 			handler.writeCorrelatedError(response, request, code)
 		} else {
 			handler.finishStreamingFailure(ctx, cancel, streamWriter, streamSequence, request, startedAt, 1, 3, code)

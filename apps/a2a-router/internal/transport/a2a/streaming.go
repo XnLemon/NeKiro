@@ -182,11 +182,6 @@ func streamingRequestID(data []byte) (json.RawMessage, error) {
 	return append(json.RawMessage(nil), request.ID...), nil
 }
 
-func validateStreamingJSONRPCEnvelope(data, expectedID json.RawMessage) error {
-	_, err := streamingJSONRPCResult(data, expectedID)
-	return err
-}
-
 func streamingJSONRPCResult(data, expectedID json.RawMessage) (json.RawMessage, error) {
 	if err := rejectDuplicateJSONMembers(data); err != nil {
 		return nil, err
