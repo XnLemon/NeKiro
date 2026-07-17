@@ -427,11 +427,12 @@ func mapA2AStreamEvent(event a2ago.Event) (streammodel.Event, error) {
 		if mapping.Classification == contracts.A2ATaskStateTerminal {
 			mapped.TerminalStatus = mapping.InvocationStatus
 			mapped.ErrorCode = mapping.ErrorCode
-			if mapping.InvocationStatus == "succeeded" {
+			switch mapping.InvocationStatus {
+			case "succeeded":
 				mapped.TerminalType = contracts.ResultStreamEventCompleted
-			} else if mapping.InvocationStatus == "canceled" {
+			case "canceled":
 				mapped.TerminalType = contracts.ResultStreamEventCanceled
-			} else {
+			default:
 				mapped.TerminalType = contracts.ResultStreamEventFailed
 			}
 		}

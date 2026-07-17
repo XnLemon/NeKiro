@@ -86,7 +86,7 @@ func TestClientStreamingMakesOneCancelAttemptAfterDeadline(t *testing.T) {
 			t.Error("test writer is not flushable")
 			return
 		}
-		_, _ = writer.Write([]byte(fmt.Sprintf("id: stream-1\ndata: {\"jsonrpc\":\"2.0\",\"id\":%s,\"result\":{\"kind\":\"task\",\"id\":\"task-a\",\"contextId\":\"ctx-a\",\"status\":{\"state\":\"working\"}}}\n\n", envelope.ID)))
+		_, _ = fmt.Fprintf(writer, "id: stream-1\ndata: {\"jsonrpc\":\"2.0\",\"id\":%s,\"result\":{\"kind\":\"task\",\"id\":\"task-a\",\"contextId\":\"ctx-a\",\"status\":{\"state\":\"working\"}}}\n\n", envelope.ID)
 		flusher.Flush()
 		<-request.Context().Done()
 	}))
