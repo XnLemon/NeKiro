@@ -91,7 +91,7 @@ func readBounded(reader io.Reader, limit int64) ([]byte, error) {
 		return nil, err
 	}
 	if int64(len(data)) > limit {
-		return nil, errors.New("Control Plane resolution response is too large")
+		return nil, errors.New("control plane resolution response is too large")
 	}
 	return data, nil
 }
