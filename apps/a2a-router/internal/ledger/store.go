@@ -197,7 +197,7 @@ func orderTraceProjections(values []contracts.InvocationRecordV4) ([]contracts.I
 			next = append(next, value)
 		}
 		if !progress {
-			return nil, errors.New("Trace contains missing or cyclic parent lineage")
+			return nil, errors.New("trace contains missing or cyclic parent lineage")
 		}
 		remaining = next
 	}
