@@ -119,7 +119,7 @@ removed 0, retained 0, added 0, net 0; added fallback evidence: none.
 - [X] T014 [US2] Wire the production Router assembly to a required DB-backed Ledger appender and strict Ledger schema readiness in `apps/a2a-router/cmd/a2a-router/` and `apps/a2a-router/internal/config/`.
 - [X] T015 [US3] Add required Agent response/A2A event byte-limit configuration and enforce the non-stream effective input/output bounds as the minimum of configured and exact Card limits.
 - [X] T016 [P1] Add a deployment-owned Ledger migration command/service before Router startup; the current Router intentionally fails readiness when the schema is absent and never auto-migrates.
-- [ ] T017 [P1] Implement A2A event/SSE byte-limit enforcement with streaming in Spec 017; T015 only establishes required configuration and non-stream Agent response enforcement.
+- [X] T017 [P1] Implement A2A event/SSE byte-limit enforcement with streaming in Spec 017; T015 only establishes required configuration and non-stream Agent response enforcement.
 - [X] T018 [P2] Execute the complete active A2A negative corpus matrix (missing result/error, invalid scalar IDs, and trailing data) as explicit Router transport tests.
 
 ## Dependencies & Execution Order
@@ -142,8 +142,8 @@ T001 -> T002 -> T003 -> T004 -> T005 -> T006 -> T007 -> T008 -> T009 -> T010 -> 
 
 ## Completion State
 
-- Implementation and mapped tests: T005-T016 and T018 complete for the non-stream slice
-- Independent Review: complete; no P0 findings; remaining follow-up is T017
+- Implementation and mapped tests: T005-T018 complete across the non-stream slice and its approved Spec 017 streaming follow-up
+- Independent Review: complete; no P0 findings
 - Converge: complete for in-scope findings
 - Fallback delta: removed 0, retained 0, added 0, net 0; added fallback evidence: none
 
@@ -157,9 +157,9 @@ Review and Converge evidence: an independent Review Agent found no P0 issue.
 The in-scope findings were resolved by raw A2A JSON-RPC envelope/media
 validation, `CANCELED` HTTP 409 mapping, production Ledger constructor wiring,
 strict database/limit configuration, bounded Agent response reads, and
-configured/Card minimum input/output bounds. The remaining streaming event
-enforcement remains explicitly tracked as T017; the active negative corpus is
-complete in T018 rather than silently left unverified.
+configured/Card minimum input/output bounds. Spec 017 tasks T004, T006, and
+T011-T013 complete T017 with separate upstream A2A event and full SSE frame
+limits plus boundary tests; the active negative corpus is complete in T018.
 
 T016 deployment evidence: the Router binary exposes `migrate up` and `serve`
 commands; `a2a-router-migrate` runs the embedded Ledger migration and the
@@ -198,5 +198,6 @@ request/response ID equality, so invalid IDs cannot pass only by mismatch. The
 test runs against the active JSON-RPC transport path and complements the
 existing duplicate-member,
 unknown-field, version, media-type, ID-mismatch, and result/error-XOR cases.
-T017 remains deferred to a separate streaming Spec 017 because Spec 016 does
-not own streaming transport or event sequencing.
+T017 is completed by the separately owned streaming implementation and tests in
+`specs/017-streaming-a2a-events/`; Spec 016 still does not own streaming
+transport or event sequencing.

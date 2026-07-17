@@ -6,3 +6,5 @@
 !apps/
 !apps/control-plane/
 !apps/control-plane/**
+!apps/a2a-router/
+!apps/a2a-router/**

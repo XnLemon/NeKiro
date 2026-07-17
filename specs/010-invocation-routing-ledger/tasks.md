@@ -45,7 +45,7 @@ modes, verify exact correlation/result order, and prove the Control Plane never
 contacts the Agent directly.
 
 - [ ] T006 [US1] Implement non-streaming exact A2A dispatch and transient result delivery with post-implementation unit, HTTP, PostgreSQL, and A2A tests in `specs/016-nonstream-a2a-dispatch/` and `apps/a2a-router/internal/transport/a2a/`
-- [ ] T007 [P] [US1] Implement streaming, explicit deadline, HTTP disconnect cancellation, A2A task cancellation, and first-terminal-wins behavior with post-implementation SSE/race tests in `specs/017-stream-cancel-timeout/` and `apps/a2a-router/internal/taskcontext/`
+- [ ] T007 [P] [US1] Implement streaming, explicit deadline, HTTP disconnect cancellation, A2A task cancellation, and first-terminal-wins behavior with post-implementation SSE/race tests in `specs/017-streaming-a2a-events/` and `apps/a2a-router/internal/taskcontext/`
 
 **Checkpoint**: Root JSON and SSE calls are independently usable and produce
 durable metadata-only lifecycle facts.
