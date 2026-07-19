@@ -47,12 +47,6 @@ jobs:
         with:
           version: v2.12.2
 
-      # PR #41 validation only; remove before merge because T011 owns CI integration.
-      - name: Verify Router image build and CA trust
-        run: |
-          docker build --file apps/a2a-router/Dockerfile --tag nekiro-a2a-router:pr41 .
-          docker run --rm --entrypoint /bin/sh nekiro-a2a-router:pr41 -c 'test -r /etc/ssl/certs/ca-certificates.crt'
-
   workspace-integration:
     runs-on: ubuntu-latest
     timeout-minutes: 20
