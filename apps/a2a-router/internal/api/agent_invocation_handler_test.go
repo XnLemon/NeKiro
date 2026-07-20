@@ -405,3 +405,138 @@ func TestNewAgentInvocationHandlerValidation(t *testing.T) {
 		})
 	}
 }
+
+// TestAgentHandlerNestedJSONSuccessPath exercises the full US1 trusted nested
+// call flow: auth -> request -> parent read -> child derivation -> version
+// resolution -> DispatchChild -> Ledger -> JSON result. It asserts lineage,
+// correlation, and content-exclusion.
+func TestAgentHandlerNestedJSONSuccessPath(t *testing.T) {
+	agentToken := "agent-test-token"
+	binding, err := nested.NewAgentBinding([]nested.AgentPrincipal{
+		{AgentID: "agent_caller01", TokenSHA256: agentTokenDigest(agentToken)},
+	})
+	if err != nil {
+		t.Fatalf("NewAgentBinding() error = %v", err)
+	}
+
+	serviceAuth, err := auth.NewStaticAuthenticator([]auth.Principal{
+		{ID: "router-service", TokenSHA256: agentTokenDigest("service-token")},
+	})
+	if err != nil {
+		t.Fatalf("NewStaticAuthenticator() error = %v", err)
+	}
+
+	// Resolver returns a valid card for the target agent.
+	targetCard := contracts.AgentCard{
+		AgentID: "agent_target02", Version: "2.0.0",
+		Protocol:       contracts.AgentProtocol{Type: "a2a", Version: contracts.A2AProtocolVersion, Transport: "JSONRPC", Endpoint: "https://target.example/a2a"},
+		Authentication: contracts.AgentAuthentication{Type: "none"},
+		Skills:         []contracts.AgentSkill{{ID: "summarize"}},
+		Limits:         contracts.AgentLimits{TimeoutMS: 5000, MaxInputBytes: "4096", MaxOutputBytes: "4096", Streaming: false},
+	}
+	resolver := &resolverStub{response: contracts.ResolveAgentResponse{
+		Card: targetCard,
+		Installation: contracts.ResolvedInstallation{
+			InstallationID: "inst-01", WorkspaceID: "ws_test789",
+			AgentID: "agent_target02", InstalledVersion: "2.0.0",
+			AcceptedPermissions: []string{}, Status: "enabled",
+		},
+	}}
+
+	// Transport returns a valid A2A message result.
+	transport := &transportStub{result: json.RawMessage(`{"kind":"message","messageId":"msg-01","role":"agent","parts":[{"kind":"data","data":{"answer":"42"}}]}`)}
+
+	// Ledger records all appended events.
+	ledgerRec := &ledgerRecorder{}
+
+	dispatchHandler, err := NewDispatchHandlerWithTransportAndLedger(serviceAuth, resolver, transport, ledgerRec, 1048576, 30*time.Second)
+	if err != nil {
+		t.Fatalf("NewDispatchHandlerWithTransportAndLedger() error = %v", err)
+	}
+
+	ledgerReader := &mockNestedLedgerReader{invocation: runningParentDetail()}
+	versionResolver := &mockVersionResolver{response: contracts.ResolveInstalledVersionResponse{Version: "2.0.0"}}
+
+	handler, err := NewAgentInvocationHandler(binding, ledgerReader, versionResolver, dispatchHandler, 1048576, 30*time.Second)
+	if err != nil {
+		t.Fatalf("NewAgentInvocationHandler() error = %v", err)
+	}
+
+	req := httptest.NewRequest("POST", "/agent/v1/invocations", strings.NewReader(validNestedBody()))
+	req.Header.Set("Authorization", "Bearer "+agentToken)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+	rec := httptest.NewRecorder()
+	handler.serve(rec, req)
+
+	// Assert 200 OK.
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body = %s", rec.Code, rec.Body.String())
+	}
+
+	// Assert InvocationResult correlation.
+	var result contracts.InvocationResult
+	if err := json.Unmarshal(rec.Body.Bytes(), &result); err != nil {
+		t.Fatalf("decode result: %v", err)
+	}
+	if result.InvocationID == "" || result.InvocationID == "inv_parent123" {
+		t.Errorf("child invocation ID should be new, got %s", result.InvocationID)
+	}
+	if result.RootTaskID != "task_root456" {
+		t.Errorf("root task ID = %s, want task_root456", result.RootTaskID)
+	}
+	if string(result.TraceID) != "trc_abc123_1" {
+		t.Errorf("trace ID = %s, want trc_abc123_1", result.TraceID)
+	}
+	if result.Status != "succeeded" {
+		t.Errorf("status = %s, want succeeded", result.Status)
+	}
+
+	// Assert Ledger lifecycle: created -> routing -> started -> succeeded.
+	if len(ledgerRec.events) != 4 {
+		t.Fatalf("ledger events = %d, want 4", len(ledgerRec.events))
+	}
+	expectedTypes := []string{"created", "routing", "started", "succeeded"}
+	for i, event := range ledgerRec.events {
+		if event.Type != expectedTypes[i] {
+			t.Errorf("event[%d].Type = %s, want %s", i, event.Type, expectedTypes[i])
+		}
+		// Assert parent lineage propagation.
+		if event.ParentInvocationID != "inv_parent123" {
+			t.Errorf("event[%d].ParentInvocationID = %s, want inv_parent123", i, event.ParentInvocationID)
+		}
+		if event.RootTaskID != "task_root456" {
+			t.Errorf("event[%d].RootTaskID = %s, want task_root456", i, event.RootTaskID)
+		}
+		if event.TraceID != "trc_abc123_1" {
+			t.Errorf("event[%d].TraceID = %s, want trc_abc123_1", i, event.TraceID)
+		}
+		if event.WorkspaceID != "ws_test789" {
+			t.Errorf("event[%d].WorkspaceID = %s, want ws_test789", i, event.WorkspaceID)
+		}
+		if event.Caller.Type != "agent" || event.Caller.ID != "agent_caller01" {
+			t.Errorf("event[%d].Caller = %+v, want agent/agent_caller01", i, event.Caller)
+		}
+		if event.TargetAgentID != "agent_target02" {
+			t.Errorf("event[%d].TargetAgentID = %s, want agent_target02", i, event.TargetAgentID)
+		}
+		if event.AgentCardVersion != "2.0.0" {
+			t.Errorf("event[%d].AgentCardVersion = %s, want 2.0.0", i, event.AgentCardVersion)
+		}
+		// Content-exclusion: no input/output stored in Ledger.
+		if event.ChunkIndex != nil || event.ChunkBytes != nil {
+			t.Errorf("event[%d] stores content metadata: %+v", i, event)
+		}
+	}
+
+	// Assert transport received the correct dispatch.
+	if transport.calls != 1 {
+		t.Fatalf("transport calls = %d, want 1", transport.calls)
+	}
+	if transport.dispatch.ParentInvocationID != "inv_parent123" {
+		t.Errorf("transport dispatch ParentInvocationID = %s, want inv_parent123", transport.dispatch.ParentInvocationID)
+	}
+	if transport.dispatch.Caller.Type != "agent" {
+		t.Errorf("transport dispatch Caller.Type = %s, want agent", transport.dispatch.Caller.Type)
+	}
+}
