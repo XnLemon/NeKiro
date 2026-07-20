@@ -4,28 +4,33 @@
 
 **Created**: 2026-07-16
 
-**Status**: Draft — blocked on target-version resolution policy
+**Status**: Active — T000 resolved
 
 **Input**: Parent Spec 010 T009, accepted ADR 0006, and the active Agent
 Router API v1 contract.
 
-## Clarification Required
+## Clarification Resolved (T000)
 
-The active Router Agent v1 request contains `targetAgentId` and `capability`
-but no target Card version, while the only current Control Plane Internal v2
-resolver requires an exact `version`. The Router cannot safely invent a version,
-call an unversioned endpoint, or choose an arbitrary published version. Before
-implementation, the platform needs one explicit policy:
+**Decision**: Add a new Control Plane Internal v3 endpoint
+`/internal/v3/resolve-installed-version` that resolves the deterministic
+installed Agent Card version given workspace, agent, and capability.
 
-- add a version-selection capability to a new/versioned Control Plane internal
-  contract that resolves the Workspace's enabled installation by Agent and
-  capability;
-- add an explicit target version to the Agent Router request (which changes the
-  accepted v1 contract and ADR 0006); or
-- define another approved, deterministic version source and update the contract
-  evidence.
+**Rationale**:
 
-This is intentionally not guessed in the SDK or Router.
+1. Control Plane owns Workspace/Installation data and is the authority for
+   installed versions.
+2. Router does not make version selection decisions; it queries the Control
+   Plane for the exact pinned `installedVersion` from the enabled Installation.
+3. The new endpoint is additive and does not modify the existing v2
+   `resolve-agent` contract.
+4. The resolution is deterministic: one enabled Installation per
+   (workspace, agent) pair has exactly one pinned `installedVersion`.
+5. After obtaining the version, the Router calls the existing v2
+   `resolve-agent` endpoint for full Card and Installation authorization.
+
+**Contract**: `contracts/openapi/control-plane-internal.v3.yaml` defines the
+new `ResolveInstalledVersion` operation. The Router resolution client gains a
+`ResolveInstalledVersion` method.
 
 ## Context
 

@@ -195,6 +195,100 @@ func (handler *DispatchHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /internal/v3/invocations", handler.dispatch)
 }
 
+// DispatchChild performs resolution, transport, and Ledger for an
+// already-validated child Invocation request. It is called by the nested
+// Agent handler after authentication, parent validation, and child context
+// derivation. The accept header controls JSON/SSE result mode.
+func (handler *DispatchHandler) DispatchChild(writer http.ResponseWriter, request *http.Request, dispatchRequest contracts.DispatchInvocationRequestV3, accept string) {
+	if _, err := contracts.NegotiateInvocationResultMode(dispatchRequest.Stream, accept); err != nil {
+		handler.writePreError(writer, dispatchRequest.TraceID, contracts.ErrorCodeNotAcceptable)
+		return
+	}
+	if err := validateDispatch(dispatchRequest); err != nil {
+		handler.writePreError(writer, dispatchRequest.TraceID, contracts.ErrorCodeValidationError)
+		return
+	}
+	invocationStartedAt := time.Now()
+	ctx, cancel := context.WithTimeout(request.Context(), handler.deadline)
+	defer cancel()
+	resolved, err := handler.resolver.Resolve(ctx, contracts.ResolveAgentRequest{
+		InvocationID: dispatchRequest.InvocationID, RootTaskID: dispatchRequest.RootTaskID,
+		TraceID: dispatchRequest.TraceID, WorkspaceID: dispatchRequest.WorkspaceID,
+		AgentID: dispatchRequest.TargetAgentID, Version: dispatchRequest.AgentCardVersion,
+		Capability: dispatchRequest.Capability,
+	})
+	if err != nil {
+		code := contracts.ErrorCodeDependency
+		var failure *resolution.Failure
+		if errors.As(err, &failure) {
+			writeRawJSON(writer, failure.StatusCode, failure.TraceID, failure.Body)
+			return
+		} else if errors.Is(err, context.DeadlineExceeded) {
+			code = contracts.ErrorCodeTimeout
+		}
+		handler.writeCorrelatedError(writer, dispatchRequest, code)
+		return
+	}
+	if handler.transport != nil && dispatchRequest.Stream {
+		if handler.streaming == nil || handler.ledger == nil {
+			handler.writeCorrelatedError(writer, dispatchRequest, contracts.ErrorCodeRouteNotFound)
+			return
+		}
+		streamingPreflight, ok := handler.transport.(StreamingTransport)
+		if !ok {
+			handler.writeCorrelatedError(writer, dispatchRequest, contracts.ErrorCodeRouteNotFound)
+			return
+		}
+		targetErr := streamingPreflight.ValidateStreamingTarget(dispatchRequest, resolved)
+		inputValidator := streamingPreflight.ValidateStreamingInput
+		if targetErr != nil {
+			handler.dispatchNonStreamingWithLedger(ctx, writer, dispatchRequest, resolved, targetErr)
+			return
+		}
+		if err := inputValidator(dispatchRequest, resolved); err != nil {
+			handler.writePreError(writer, dispatchRequest.TraceID, dispatchErrorCode(err))
+			return
+		}
+		streamCtx, streamCancel := resolvedDeadlineContext(ctx, resolved.Card.Limits.TimeoutMS, invocationStartedAt)
+		defer streamCancel()
+		handler.dispatchStreamingWithLedger(streamCtx, func() {
+			cancel()
+			streamCancel()
+		}, writer, dispatchRequest, resolved)
+		return
+	}
+	if handler.transport != nil && !dispatchRequest.Stream {
+		targetErr := handler.transport.ValidateNonStreamingTarget(dispatchRequest, resolved)
+		if targetErr != nil {
+			if handler.ledger != nil {
+				handler.dispatchNonStreamingWithLedger(ctx, writer, dispatchRequest, resolved, targetErr)
+				return
+			}
+			handler.writeCorrelatedError(writer, dispatchRequest, dispatchErrorCode(targetErr))
+			return
+		}
+		if err := handler.transport.ValidateNonStreamingInput(dispatchRequest, resolved); err != nil {
+			handler.writePreError(writer, dispatchRequest.TraceID, dispatchErrorCode(err))
+			return
+		}
+		nonStreamingCtx, nonStreamingCancel := resolvedDeadlineContext(ctx, resolved.Card.Limits.TimeoutMS, invocationStartedAt)
+		defer nonStreamingCancel()
+		if handler.ledger != nil {
+			handler.dispatchNonStreamingWithLedger(nonStreamingCtx, writer, dispatchRequest, resolved, nil)
+			return
+		}
+		result, err := handler.transport.SendNonStreaming(nonStreamingCtx, dispatchRequest, resolved)
+		if err != nil {
+			code := dispatchErrorCode(err)
+			handler.writeCorrelatedError(writer, dispatchRequest, code)
+			return
+		}
+		handler.writeInvocationResult(writer, dispatchRequest, result)
+		return
+	}
+	handler.writeCorrelatedError(writer, dispatchRequest, contracts.ErrorCodeRouteNotFound)
+}
+
 func (handler *DispatchHandler) dispatch(writer http.ResponseWriter, request *http.Request) {
 	if _, err := handler.authenticator.Authenticate(request); err != nil {
 		handler.writeGeneratedPreError(writer, authErrorCode(err))

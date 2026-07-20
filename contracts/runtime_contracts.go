@@ -9,6 +9,7 @@ const (
 	NorthboundInvocationAPIVersion        = "4"
 	RouterInternalRuntimeAPIVersion       = "3"
 	AgentRouterAPIVersion                 = "1"
+	ControlPlaneInternalV3APIVersion      = "3"
 	RuntimePlatformErrorSchemaVersion     = "4"
 	RuntimeInvocationEventSchemaVersion   = "0.3"
 	RuntimeResultStreamEventSchemaVersion = "2"
@@ -122,4 +123,22 @@ type InvocationDetailResponseV4 struct {
 type TraceResponseV4 struct {
 	TraceID     TraceID              `json:"traceId"`
 	Invocations []InvocationRecordV4 `json:"invocations"`
+}
+
+// ResolveInstalledVersionRequest is the Control Plane Internal v3 request for
+// resolving the deterministic installed Agent Card version from the enabled
+// Installation. It intentionally has no version field; the Control Plane
+// derives it from the pinned installedVersion.
+type ResolveInstalledVersionRequest struct {
+	InvocationID string  `json:"invocationId"`
+	RootTaskID   string  `json:"rootTaskId"`
+	TraceID      TraceID `json:"traceId"`
+	WorkspaceID  string  `json:"workspaceId"`
+	AgentID      string  `json:"agentId"`
+	Capability   string  `json:"capability"`
+}
+
+// ResolveInstalledVersionResponse carries the exact pinned installedVersion.
+type ResolveInstalledVersionResponse struct {
+	Version string `json:"version"`
 }

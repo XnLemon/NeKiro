@@ -2,7 +2,7 @@
 
 ## Phase 1: SDD Gate
 
-- [ ] T000 Resolve how a nested `targetAgentId`/`capability` request obtains a
+- [X] T000 Resolve how a nested `targetAgentId`/`capability` request obtains a
   deterministic installed Agent Card version and record the decision in the
   active versioned Control Plane contract before implementation.
 - [X] T001 Observe AGENTS, ADR 0006, Agent Router v1, existing transport, Ledger read port, and DispatchHandler ownership in `specs/019-agent-sdk-nested-invocation/`.

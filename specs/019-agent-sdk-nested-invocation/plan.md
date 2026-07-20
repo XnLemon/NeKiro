@@ -2,8 +2,7 @@
 
 **Branch**: `codex/016-nonstream-a2a-dispatch` | **Date**: 2026-07-16 | **Spec**: [spec.md](spec.md)
 
-**Status**: Planning blocked until T000 resolves deterministic target-Agent
-version selection in a versioned Control Plane contract.
+**Status**: T000 resolved; implementation active.
 
 ## Summary
 
