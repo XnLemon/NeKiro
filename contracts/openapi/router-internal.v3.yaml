@@ -127,6 +127,7 @@ components:
       properties:
         invocationId: { $ref: ../schemas/common.v1.schema.json#/$defs/invocationId }
         rootTaskId: { $ref: ../schemas/common.v1.schema.json#/$defs/taskId }
+        parentInvocationId: { $ref: ../schemas/common.v1.schema.json#/$defs/invocationId }
         traceId: { $ref: ../schemas/common.v1.schema.json#/$defs/traceId }
         caller: { $ref: ../schemas/common.v1.schema.json#/$defs/caller }
         workspaceId: { $ref: ../schemas/common.v1.schema.json#/$defs/workspaceId }

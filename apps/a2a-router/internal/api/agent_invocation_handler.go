@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/Nene7ko/NeKiro/apps/a2a-router/internal/ledger"
 	"github.com/Nene7ko/NeKiro/apps/a2a-router/internal/nested"
 	"github.com/Nene7ko/NeKiro/apps/a2a-router/internal/resolution"
 	"github.com/Nene7ko/NeKiro/contracts"
@@ -124,7 +125,7 @@ func (handler *AgentInvocationHandler) serve(writer http.ResponseWriter, request
 	// by the authenticated Agent binding and parent target check).
 	parent, err := handler.ledgerReader.GetInvocationByParentID(ctx, nestedRequest.ParentInvocationID)
 	if err != nil {
-		handler.writePreError(writer, classifyNestedError(err, contracts.ErrorCodeNotFound))
+		handler.writePreError(writer, classifyNestedError(ctx, err, contracts.ErrorCodeNotFound))
 		return
 	}
 
@@ -154,7 +155,7 @@ func (handler *AgentInvocationHandler) serve(writer http.ResponseWriter, request
 		Capability:   nestedRequest.Capability,
 	})
 	if err != nil {
-		handler.writePreError(writer, classifyNestedError(err, contracts.ErrorCodeDependency))
+		handler.writePreError(writer, classifyNestedError(ctx, err, contracts.ErrorCodeDependency))
 		return
 	}
 
@@ -279,18 +280,52 @@ func (handler *AgentInvocationHandler) writePreError(writer http.ResponseWriter,
 // classifyNestedError maps errors from parent lookup and version resolution
 // to their safe Agent Router v4 pre-correlation error code. Deadline and
 // cancellation errors are classified as TIMEOUT/CANCELED per ADR 0006.
-// Typed resolution failures preserve their public semantics (NOT_FOUND,
-// FORBIDDEN, etc.). Transport/unknown failures use the provided fallback.
-func classifyNestedError(err error, fallback contracts.PlatformErrorCode) contracts.PlatformErrorCode {
+// Typed resolution failures are explicitly mapped to the Agent Router v1
+// boundary code set; internal Control Plane codes are not passed through.
+func classifyNestedError(ctx context.Context, err error, fallback contracts.PlatformErrorCode) contracts.PlatformErrorCode {
+	// Check context state first: the Ledger Store wraps deadline/cancel
+	// errors behind a dependency error whose Unwrap may hide the cause.
+	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		return contracts.ErrorCodeTimeout
+	}
+	if errors.Is(ctx.Err(), context.Canceled) {
+		return contracts.ErrorCodeCanceled
+	}
 	if errors.Is(err, context.DeadlineExceeded) {
 		return contracts.ErrorCodeTimeout
 	}
 	if errors.Is(err, context.Canceled) {
 		return contracts.ErrorCodeCanceled
 	}
+	if errors.Is(err, ledger.ErrDependency) {
+		return contracts.ErrorCodeDependency
+	}
 	var failure *resolution.Failure
 	if errors.As(err, &failure) {
-		return failure.Code
+		return mapControlPlaneCodeToAgentBoundary(failure.Code)
 	}
 	return fallback
+}
+
+// mapControlPlaneCodeToAgentBoundary maps Control Plane internal error codes
+// to the Agent Router v1 advertised code set. Internal codes that are not
+// advertised on the Agent boundary are mapped to their safe public equivalent.
+func mapControlPlaneCodeToAgentBoundary(code contracts.PlatformErrorCode) contracts.PlatformErrorCode {
+	switch code {
+	case contracts.ErrorCodeNotFound, contracts.ErrorCodeAgentNotInstalled:
+		return contracts.ErrorCodeNotFound
+	case contracts.ErrorCodeForbidden, contracts.ErrorCodeInstallationDisabled,
+		contracts.ErrorCodeAgentDisabled, contracts.ErrorCodeCapabilityNotAllowed:
+		return contracts.ErrorCodeForbidden
+	case contracts.ErrorCodeUnauthenticated:
+		return contracts.ErrorCodeUnauthenticated
+	case contracts.ErrorCodeValidationError:
+		return contracts.ErrorCodeValidationError
+	case contracts.ErrorCodeTimeout:
+		return contracts.ErrorCodeTimeout
+	case contracts.ErrorCodeCanceled:
+		return contracts.ErrorCodeCanceled
+	default:
+		return contracts.ErrorCodeDependency
+	}
 }

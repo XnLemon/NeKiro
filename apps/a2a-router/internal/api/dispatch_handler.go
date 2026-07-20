@@ -229,6 +229,8 @@ func (handler *DispatchHandler) DispatchChild(writer http.ResponseWriter, reques
 			code = failure.Code
 		} else if errors.Is(err, context.DeadlineExceeded) {
 			code = contracts.ErrorCodeTimeout
+		} else if errors.Is(err, context.Canceled) {
+			code = contracts.ErrorCodeCanceled
 		}
 		handler.writePreError(writer, dispatchRequest.TraceID, code)
 		return
