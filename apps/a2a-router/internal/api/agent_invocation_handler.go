@@ -121,8 +121,19 @@ func (handler *AgentInvocationHandler) serve(writer http.ResponseWriter, request
 	defer cancel()
 
 	// Step 5: Read the committed parent from the Ledger using the trusted
-	// parent lookup (by invocation ID only; workspace isolation is enforced
-	// by the authenticated Agent binding and parent target check).
+	// parent lookup (by invocation ID only).
+	//
+	// Cross-Workspace isolation is enforced by three cooperating checks:
+	// (a) DeriveChildContext requires the parent to be running and its
+	//     TargetAgentID to equal the authenticated Agent — an Agent cannot
+	//     reference a parent that belongs to a different Agent.
+	// (b) The child inherits the parent's WorkspaceID; the Agent does not
+	//     choose or supply a Workspace.
+	// (c) The Control Plane resolution (step 7) validates that the target
+	//     Agent is installed and enabled in the inherited Workspace.
+	// Together these ensure an Agent running in Workspace X cannot create
+	// a child from a parent in Workspace Y unless it is legitimately the
+	// target of that parent invocation.
 	parent, err := handler.ledgerReader.GetInvocationByParentID(ctx, nestedRequest.ParentInvocationID)
 	if err != nil {
 		handler.writePreError(writer, classifyNestedError(ctx, err, contracts.ErrorCodeNotFound))
