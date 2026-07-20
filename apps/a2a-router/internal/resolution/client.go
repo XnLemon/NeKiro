@@ -188,6 +188,17 @@ func (client *Client) ResolveInstalledVersion(ctx context.Context, requestValue 
 		if err != nil || traceID != platformError.TraceID {
 			return contracts.ResolveInstalledVersionResponse{}, errors.New("control plane version resolution error trace header is invalid")
 		}
+		// Validate request correlation: the error must echo the exact
+		// invocation/root/trace from the request after correlation.
+		if platformError.InvocationID != "" && platformError.InvocationID != requestValue.InvocationID {
+			return contracts.ResolveInstalledVersionResponse{}, errors.New("control plane version resolution error correlation changed")
+		}
+		if platformError.RootTaskID != "" && platformError.RootTaskID != requestValue.RootTaskID {
+			return contracts.ResolveInstalledVersionResponse{}, errors.New("control plane version resolution error correlation changed")
+		}
+		if platformError.TraceID != requestValue.TraceID {
+			return contracts.ResolveInstalledVersionResponse{}, errors.New("control plane version resolution error trace correlation changed")
+		}
 		return contracts.ResolveInstalledVersionResponse{}, &Failure{StatusCode: response.StatusCode, Code: platformError.Code, TraceID: traceID, Body: append([]byte(nil), data...)}
 	}
 	var resolved contracts.ResolveInstalledVersionResponse
@@ -199,9 +210,14 @@ func (client *Client) ResolveInstalledVersion(ctx context.Context, requestValue 
 	if err := requireEOF(decoder); err != nil {
 		return contracts.ResolveInstalledVersionResponse{}, fmt.Errorf("decode version resolution response: %w", err)
 	}
-	// Validate the required x-nek-trace-id header on success.
-	if _, err := contracts.ParseTraceID(response.Header.Get("x-nek-trace-id")); err != nil {
+	// Validate the required x-nek-trace-id header on success and require
+	// it to equal the exact request trace for cross-boundary continuity.
+	successTraceID, err := contracts.ParseTraceID(response.Header.Get("x-nek-trace-id"))
+	if err != nil {
 		return contracts.ResolveInstalledVersionResponse{}, errors.New("control plane version resolution success trace header is invalid")
+	}
+	if successTraceID != requestValue.TraceID {
+		return contracts.ResolveInstalledVersionResponse{}, errors.New("control plane version resolution success trace correlation changed")
 	}
 	// Validate the resolved version is a strict semver.
 	if _, err := semver.StrictNewVersion(resolved.Version); err != nil {

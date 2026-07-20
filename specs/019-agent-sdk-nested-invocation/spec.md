@@ -32,6 +32,14 @@ installed Agent Card version given workspace, agent, and capability.
 new `ResolveInstalledVersion` operation. The Router resolution client gains a
 `ResolveInstalledVersion` method.
 
+**Implementation deferral**: The Control Plane-owned handler for
+`/internal/v3/resolve-installed-version` is outside this issue's write scope
+(`sdks/agent-sdk/`, `apps/a2a-router/internal/api/agent_invocation_handler.go`,
+`apps/a2a-router/internal/nested/`, `specs/019-agent-sdk-nested-invocation/`).
+The contract, Router client, and handler are delivered here; the Control Plane
+service registration belongs to the parent acceptance task (#30) which owns
+process wiring and Compose deployment.
+
 ## Context
 
 An Agent that is already running under a managed Invocation needs to request
@@ -112,6 +120,25 @@ credential-inference behavior.
   calls are not followed.
 - A child response is transient; result content is never written to Ledger or
   logged by the platform boundary.
+
+### Cross-Workspace Isolation Policy
+
+The spec edge case "a parent from another Workspace cannot create a child" is
+enforced by the following cooperating checks:
+
+1. The parent must be `running` and its `TargetAgentID` must equal the
+   authenticated Agent (rejects parents belonging to other Agents).
+2. The child inherits the parent's `WorkspaceID`; the Agent does not choose
+   or supply a Workspace.
+3. The Control Plane resolution validates the target Agent is installed and
+   enabled in the inherited Workspace.
+
+For an Agent installed in multiple Workspaces: a credential binds to one
+Agent ID (not one Workspace). If the same Agent is legitimately running in
+Workspaces X and Y simultaneously, it may reference either of its own running
+parents. This is correct behavior — the Agent IS the target of both parents.
+A future per-Workspace credential binding can restrict this further if
+multi-Workspace isolation becomes a product requirement.
 
 ## Requirements
 

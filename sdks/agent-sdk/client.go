@@ -111,9 +111,10 @@ type HTTPDoer interface {
 // platform context and sends exactly one request to the configured Agent
 // Router v1 origin.
 type Client struct {
-	doer      HTTPDoer
-	routerURL string
-	token     string
+	doer           HTTPDoer
+	routerURL      string
+	token          string
+	responseLimit  int64
 }
 
 // NewClient creates a nested invocation SDK client. The routerURL must be the
@@ -122,6 +123,12 @@ type Client struct {
 // The doer must not follow redirects; if it is an *http.Client, the SDK
 // disables redirects.
 func NewClient(doer HTTPDoer, routerURL, token string) (*Client, error) {
+	return NewClientWithLimit(doer, routerURL, token, 16<<20) // 16 MiB default response limit
+}
+
+// NewClientWithLimit creates a nested invocation SDK client with an explicit
+// response body limit in bytes.
+func NewClientWithLimit(doer HTTPDoer, routerURL, token string, responseLimit int64) (*Client, error) {
 	if doer == nil {
 		return nil, errors.New("agentsdk: HTTP doer is required")
 	}
@@ -131,6 +138,9 @@ func NewClient(doer HTTPDoer, routerURL, token string) (*Client, error) {
 	if token == "" {
 		return nil, errors.New("agentsdk: bearer token is required")
 	}
+	if responseLimit < 1 {
+		return nil, errors.New("agentsdk: response limit must be positive")
+	}
 	if httpClient, ok := doer.(*http.Client); ok {
 		client := *httpClient
 		client.CheckRedirect = func(*http.Request, []*http.Request) error {
@@ -138,7 +148,7 @@ func NewClient(doer HTTPDoer, routerURL, token string) (*Client, error) {
 		}
 		doer = &client
 	}
-	return &Client{doer: doer, routerURL: routerURL, token: token}, nil
+	return &Client{doer: doer, routerURL: routerURL, token: token, responseLimit: responseLimit}, nil
 }
 
 // Invoke sends one nested invocation request to the Agent Router v1 boundary.
@@ -185,9 +195,12 @@ func (c *Client) Invoke(ctx context.Context, pc PlatformContext, nr NestedReques
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	respBody, err := io.ReadAll(resp.Body)
+	respBody, err := io.ReadAll(io.LimitReader(resp.Body, c.responseLimit+1))
 	if err != nil {
 		return nil, fmt.Errorf("agentsdk: read nested response: %w", err)
+	}
+	if int64(len(respBody)) > c.responseLimit {
+		return nil, errors.New("agentsdk: nested response exceeds the configured limit")
 	}
 
 	if resp.StatusCode != http.StatusOK {
@@ -199,6 +212,13 @@ func (c *Client) Invoke(ctx context.Context, pc PlatformContext, nr NestedReques
 		var invocationResult contracts.InvocationResult
 		if err := json.Unmarshal(respBody, &invocationResult); err != nil {
 			return nil, fmt.Errorf("agentsdk: decode nested result: %w", err)
+		}
+		// Validate root/trace correlation with the trusted PlatformContext.
+		if invocationResult.RootTaskID != pc.RootTaskID {
+			return nil, errors.New("agentsdk: nested result rootTaskId does not match platform context")
+		}
+		if string(invocationResult.TraceID) != pc.TraceID {
+			return nil, errors.New("agentsdk: nested result traceId does not match platform context")
 		}
 		result.InvocationID = invocationResult.InvocationID
 		result.RootTaskID = invocationResult.RootTaskID

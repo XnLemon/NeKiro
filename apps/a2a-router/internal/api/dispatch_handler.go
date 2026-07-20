@@ -223,10 +223,9 @@ func (handler *DispatchHandler) DispatchChild(writer http.ResponseWriter, reques
 		code := contracts.ErrorCodeDependency
 		var failure *resolution.Failure
 		if errors.As(err, &failure) {
-			// Map the typed failure code to a safe v4 pre-correlation
-			// error; never forward the Control Plane body across the
-			// Agent Router v1 boundary before child created commit.
-			code = failure.Code
+			// Map through the Agent boundary; never forward internal
+			// Control Plane codes or body across Agent Router v1.
+			code = mapControlPlaneCodeToAgentBoundary(failure.Code)
 		} else if errors.Is(err, context.DeadlineExceeded) {
 			code = contracts.ErrorCodeTimeout
 		} else if errors.Is(err, context.Canceled) {

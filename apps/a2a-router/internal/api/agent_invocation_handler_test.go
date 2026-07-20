@@ -14,6 +14,7 @@ import (
 
 	"github.com/Nene7ko/NeKiro/apps/a2a-router/internal/auth"
 	"github.com/Nene7ko/NeKiro/apps/a2a-router/internal/nested"
+	streammodel "github.com/Nene7ko/NeKiro/apps/a2a-router/internal/stream"
 	"github.com/Nene7ko/NeKiro/contracts"
 )
 
@@ -538,5 +539,136 @@ func TestAgentHandlerNestedJSONSuccessPath(t *testing.T) {
 	}
 	if transport.dispatch.Caller.Type != "agent" {
 		t.Errorf("transport dispatch Caller.Type = %s, want agent", transport.dispatch.Caller.Type)
+	}
+}
+
+// TestAgentHandlerCrossWorkspaceParentTargetMismatch verifies that a parent
+// from another Workspace targeting a different Agent is rejected with 403
+// FORBIDDEN (the authenticated Agent does not match the parent target).
+func TestAgentHandlerCrossWorkspaceParentTargetMismatch(t *testing.T) {
+	// Parent in a different workspace targeting a DIFFERENT agent.
+	foreignParent := contracts.InvocationDetailResponseV4{
+		Invocation: contracts.InvocationRecordV4{
+			InvocationID:     "inv_foreign999",
+			RootTaskID:       "task_foreign_root",
+			TraceID:          "trc_foreign_1",
+			WorkspaceID:      "ws_other_workspace",
+			TargetAgentID:    "agent_different",
+			AgentCardVersion: "1.0.0",
+			Capability:       "other-cap",
+			Status:           "running",
+			Caller:           contracts.Caller{Type: "user", ID: "user02"},
+		},
+	}
+	ledgerReader := &mockNestedLedgerReader{invocation: foreignParent}
+	handler, token := newTestAgentHandler(t, ledgerReader, &mockVersionResolver{})
+
+	req := httptest.NewRequest("POST", "/agent/v1/invocations", strings.NewReader(validNestedBody()))
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+	rec := httptest.NewRecorder()
+	handler.serve(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Errorf("status = %d, want 403 for cross-workspace parent target mismatch", rec.Code)
+	}
+}
+
+// TestAgentHandlerNestedSSESuccessPath exercises the full US1 trusted nested
+// call flow with stream=true: auth -> request -> parent -> child -> version
+// -> DispatchChild -> Ledger -> SSE accepted event.
+func TestAgentHandlerNestedSSESuccessPath(t *testing.T) {
+	agentToken := "agent-test-token"
+	binding, err := nested.NewAgentBinding([]nested.AgentPrincipal{
+		{AgentID: "agent_caller01", TokenSHA256: agentTokenDigest(agentToken)},
+	})
+	if err != nil {
+		t.Fatalf("NewAgentBinding() error = %v", err)
+	}
+
+	serviceAuth, err := auth.NewStaticAuthenticator([]auth.Principal{
+		{ID: "router-service", TokenSHA256: agentTokenDigest("service-token")},
+	})
+	if err != nil {
+		t.Fatalf("NewStaticAuthenticator() error = %v", err)
+	}
+
+	targetCard := contracts.AgentCard{
+		AgentID: "agent_target02", Version: "2.0.0",
+		Protocol:       contracts.AgentProtocol{Type: "a2a", Version: contracts.A2AProtocolVersion, Transport: "JSONRPC", Endpoint: "https://target.example/a2a"},
+		Authentication: contracts.AgentAuthentication{Type: "none"},
+		Skills:         []contracts.AgentSkill{{ID: "summarize"}},
+		Limits:         contracts.AgentLimits{TimeoutMS: 5000, MaxInputBytes: "4096", MaxOutputBytes: "4096", Streaming: true},
+	}
+	resolver := &resolverStub{response: contracts.ResolveAgentResponse{
+		Card: targetCard,
+		Installation: contracts.ResolvedInstallation{
+			InstallationID: "inst-01", WorkspaceID: "ws_test789",
+			AgentID: "agent_target02", InstalledVersion: "2.0.0",
+			AcceptedPermissions: []string{}, Status: "enabled",
+		},
+	}}
+
+	// Streaming transport that yields one chunk and a completed terminal.
+	streamTransport := &streamingTransportStub{
+		transportStub: transportStub{},
+		events: []streammodel.Event{
+			{Kind: "task", TaskID: "task-01", ContextID: "ctx-01", Payload: json.RawMessage(`{"text":"partial"}`)},
+			{Kind: "task", TaskID: "task-01", ContextID: "ctx-01", Payload: json.RawMessage(`{"text":"done"}`), TerminalType: contracts.ResultStreamEventCompleted, TerminalStatus: "succeeded"},
+		},
+	}
+
+	ledgerRec := &ledgerRecorder{}
+
+	dispatchHandler, err := NewDispatchHandlerWithTransportAndLedgerAndStreaming(serviceAuth, resolver, streamTransport, ledgerRec, 65536, 1048576, 30*time.Second)
+	if err != nil {
+		t.Fatalf("NewDispatchHandlerWithTransportAndLedgerAndStreaming() error = %v", err)
+	}
+
+	ledgerReader := &mockNestedLedgerReader{invocation: runningParentDetail()}
+	versionResolver := &mockVersionResolver{response: contracts.ResolveInstalledVersionResponse{Version: "2.0.0"}}
+
+	handler, err := NewAgentInvocationHandler(binding, ledgerReader, versionResolver, dispatchHandler, 1048576, 30*time.Second)
+	if err != nil {
+		t.Fatalf("NewAgentInvocationHandler() error = %v", err)
+	}
+
+	streamBody := `{"parentInvocationId":"inv_parent123","targetAgentId":"agent_target02","capability":"summarize","input":{"text":"hello"},"stream":true}`
+	req := httptest.NewRequest("POST", "/agent/v1/invocations", strings.NewReader(streamBody))
+	req.Header.Set("Authorization", "Bearer "+agentToken)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "text/event-stream")
+	rec := httptest.NewRecorder()
+	handler.serve(rec, req)
+
+	// Assert 200 OK with SSE content type.
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body = %s", rec.Code, rec.Body.String())
+	}
+	if ct := rec.Header().Get("Content-Type"); ct != "text/event-stream" {
+		t.Fatalf("Content-Type = %s, want text/event-stream", ct)
+	}
+
+	// Assert SSE body contains accepted event with correct correlation.
+	body := rec.Body.String()
+	if !strings.Contains(body, `"type":"accepted"`) {
+		t.Errorf("SSE body missing accepted event: %s", body)
+	}
+	if !strings.Contains(body, `"rootTaskId":"task_root456"`) {
+		t.Errorf("SSE body missing root task correlation: %s", body)
+	}
+	if !strings.Contains(body, `"traceId":"trc_abc123_1"`) {
+		t.Errorf("SSE body missing trace correlation: %s", body)
+	}
+
+	// Assert Ledger has parent lineage.
+	if len(ledgerRec.events) == 0 {
+		t.Fatal("expected ledger events")
+	}
+	for i, event := range ledgerRec.events {
+		if event.ParentInvocationID != "inv_parent123" {
+			t.Errorf("event[%d].ParentInvocationID = %s, want inv_parent123", i, event.ParentInvocationID)
+		}
 	}
 }

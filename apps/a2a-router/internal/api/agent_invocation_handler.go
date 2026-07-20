@@ -143,9 +143,11 @@ func (handler *AgentInvocationHandler) serve(writer http.ResponseWriter, request
 	// Step 6: Derive child context from the parent.
 	childContext, err := nested.DeriveChildContext(parent, authenticatedAgentID)
 	if err != nil {
-		code := contracts.ErrorCodeConflict
+		code := contracts.ErrorCodeDependency
 		if errors.Is(err, nested.ErrParentNotFound) {
 			code = contracts.ErrorCodeNotFound
+		} else if errors.Is(err, nested.ErrParentNotRunning) {
+			code = contracts.ErrorCodeConflict
 		} else if errors.Is(err, nested.ErrParentTargetMismatch) {
 			code = contracts.ErrorCodeForbidden
 		}
@@ -321,6 +323,9 @@ func classifyNestedError(ctx context.Context, err error, fallback contracts.Plat
 // mapControlPlaneCodeToAgentBoundary maps Control Plane internal error codes
 // to the Agent Router v1 advertised code set. Internal codes that are not
 // advertised on the Agent boundary are mapped to their safe public equivalent.
+// UNAUTHENTICATED and VALIDATION_ERROR from the Control Plane are internal
+// service failures (Agent auth and request decoding already succeeded before
+// this call) and become DEPENDENCY_ERROR.
 func mapControlPlaneCodeToAgentBoundary(code contracts.PlatformErrorCode) contracts.PlatformErrorCode {
 	switch code {
 	case contracts.ErrorCodeNotFound, contracts.ErrorCodeAgentNotInstalled:
@@ -328,15 +333,13 @@ func mapControlPlaneCodeToAgentBoundary(code contracts.PlatformErrorCode) contra
 	case contracts.ErrorCodeForbidden, contracts.ErrorCodeInstallationDisabled,
 		contracts.ErrorCodeAgentDisabled, contracts.ErrorCodeCapabilityNotAllowed:
 		return contracts.ErrorCodeForbidden
-	case contracts.ErrorCodeUnauthenticated:
-		return contracts.ErrorCodeUnauthenticated
-	case contracts.ErrorCodeValidationError:
-		return contracts.ErrorCodeValidationError
 	case contracts.ErrorCodeTimeout:
 		return contracts.ErrorCodeTimeout
 	case contracts.ErrorCodeCanceled:
 		return contracts.ErrorCodeCanceled
 	default:
+		// UNAUTHENTICATED, VALIDATION_ERROR, and all other internal codes
+		// are service/dependency failures from the Agent's perspective.
 		return contracts.ErrorCodeDependency
 	}
 }
