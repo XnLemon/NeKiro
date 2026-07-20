@@ -135,6 +135,9 @@ func TestBuildChildDispatchRequest(t *testing.T) {
 	if dispatchReq.Stream {
 		t.Error("stream should be false")
 	}
+	if dispatchReq.ParentInvocationID != parent.Invocation.InvocationID {
+		t.Errorf("parent invocation ID mismatch: got %s, want %s", dispatchReq.ParentInvocationID, parent.Invocation.InvocationID)
+	}
 }
 
 func TestNewInvocationIDUniqueness(t *testing.T) {

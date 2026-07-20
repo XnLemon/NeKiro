@@ -83,7 +83,7 @@ func (binding *AgentBinding) Authenticate(request *http.Request) (string, error)
 			return agentID, nil
 		}
 	}
-	return "", ErrForbidden
+	return "", ErrUnauthenticated
 }
 
 func validIdentifier(value string) bool {

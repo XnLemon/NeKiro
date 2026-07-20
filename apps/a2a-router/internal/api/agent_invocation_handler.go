@@ -7,9 +7,10 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"time"
 
+	"github.com/Nene7ko/NeKiro/apps/a2a-router/internal/ledger"
 	"github.com/Nene7ko/NeKiro/apps/a2a-router/internal/nested"
-	"github.com/Nene7ko/NeKiro/apps/a2a-router/internal/resolution"
 	"github.com/Nene7ko/NeKiro/contracts"
 )
 
@@ -19,9 +20,12 @@ type VersionResolver interface {
 	ResolveInstalledVersion(context.Context, contracts.ResolveInstalledVersionRequest) (contracts.ResolveInstalledVersionResponse, error)
 }
 
-// NestedLedgerReader reads the committed parent Invocation from the Router Ledger.
+// NestedLedgerReader reads the committed parent Invocation from the Router
+// Ledger by invocation ID only. The trusted parent lookup does not require
+// a workspace because the authenticated Agent binding and parent target
+// check together enforce isolation.
 type NestedLedgerReader interface {
-	GetInvocation(context.Context, string, string) (contracts.InvocationDetailResponseV4, error)
+	GetInvocationByParentID(context.Context, string) (contracts.InvocationDetailResponseV4, error)
 }
 
 // AgentInvocationHandler handles Agent-facing nested invocation requests at
@@ -35,6 +39,7 @@ type AgentInvocationHandler struct {
 	versionResolver VersionResolver
 	dispatchHandler *DispatchHandler
 	requestLimit    int64
+	deadline        time.Duration
 }
 
 // NewAgentInvocationHandler creates the Agent-facing nested invocation handler.
@@ -44,6 +49,7 @@ func NewAgentInvocationHandler(
 	versionResolver VersionResolver,
 	dispatchHandler *DispatchHandler,
 	requestLimit int64,
+	deadline time.Duration,
 ) (*AgentInvocationHandler, error) {
 	if binding == nil {
 		return nil, errors.New("agent binding is required")
@@ -60,12 +66,16 @@ func NewAgentInvocationHandler(
 	if requestLimit < contracts.RuntimeByteLimitMinimum || requestLimit > contracts.RuntimeByteLimitMaximum {
 		return nil, errors.New("agent request limit is invalid")
 	}
+	if deadline < time.Duration(contracts.RuntimeDeadlineMinimumMS)*time.Millisecond || deadline > time.Duration(contracts.RuntimeDeadlineMaximumMS)*time.Millisecond {
+		return nil, errors.New("agent deadline is invalid")
+	}
 	return &AgentInvocationHandler{
 		binding:         binding,
 		ledgerReader:    ledgerReader,
 		versionResolver: versionResolver,
 		dispatchHandler: dispatchHandler,
 		requestLimit:    requestLimit,
+		deadline:        deadline,
 	}, nil
 }
 
@@ -78,11 +88,7 @@ func (handler *AgentInvocationHandler) serve(writer http.ResponseWriter, request
 	// Step 1: Authenticate the Agent binding. Auth failures are pre-correlation.
 	authenticatedAgentID, err := handler.binding.Authenticate(request)
 	if err != nil {
-		code := contracts.ErrorCodeUnauthenticated
-		if errors.Is(err, nested.ErrForbidden) {
-			code = contracts.ErrorCodeForbidden
-		}
-		handler.writePreError(writer, code)
+		handler.writePreError(writer, contracts.ErrorCodeUnauthenticated)
 		return
 	}
 
@@ -108,14 +114,25 @@ func (handler *AgentInvocationHandler) serve(writer http.ResponseWriter, request
 		return
 	}
 
-	// Step 4: Read the committed parent from the Ledger.
-	parent, err := handler.ledgerReader.GetInvocation(request.Context(), "", nestedRequest.ParentInvocationID)
+	// Step 4: Create one bounded context covering parent read, version
+	// resolution, and dispatch.
+	ctx, cancel := context.WithTimeout(request.Context(), handler.deadline)
+	defer cancel()
+
+	// Step 5: Read the committed parent from the Ledger using the trusted
+	// parent lookup (by invocation ID only; workspace isolation is enforced
+	// by the authenticated Agent binding and parent target check).
+	parent, err := handler.ledgerReader.GetInvocationByParentID(ctx, nestedRequest.ParentInvocationID)
 	if err != nil {
-		handler.writePreError(writer, contracts.ErrorCodeNotFound)
+		code := contracts.ErrorCodeNotFound
+		if errors.Is(err, ledger.ErrDependency) {
+			code = contracts.ErrorCodeDependency
+		}
+		handler.writePreError(writer, code)
 		return
 	}
 
-	// Step 5: Derive child context from the parent.
+	// Step 6: Derive child context from the parent.
 	childContext, err := nested.DeriveChildContext(parent, authenticatedAgentID)
 	if err != nil {
 		code := contracts.ErrorCodeConflict
@@ -128,8 +145,10 @@ func (handler *AgentInvocationHandler) serve(writer http.ResponseWriter, request
 		return
 	}
 
-	// Step 6: Resolve the installed version from the Control Plane.
-	versionResponse, err := handler.versionResolver.ResolveInstalledVersion(request.Context(), contracts.ResolveInstalledVersionRequest{
+	// Step 7: Resolve the installed version from the Control Plane.
+	// Map all dependency failures to a safe v4 pre-correlation error;
+	// never forward the Control Plane error body across the Agent boundary.
+	versionResponse, err := handler.versionResolver.ResolveInstalledVersion(ctx, contracts.ResolveInstalledVersionRequest{
 		InvocationID: childContext.ChildInvocationID,
 		RootTaskID:   childContext.RootTaskID,
 		TraceID:      childContext.TraceID,
@@ -138,16 +157,11 @@ func (handler *AgentInvocationHandler) serve(writer http.ResponseWriter, request
 		Capability:   nestedRequest.Capability,
 	})
 	if err != nil {
-		var failure *resolution.Failure
-		if errors.As(err, &failure) {
-			writeRawJSON(writer, failure.StatusCode, failure.TraceID, failure.Body)
-			return
-		}
 		handler.writePreError(writer, contracts.ErrorCodeDependency)
 		return
 	}
 
-	// Step 7: Build the trusted child dispatch request and delegate.
+	// Step 8: Build the trusted child dispatch request and delegate.
 	childDispatchRequest := nested.BuildChildDispatchRequest(
 		childContext,
 		nestedRequest.TargetAgentID,
@@ -157,6 +171,16 @@ func (handler *AgentInvocationHandler) serve(writer http.ResponseWriter, request
 		versionResponse.Version,
 	)
 	handler.dispatchHandler.DispatchChild(writer, request, childDispatchRequest, accept)
+}
+
+// nestedRequestDTO is the wire representation of the nested invocation request
+// with explicit stream field presence tracking.
+type nestedRequestDTO struct {
+	ParentInvocationID string          `json:"parentInvocationId"`
+	TargetAgentID      string          `json:"targetAgentId"`
+	Capability         string          `json:"capability"`
+	Input              json.RawMessage `json:"input"`
+	Stream             *bool           `json:"stream"`
 }
 
 func (handler *AgentInvocationHandler) readNestedRequest(request *http.Request) (contracts.NestedInvocationRequestV1, error) {
@@ -180,30 +204,40 @@ func (handler *AgentInvocationHandler) readNestedRequest(request *http.Request) 
 	if err := rejectTrustedFields(data); err != nil {
 		return contracts.NestedInvocationRequestV1{}, err
 	}
-	var value contracts.NestedInvocationRequestV1
+	var dto nestedRequestDTO
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&value); err != nil {
+	if err := decoder.Decode(&dto); err != nil {
 		return contracts.NestedInvocationRequestV1{}, err
 	}
 	if err := requireEOF(decoder); err != nil {
 		return contracts.NestedInvocationRequestV1{}, err
 	}
+	// stream is required by router-agent.v1; reject omission or null.
+	if dto.Stream == nil {
+		return contracts.NestedInvocationRequestV1{}, errors.New("stream is required")
+	}
 	// Validate identifiers.
-	if !validIdentifier(value.ParentInvocationID) {
+	if !validIdentifier(dto.ParentInvocationID) {
 		return contracts.NestedInvocationRequestV1{}, errors.New("parentInvocationId is invalid")
 	}
-	if !validIdentifier(value.TargetAgentID) {
+	if !validIdentifier(dto.TargetAgentID) {
 		return contracts.NestedInvocationRequestV1{}, errors.New("targetAgentId is invalid")
 	}
-	if !validIdentifier(value.Capability) {
+	if !validIdentifier(dto.Capability) {
 		return contracts.NestedInvocationRequestV1{}, errors.New("capability is invalid")
 	}
 	var input map[string]json.RawMessage
-	if json.Unmarshal(value.Input, &input) != nil || input == nil {
+	if json.Unmarshal(dto.Input, &input) != nil || input == nil {
 		return contracts.NestedInvocationRequestV1{}, errors.New("input must be a JSON object")
 	}
-	return value, nil
+	return contracts.NestedInvocationRequestV1{
+		ParentInvocationID: dto.ParentInvocationID,
+		TargetAgentID:      dto.TargetAgentID,
+		Capability:         dto.Capability,
+		Input:              dto.Input,
+		Stream:             *dto.Stream,
+	}, nil
 }
 
 // rejectTrustedFields ensures the nested request does not contain caller,

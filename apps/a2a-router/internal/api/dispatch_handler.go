@@ -199,12 +199,14 @@ func (handler *DispatchHandler) RegisterRoutes(mux *http.ServeMux) {
 // already-validated child Invocation request. It is called by the nested
 // Agent handler after authentication, parent validation, and child context
 // derivation. The accept header controls JSON/SSE result mode.
+// Unlike the internal dispatch path, DispatchChild accepts caller type
+// "agent" and propagates ParentInvocationID to Ledger events.
 func (handler *DispatchHandler) DispatchChild(writer http.ResponseWriter, request *http.Request, dispatchRequest contracts.DispatchInvocationRequestV3, accept string) {
 	if _, err := contracts.NegotiateInvocationResultMode(dispatchRequest.Stream, accept); err != nil {
 		handler.writePreError(writer, dispatchRequest.TraceID, contracts.ErrorCodeNotAcceptable)
 		return
 	}
-	if err := validateDispatch(dispatchRequest); err != nil {
+	if err := validateChildDispatch(dispatchRequest); err != nil {
 		handler.writePreError(writer, dispatchRequest.TraceID, contracts.ErrorCodeValidationError)
 		return
 	}
@@ -457,6 +459,34 @@ func validateDispatch(value contracts.DispatchInvocationRequestV3) error {
 	var input map[string]json.RawMessage
 	if json.Unmarshal(value.Input, &input) != nil || input == nil {
 		return errors.New("dispatch input must be object")
+	}
+	return nil
+}
+
+// validateChildDispatch validates a trusted child dispatch request. Unlike
+// validateDispatch, it accepts caller type "agent" and requires a non-empty
+// ParentInvocationID for Ledger lineage.
+func validateChildDispatch(value contracts.DispatchInvocationRequestV3) error {
+	for _, identifier := range []string{value.InvocationID, value.RootTaskID, value.WorkspaceID, value.TargetAgentID, value.Capability, value.Caller.ID} {
+		if !validIdentifier(identifier) {
+			return errors.New("child dispatch identifier is invalid")
+		}
+	}
+	if _, err := semver.StrictNewVersion(value.AgentCardVersion); err != nil {
+		return errors.New("child dispatch Agent Card version is invalid")
+	}
+	if _, err := contracts.ParseTraceID(string(value.TraceID)); err != nil {
+		return err
+	}
+	if value.Caller.Type != "agent" {
+		return errors.New("child dispatch caller must be agent")
+	}
+	if !validIdentifier(value.ParentInvocationID) {
+		return errors.New("child dispatch parent invocation id is invalid")
+	}
+	var input map[string]json.RawMessage
+	if json.Unmarshal(value.Input, &input) != nil || input == nil {
+		return errors.New("child dispatch input must be object")
 	}
 	return nil
 }
@@ -894,20 +924,21 @@ func streamWriteErrorCode(ctx context.Context, err error) contracts.PlatformErro
 
 func lifecycleEvent(request contracts.DispatchInvocationRequestV3, sequence int64, eventType, status string, occurredAt time.Time) contracts.InvocationEventV03 {
 	return contracts.InvocationEventV03{
-		SchemaVersion:    contracts.RuntimeInvocationEventSchemaVersion,
-		EventID:          lifecycleEventID(request.InvocationID, sequence, eventType),
-		Sequence:         sequence,
-		OccurredAt:       occurredAt.UTC().Format(time.RFC3339Nano),
-		Type:             eventType,
-		Status:           status,
-		InvocationID:     request.InvocationID,
-		RootTaskID:       request.RootTaskID,
-		TraceID:          request.TraceID,
-		Caller:           request.Caller,
-		WorkspaceID:      request.WorkspaceID,
-		TargetAgentID:    request.TargetAgentID,
-		AgentCardVersion: request.AgentCardVersion,
-		Capability:       request.Capability,
+		SchemaVersion:      contracts.RuntimeInvocationEventSchemaVersion,
+		EventID:            lifecycleEventID(request.InvocationID, sequence, eventType),
+		Sequence:           sequence,
+		OccurredAt:         occurredAt.UTC().Format(time.RFC3339Nano),
+		Type:               eventType,
+		Status:             status,
+		InvocationID:       request.InvocationID,
+		RootTaskID:         request.RootTaskID,
+		ParentInvocationID: request.ParentInvocationID,
+		TraceID:            request.TraceID,
+		Caller:             request.Caller,
+		WorkspaceID:        request.WorkspaceID,
+		TargetAgentID:      request.TargetAgentID,
+		AgentCardVersion:   request.AgentCardVersion,
+		Capability:         request.Capability,
 	}
 }
 

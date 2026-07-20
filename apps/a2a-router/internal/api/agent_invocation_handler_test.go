@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Nene7ko/NeKiro/apps/a2a-router/internal/auth"
 	"github.com/Nene7ko/NeKiro/apps/a2a-router/internal/nested"
@@ -26,7 +27,7 @@ type mockNestedLedgerReader struct {
 	err        error
 }
 
-func (m *mockNestedLedgerReader) GetInvocation(_ context.Context, _, _ string) (contracts.InvocationDetailResponseV4, error) {
+func (m *mockNestedLedgerReader) GetInvocationByParentID(_ context.Context, _ string) (contracts.InvocationDetailResponseV4, error) {
 	return m.invocation, m.err
 }
 
@@ -68,7 +69,7 @@ func newTestAgentHandler(t *testing.T, ledgerReader NestedLedgerReader, versionR
 		t.Fatalf("NewDispatchHandler() error = %v", err)
 	}
 
-	handler, err := NewAgentInvocationHandler(binding, ledgerReader, versionResolver, dispatchHandler, 1048576)
+	handler, err := NewAgentInvocationHandler(binding, ledgerReader, versionResolver, dispatchHandler, 1048576, 30*time.Second)
 	if err != nil {
 		t.Fatalf("NewAgentInvocationHandler() error = %v", err)
 	}
@@ -105,7 +106,7 @@ func TestAgentHandlerAuthFirst(t *testing.T) {
 	}{
 		{"missing auth", "", http.StatusUnauthorized},
 		{"empty bearer", "Bearer ", http.StatusUnauthorized},
-		{"unknown token", "Bearer wrong-token", http.StatusForbidden},
+		{"unknown token", "Bearer wrong-token", http.StatusUnauthorized},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -280,6 +281,36 @@ func TestAgentHandlerUnknownFields(t *testing.T) {
 	}
 }
 
+func TestAgentHandlerMissingStreamField(t *testing.T) {
+	handler, token := newTestAgentHandler(t, &mockNestedLedgerReader{}, &mockVersionResolver{})
+
+	// stream field is required by router-agent.v1; omission must be rejected.
+	body := `{"parentInvocationId":"inv_parent123","targetAgentId":"agent_target02","capability":"summarize","input":{}}`
+	req := httptest.NewRequest("POST", "/agent/v1/invocations", strings.NewReader(body))
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	handler.serve(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("status = %d, want %d for missing stream", rec.Code, http.StatusBadRequest)
+	}
+}
+
+func TestAgentHandlerNullStreamField(t *testing.T) {
+	handler, token := newTestAgentHandler(t, &mockNestedLedgerReader{}, &mockVersionResolver{})
+
+	// stream null must be rejected.
+	body := `{"parentInvocationId":"inv_parent123","targetAgentId":"agent_target02","capability":"summarize","input":{},"stream":null}`
+	req := httptest.NewRequest("POST", "/agent/v1/invocations", strings.NewReader(body))
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	handler.serve(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("status = %d, want %d for null stream", rec.Code, http.StatusBadRequest)
+	}
+}
+
 func TestAgentHandlerPayloadTooLarge(t *testing.T) {
 	handler, token := newTestAgentHandler(t, &mockNestedLedgerReader{}, &mockVersionResolver{})
 
@@ -354,18 +385,20 @@ func TestNewAgentInvocationHandlerValidation(t *testing.T) {
 		versionResolver VersionResolver
 		dispatchHandler *DispatchHandler
 		requestLimit    int64
+		deadline        time.Duration
 		wantErr         bool
 	}{
-		{"valid", binding, ledgerReader, versionResolver, dispatchHandler, 1048576, false},
-		{"nil binding", nil, ledgerReader, versionResolver, dispatchHandler, 1048576, true},
-		{"nil ledger reader", binding, nil, versionResolver, dispatchHandler, 1048576, true},
-		{"nil version resolver", binding, ledgerReader, nil, dispatchHandler, 1048576, true},
-		{"nil dispatch handler", binding, ledgerReader, versionResolver, nil, 1048576, true},
-		{"invalid request limit", binding, ledgerReader, versionResolver, dispatchHandler, 0, true},
+		{"valid", binding, ledgerReader, versionResolver, dispatchHandler, 1048576, 30 * time.Second, false},
+		{"nil binding", nil, ledgerReader, versionResolver, dispatchHandler, 1048576, 30 * time.Second, true},
+		{"nil ledger reader", binding, nil, versionResolver, dispatchHandler, 1048576, 30 * time.Second, true},
+		{"nil version resolver", binding, ledgerReader, nil, dispatchHandler, 1048576, 30 * time.Second, true},
+		{"nil dispatch handler", binding, ledgerReader, versionResolver, nil, 1048576, 30 * time.Second, true},
+		{"invalid request limit", binding, ledgerReader, versionResolver, dispatchHandler, 0, 30 * time.Second, true},
+		{"invalid deadline", binding, ledgerReader, versionResolver, dispatchHandler, 1048576, 0, true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := NewAgentInvocationHandler(tt.binding, tt.ledgerReader, tt.versionResolver, tt.dispatchHandler, tt.requestLimit)
+			_, err := NewAgentInvocationHandler(tt.binding, tt.ledgerReader, tt.versionResolver, tt.dispatchHandler, tt.requestLimit, tt.deadline)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("NewAgentInvocationHandler() error = %v, wantErr %v", err, tt.wantErr)
 			}

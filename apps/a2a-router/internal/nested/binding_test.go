@@ -158,7 +158,7 @@ func TestAgentBindingAuthenticate(t *testing.T) {
 			1,
 			"",
 			true,
-			true,
+			false,
 		},
 	}
 	for _, tt := range tests {

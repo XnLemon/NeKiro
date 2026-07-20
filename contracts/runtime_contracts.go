@@ -35,16 +35,17 @@ type NestedInvocationRequestV1 struct {
 }
 
 type DispatchInvocationRequestV3 struct {
-	InvocationID     string          `json:"invocationId"`
-	RootTaskID       string          `json:"rootTaskId"`
-	TraceID          TraceID         `json:"traceId"`
-	Caller           Caller          `json:"caller"`
-	WorkspaceID      string          `json:"workspaceId"`
-	TargetAgentID    string          `json:"targetAgentId"`
-	AgentCardVersion string          `json:"agentCardVersion"`
-	Capability       string          `json:"capability"`
-	Input            json.RawMessage `json:"input"`
-	Stream           bool            `json:"stream"`
+	InvocationID       string          `json:"invocationId"`
+	RootTaskID         string          `json:"rootTaskId"`
+	ParentInvocationID string          `json:"parentInvocationId,omitempty"`
+	TraceID            TraceID         `json:"traceId"`
+	Caller             Caller          `json:"caller"`
+	WorkspaceID        string          `json:"workspaceId"`
+	TargetAgentID      string          `json:"targetAgentId"`
+	AgentCardVersion   string          `json:"agentCardVersion"`
+	Capability         string          `json:"capability"`
+	Input              json.RawMessage `json:"input"`
+	Stream             bool            `json:"stream"`
 }
 
 type PreCorrelationPlatformErrorV4 struct {
