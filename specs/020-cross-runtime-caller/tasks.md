@@ -75,7 +75,7 @@
 
 ## Phase 6: Polish & Cross-Cutting Concerns
 
-- [ ] T016 [P] Run `gofmt`, `go vet`, `go test`, and `go test -race` from `agents/runtime-a`; record the exact commands and results in `specs/020-cross-runtime-caller/quickstart.md` (SC-001 through SC-006)
+- [x] T016 [P] Run `gofmt`, `go vet`, `go test`, and `go test -race` from `agents/runtime-a`; record the exact commands and results in `specs/020-cross-runtime-caller/quickstart.md` (SC-001 through SC-006)
 - [x] T017 Run the root `go test ./...` and repository diff/import checks to prove no platform module, contract, SDK, Runtime B, Compose, or CI changes were introduced (FR-001, FR-002)
 
 ## Dependencies & Execution Order

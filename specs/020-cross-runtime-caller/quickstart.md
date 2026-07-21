@@ -9,9 +9,17 @@
 
 ```powershell
 Set-Location agents/runtime-a
-go test ./...
-go test -race ./...
-go vet ./...
+go test -count=1 ./...   # PASS (Windows)
+go vet ./...             # PASS (Windows)
+```
+
+The required Linux race gate also passes under WSL Ubuntu 26.04 with Go 1.26:
+
+```bash
+cd /mnt/e/NeKiro/agents/runtime-a
+gofmt -d .                 # PASS (no diff)
+go test -race ./...       # PASS
+go vet ./...              # PASS
 ```
 
 The root platform regression remains separate:
@@ -20,10 +28,6 @@ The root platform regression remains separate:
 Set-Location ../..
 go test ./...
 ```
-
-On the current Windows development host, `go test -race ./...` is present and
-the 100-call test is implemented, but execution requires a cgo C compiler that
-is not installed. Linux CI must run that command before this child is closed.
 
 ## Required Runtime A configuration
 
