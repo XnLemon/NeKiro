@@ -15,10 +15,10 @@
 
 ## Phase 3: Delivery Gates and Review
 
-- [ ] T008 Wire Compose config and real E2E execution into CI; make missing Docker/PostgreSQL a failed gate (`.github/workflows/ci.yml`).
-- [ ] T009 Run root, nested Runtime A, static, contract, PostgreSQL, Compose, and E2E verification; capture command/evidence in `specs/021-invoke-record-acceptance/quickstart.md`.
-- [ ] T010 Independent Standards review against AGENTS.md/constitution and smell baseline; independent Spec review against this Spec/Plan/Tasks; return findings as append-only convergence tasks.
-- [ ] T011 Resolve every review finding, rerun all mapped gates, and perform Converge with zero blockers; update Spec 010 parent task and Issue #19/#30 handoff facts.
+- [X] T008 Wire Compose config and real E2E execution into CI; make missing Docker/PostgreSQL a failed gate (`.github/workflows/ci.yml`).
+- [X] T009 Run root, nested Runtime A, static, contract, PostgreSQL, Compose, and E2E verification; capture command/evidence in `specs/021-invoke-record-acceptance/quickstart.md`.
+- [X] T010 Independent Standards review against AGENTS.md/constitution and smell baseline; independent Spec review against this Spec/Plan/Tasks; return findings as append-only convergence tasks.
+- [X] T011 Resolve every review finding, rerun all mapped gates, and perform Converge with zero blockers; update Spec 010 parent task and Issue #19/#30 handoff facts.
 
 ## Dependency Graph
 
@@ -35,7 +35,7 @@ Added fallback evidence: none
 
 ## Phase 4: Convergence
 
-- [ ] T012 Verify the Compose-config, Linux race, clean Docker/PostgreSQL, and real Invoke-to-Record CI gates; treat unavailable Docker/DB as a failed gate per FR-008 and SC-006 (partial).
-- [ ] T013 Capture the completed static, contract, nested Runtime A, PostgreSQL, Compose, and E2E command results—including the local Docker-unavailable limitation—in `quickstart.md` per T009/SC-006 (partial).
-- [ ] T014 Run fresh independent Standards and Spec reviews against the post-fix HEAD, append any new findings, and confirm no P0-P2 blocker remains per T010/SC-006 (partial).
-- [ ] T015 Mark T008-T011 and this convergence phase complete only after CI, review, and Converge pass; update Spec 010 T011 and the GitHub #30/#19 handoff facts, then close the child and parent issues when all acceptance checks are satisfied per T011/SC-006 (partial).
+- [X] T012 Verify the Compose-config, Linux race, clean Docker/PostgreSQL, and real Invoke-to-Record CI gates; treat unavailable Docker/DB as a failed gate per FR-008 and SC-006 (partial).
+- [X] T013 Capture the completed static, contract, nested Runtime A, PostgreSQL, Compose, and E2E command results—including the local Docker-unavailable limitation—in `quickstart.md` per T009/SC-006 (partial).
+- [X] T014 Run fresh independent Standards and Spec reviews against the post-fix HEAD, append any new findings, and confirm no P0-P2 blocker remains per T010/SC-006 (partial).
+- [X] T015 Mark T008-T011 and this convergence phase complete only after CI, review, and Converge pass; update Spec 010 T011 and the GitHub #30/#19 handoff facts, then close the child and parent issues when all acceptance checks are satisfied per T011/SC-006 (partial).

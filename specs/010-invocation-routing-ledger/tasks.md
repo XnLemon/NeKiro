@@ -86,7 +86,7 @@ boundary, then independently review and converge the parent.
 **Independent Test**: Run real Control Plane, Router, PostgreSQL, and both
 Agents through the full clean, failure, restart, and 100-concurrent matrix.
 
-- [ ] T011 [US4] Complete cross-process backend E2E, failure/concurrency/content-exclusion evidence, Compose/CI wiring, independent Review, Converge, and handoff in `specs/021-invoke-record-acceptance/`, `tests/e2e/invoke-record/`, `deploy/compose.yaml`, and `.github/workflows/ci.yml`
+- [X] T011 [US4] Complete cross-process backend E2E, failure/concurrency/content-exclusion evidence, Compose/CI wiring, independent Review, Converge, and handoff in `specs/021-invoke-record-acceptance/`, `tests/e2e/invoke-record/`, `deploy/compose.yaml`, and `.github/workflows/ci.yml`
 
 **Checkpoint**: `Register -> Discover -> Install -> Invoke -> Record` passes at
 the backend boundary and the parent has no unresolved blocking review finding.

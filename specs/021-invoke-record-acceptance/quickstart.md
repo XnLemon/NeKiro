@@ -77,8 +77,14 @@ docker compose --file deploy/compose.yaml config --quiet    PASS
 The local Docker client is installed, but its `desktop-linux` daemon is not
 available (`failed to connect ... dockerDesktopLinuxEngine`). Therefore a real
 Compose/PostgreSQL E2E result is not claimed locally; the required
-`backend-acceptance` CI job is the authoritative clean-stack gate and must pass
-before T012/T015 are checked.
+`backend-acceptance` CI job is the authoritative clean-stack gate, and its
+passing evidence is recorded below.
+
+CI evidence: GitHub Actions run `29810057739` passed all checks on 2026-07-21,
+including `go-quality`, `runtime-samples-quality` (nested Runtime A tests,
+vet, and race), `workspace-integration`, `compose-config`, `frontend`, and
+`backend-acceptance` (clean Compose/PostgreSQL build and the full E2E harness).
+The run used an absolute Compose path and completed teardown with volumes.
 
 ## Fallback audit
 
