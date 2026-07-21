@@ -143,7 +143,7 @@ func TestInvokeToRecordAcceptance(t *testing.T) {
 		t.Fatalf("foreign trace read status=%d body=%s", isolation.status, isolation.body)
 	}
 	assertNoForbiddenBody(t, isolation.body, env.forbidden, "foreign Workspace response")
-	invocationIsolation := doRequest(t, client, env.controlPlane+fmt.Sprintf("/v4/workspaces/%s/invocations/%s", otherWorkspace, nested.result.InvocationID), http.MethodGet, env.otherToken, "", nil)
+	invocationIsolation := doRequest(t, client, env.controlPlane+fmt.Sprintf("/v4/workspaces/%s/invocations/%s", acceptanceWorkspace, nested.result.InvocationID), http.MethodGet, env.otherToken, "", nil)
 	if invocationIsolation.status != http.StatusForbidden {
 		t.Fatalf("foreign Invocation read status=%d body=%s", invocationIsolation.status, invocationIsolation.body)
 	}
