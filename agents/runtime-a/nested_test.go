@@ -259,6 +259,26 @@ func TestSDKRejectsChangedChildCorrelationWithoutRetry(t *testing.T) {
 	}
 }
 
+func TestSDKRejectsChildResultReusingParentInvocationID(t *testing.T) {
+	config, err := LoadConfig(lookupEnvironment(validEnvironment()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	doer := &capturedDoer{body: `{"schemaVersion":"1","invocationId":"root-1","rootTaskId":"task-1","traceId":"trace-1","status":"succeeded","result":{"agent":"runtime-b"}}`}
+	sdk, err := agentsdk.NewClient(doer, config.RouterURL, config.RouterToken, config.ResponseLimit, config.EventLimit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service, err := newNestedService(config, sdk)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = service.invokeWithContext(t.Context(), agentsdk.PlatformContext{InvocationID: "root-1", RootTaskID: "task-1", TraceID: "trace-1", WorkspaceID: "workspace-1", AgentID: config.AgentID}, json.RawMessage(`{"fixture":"success","value":"x"}`))
+	if err == nil || !strings.Contains(err.Error(), "differ") {
+		t.Fatalf("parent/child identity error = %v", err)
+	}
+}
+
 func TestCombinedResultIsDeterministic(t *testing.T) {
 	child := &agentsdk.NestedResult{InvocationID: "child-1", RootTaskID: "task-1", TraceID: "trace-1", Status: "succeeded", Result: json.RawMessage(`{"agent":"runtime-b","value":1}`)}
 	first, err := combinedResult(child)
@@ -271,5 +291,24 @@ func TestCombinedResultIsDeterministic(t *testing.T) {
 	}
 	if !bytes.Equal(first, second) {
 		t.Fatalf("combined results differ: %s != %s", first, second)
+	}
+}
+
+func TestCombinedResultPreservesLargeJSONNumberTokens(t *testing.T) {
+	child := &agentsdk.NestedResult{InvocationID: "child-1", RootTaskID: "task-1", TraceID: "trace-1", Status: "succeeded", Result: json.RawMessage(`{"value":9007199254740993}`)}
+	combined, err := combinedResult(child)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := combinedData(combined)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wire, err := json.Marshal(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(wire, []byte(`9007199254740993`)) {
+		t.Fatalf("large JSON number was changed: %s", wire)
 	}
 }

@@ -53,7 +53,7 @@
 
 ### Tests for User Story 2
 
-- [x] T011 [P] [US2] Add Router test-server tests for exactly one SDK request, exact Agent Router v1 JSON shape, configured bearer credential, exact root/child correlation, and no direct Runtime B URL access in `agents/runtime-a/nested_test.go` (US2/AC1, US2/AC2, SC-002, SC-003)
+- [x] T011 [P] [US2] Add Router test-server and root-to-Router end-to-end tests for exactly one SDK request, exact Agent Router v1 JSON shape, configured bearer credential, exact root/child correlation, and no direct Runtime B URL access in `agents/runtime-a/nested_test.go` and `agents/runtime-a/e2e_test.go` (US2/AC1, US2/AC2, SC-002, SC-003)
 - [x] T012 [P] [US2] Add nested Router rejection, dependency, malformed result, and correlation-mismatch tests proving explicit failure and no retry/alternate result in `agents/runtime-a/nested_test.go` (US2/AC3, FR-009)
 
 **Checkpoint**: Runtime A performs one managed child call through Router, and every accepted result has exact Workspace/root Task/Trace lineage.

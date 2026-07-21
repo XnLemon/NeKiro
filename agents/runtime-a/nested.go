@@ -33,31 +33,6 @@ func newNestedService(config Config, invoker nestedInvoker) (*nestedService, err
 	return &nestedService{config: config, profile: profile, invoker: invoker}, nil
 }
 
-func (service *nestedService) invoke(ctx context.Context, params *a2a.MessageSendParams) (*agentsdk.NestedResult, error) {
-	if params == nil || params.Message == nil {
-		return nil, invalidParams("message is required")
-	}
-	if params.Message.ID == "" {
-		return nil, invalidParams("messageId is required")
-	}
-	if params.Message.Role != a2a.MessageRoleUser {
-		return nil, invalidParams("message role must be user")
-	}
-	input, err := rootInput(params.Message)
-	if err != nil {
-		return nil, err
-	}
-	callContext, ok := a2asrv.CallContextFrom(ctx)
-	if !ok {
-		return nil, invalidParams("managed A2A call context is required")
-	}
-	platformContext, err := service.platformContext(callContext.RequestMeta())
-	if err != nil {
-		return nil, err
-	}
-	return service.invokeWithContext(ctx, platformContext, input)
-}
-
 func (service *nestedService) invokeWithContext(ctx context.Context, platformContext agentsdk.PlatformContext, input json.RawMessage) (*agentsdk.NestedResult, error) {
 	result, err := service.invoker.Invoke(ctx, platformContext, agentsdk.NestedRequest{
 		TargetAgentID: service.config.TargetAgentID,
@@ -65,7 +40,16 @@ func (service *nestedService) invokeWithContext(ctx context.Context, platformCon
 		Input:         input,
 		Stream:        false,
 	})
-	return result, err
+	if err != nil {
+		return nil, err
+	}
+	if result == nil || result.InvocationID == "" {
+		return nil, errors.New("runtime-a child invocation identity is missing")
+	}
+	if result.InvocationID == platformContext.InvocationID {
+		return nil, errors.New("runtime-a child invocation must differ from its parent")
+	}
+	return result, nil
 }
 
 func (service *nestedService) platformContext(meta *a2asrv.RequestMeta) (agentsdk.PlatformContext, error) {

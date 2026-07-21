@@ -67,4 +67,27 @@ func TestLoadConfigRejectsInvalidValuesWithoutDefaults(t *testing.T) {
 	if _, err := LoadConfig(lookupEnvironment(environment)); err == nil {
 		t.Fatal("Router URL with trailing path was accepted")
 	}
+	environment[RouterEnvironment] = "http://127.0.0.1:4101?"
+	if _, err := LoadConfig(lookupEnvironment(environment)); err == nil {
+		t.Fatal("Router URL with empty query was accepted")
+	}
+	environment[RouterEnvironment] = "http://127.0.0.1:65536"
+	if _, err := LoadConfig(lookupEnvironment(environment)); err == nil {
+		t.Fatal("Router URL with out-of-range port was accepted")
+	}
+	environment[RouterEnvironment] = "http://127.0.0.1:4101#"
+	if _, err := LoadConfig(lookupEnvironment(environment)); err == nil {
+		t.Fatal("Router URL with empty fragment was accepted")
+	}
+}
+
+func TestConfigValidateRejectsValuesBypassedAroundEnvironmentLoader(t *testing.T) {
+	config, err := LoadConfig(lookupEnvironment(validEnvironment()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	config.TargetAgentID = "agent runtime-b"
+	if err := config.Validate(); err == nil {
+		t.Fatal("Config.Validate accepted an invalid target Agent ID")
+	}
 }

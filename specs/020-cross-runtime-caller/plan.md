@@ -82,8 +82,9 @@ agents/runtime-a/
 ├── runtime.go              # trpc Agent/Runner/Event composition
 ├── cmd/runtime-a/main.go   # process entrypoint
 ├── config_test.go
-├── handler_test.go
-└── runtime_test.go
+├── nested_test.go
+├── e2e_test.go
+└── isolation_test.go
 ```
 
 No files under `apps/`, `contracts/`, `sdks/agent-sdk/`, `agents/runtime-b/`, `deploy/`, or `.github/workflows/` are modified by this child.

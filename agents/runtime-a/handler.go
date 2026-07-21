@@ -25,6 +25,9 @@ var _ a2asrv.RequestHandler = (*Handler)(nil)
 
 // NewHandler creates a Runtime A handler with the given HTTP transport.
 func NewHandler(config Config, doer agentsdk.HTTPDoer) (*Handler, error) {
+	if err := config.Validate(); err != nil {
+		return nil, err
+	}
 	sdk, err := agentsdk.NewClient(doer, config.RouterURL, config.RouterToken, config.ResponseLimit, config.EventLimit)
 	if err != nil {
 		return nil, fmt.Errorf("runtime-a create Agent SDK client: %w", err)
@@ -33,6 +36,9 @@ func NewHandler(config Config, doer agentsdk.HTTPDoer) (*Handler, error) {
 }
 
 func newHandlerWithInvoker(config Config, invoker nestedInvoker) (*Handler, error) {
+	if err := config.Validate(); err != nil {
+		return nil, err
+	}
 	service, err := newNestedService(config, invoker)
 	if err != nil {
 		return nil, err
@@ -71,10 +77,10 @@ func (handler *Handler) OnSendMessage(ctx context.Context, params *a2a.MessageSe
 	}
 	result, err := handler.runtime.run(ctx, platformContext, input)
 	if err != nil {
-		return nil, errors.New("runtime-a nested invocation failed")
+		return nil, safeRuntimeFailure(err)
 	}
-	var combined map[string]any
-	if err := json.Unmarshal(result, &combined); err != nil || combined == nil {
+	combined, err := combinedData(result)
+	if err != nil {
 		return nil, errors.New("runtime-a combined result is invalid")
 	}
 	return &a2a.Message{
@@ -83,6 +89,40 @@ func (handler *Handler) OnSendMessage(ctx context.Context, params *a2a.MessageSe
 		Role:      a2a.MessageRoleAgent,
 		Parts:     []a2a.Part{a2a.DataPart{Data: combined}},
 	}, nil
+}
+
+func combinedData(result json.RawMessage) (map[string]any, error) {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(result, &fields); err != nil || fields == nil {
+		return nil, errors.New("combined result must be an object")
+	}
+	agent, ok := fields["agent"]
+	var agentName string
+	if !ok || json.Unmarshal(agent, &agentName) != nil || agentName != "runtime-a" {
+		return nil, errors.New("combined result agent marker is invalid")
+	}
+	childInvocationID, ok := fields["childInvocationId"]
+	var childID string
+	if !ok || json.Unmarshal(childInvocationID, &childID) != nil || childID == "" {
+		return nil, errors.New("combined result child invocation is missing")
+	}
+	childResult, ok := fields["childResult"]
+	if !ok || len(childResult) == 0 || !json.Valid(childResult) {
+		return nil, errors.New("combined result child result is missing")
+	}
+	return map[string]any{
+		"agent":             json.RawMessage(agent),
+		"childInvocationId": json.RawMessage(childInvocationID),
+		"childResult":       json.RawMessage(childResult),
+	}, nil
+}
+
+func safeRuntimeFailure(err error) error {
+	var routerError *agentsdk.RouterError
+	if errors.As(err, &routerError) {
+		return fmt.Errorf("runtime-a nested Router failure: %s", routerError.Code)
+	}
+	return errors.New("runtime-a nested invocation failure (unknown category)")
 }
 
 func (*Handler) OnSendMessageStream(context.Context, *a2a.MessageSendParams) iter.Seq2[a2a.Event, error] {

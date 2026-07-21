@@ -50,4 +50,4 @@ go run ./cmd/runtime-a
 
 Invoke Runtime A through the Gateway/Router path with a JSON input such as `{"fixture":"success","value":"cross-runtime"}`. The expected result is one valid A2A agent message whose data contains `agent=runtime-a`, the child Invocation ID, and Runtime B's deterministic result. Query the invocation trace and verify that the child has the same Workspace/root Task/Trace identifiers and the root Invocation as parent.
 
-The test suite also proves malformed configuration/input, SDK rejection, correlation mismatch, direct URL absence, content exclusion, and 100 concurrent calls. SSE is intentionally deferred to Spec 021.
+The test suite also proves the root A2A -> trpc Runner -> real Agent SDK HTTP -> Router fixture -> deterministic callee result path, malformed configuration/input, SDK rejection, correlation mismatch, direct URL absence, content exclusion, and 100 concurrent calls. The final parent acceptance feature replaces the Router fixture with real Router/Ledger/Runtime B processes; SSE is intentionally deferred to Spec 021.

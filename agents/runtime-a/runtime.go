@@ -19,9 +19,7 @@ import (
 type platformContextKey struct{}
 
 type runtimeEngine struct {
-	config  Config
-	service *nestedService
-	runner  runner.Runner
+	runner runner.Runner
 }
 
 func newRuntimeEngine(config Config, service *nestedService) (*runtimeEngine, error) {
@@ -34,7 +32,7 @@ func newRuntimeEngine(config Config, service *nestedService) (*runtimeEngine, er
 		implementation,
 		runner.WithSessionService(inmemory.NewSessionService()),
 	)
-	return &runtimeEngine{config: config, service: service, runner: frameworkRunner}, nil
+	return &runtimeEngine{runner: frameworkRunner}, nil
 }
 
 func (engine *runtimeEngine) run(ctx context.Context, platformContext agentsdk.PlatformContext, input []byte) (json.RawMessage, error) {

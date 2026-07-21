@@ -77,7 +77,7 @@ func LoadConfig(lookup func(string) (string, bool)) (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
-	return Config{
+	config := Config{
 		ListenAddress: listenAddress,
 		AgentID:       agentID,
 		RouterURL:     routerURL,
@@ -86,7 +86,57 @@ func LoadConfig(lookup func(string) (string, bool)) (Config, error) {
 		Capability:    capability,
 		ResponseLimit: responseLimit,
 		EventLimit:    eventLimit,
-	}, nil
+	}
+	if err := config.Validate(); err != nil {
+		return Config{}, err
+	}
+	return config, nil
+}
+
+// Validate checks a Config value supplied by a caller that is not using
+// LoadConfig. It applies the same required, exact, and range rules without
+// inventing any missing value.
+func (config Config) Validate() error {
+	if err := validateRequiredValue(ListenAddressEnvironment, config.ListenAddress); err != nil {
+		return err
+	}
+	if err := validateListenAddress(config.ListenAddress); err != nil {
+		return err
+	}
+	if err := validateRequiredValue(AgentIDEnvironment, config.AgentID); err != nil {
+		return err
+	}
+	if err := validateIdentifierValue(AgentIDEnvironment, config.AgentID); err != nil {
+		return err
+	}
+	if err := validateRequiredValue(RouterEnvironment, config.RouterURL); err != nil {
+		return err
+	}
+	if err := validateRouterURL(config.RouterURL); err != nil {
+		return err
+	}
+	if err := validateRequiredValue(RouterTokenEnvironment, config.RouterToken); err != nil {
+		return err
+	}
+	if err := validateRequiredValue(TargetAgentEnvironment, config.TargetAgentID); err != nil {
+		return err
+	}
+	if err := validateIdentifierValue(TargetAgentEnvironment, config.TargetAgentID); err != nil {
+		return err
+	}
+	if err := validateRequiredValue(CapabilityEnvironment, config.Capability); err != nil {
+		return err
+	}
+	if err := validateIdentifierValue(CapabilityEnvironment, config.Capability); err != nil {
+		return err
+	}
+	if config.ResponseLimit < contracts.RuntimeByteLimitMinimum || config.ResponseLimit > contracts.RuntimeByteLimitMaximum {
+		return fmt.Errorf("%s must be an integer from %d through %d", ResponseLimitEnvironment, contracts.RuntimeByteLimitMinimum, contracts.RuntimeByteLimitMaximum)
+	}
+	if config.EventLimit < contracts.RuntimeByteLimitMinimum || config.EventLimit > contracts.RuntimeByteLimitMaximum {
+		return fmt.Errorf("%s must be an integer from %d through %d", EventLimitEnvironment, contracts.RuntimeByteLimitMinimum, contracts.RuntimeByteLimitMaximum)
+	}
+	return nil
 }
 
 func requiredValue(lookup func(string) (string, bool), name string) (string, error) {
@@ -94,13 +144,17 @@ func requiredValue(lookup func(string) (string, bool), name string) (string, err
 	if !exists {
 		return "", fmt.Errorf("%s is required", name)
 	}
+	return value, validateRequiredValue(name, value)
+}
+
+func validateRequiredValue(name, value string) error {
 	if value == "" {
-		return "", fmt.Errorf("%s must be non-empty", name)
+		return fmt.Errorf("%s must be non-empty", name)
 	}
 	if strings.TrimSpace(value) != value {
-		return "", fmt.Errorf("%s must not contain surrounding whitespace", name)
+		return fmt.Errorf("%s must not contain surrounding whitespace", name)
 	}
-	return value, nil
+	return nil
 }
 
 func requiredIdentifier(lookup func(string) (string, bool), name string) (string, error) {
@@ -108,10 +162,14 @@ func requiredIdentifier(lookup func(string) (string, bool), name string) (string
 	if err != nil {
 		return "", err
 	}
+	return value, validateIdentifierValue(name, value)
+}
+
+func validateIdentifierValue(name, value string) error {
 	if !identifierPattern.MatchString(value) {
-		return "", fmt.Errorf("%s must be a safe identifier", name)
+		return fmt.Errorf("%s must be a safe identifier", name)
 	}
-	return value, nil
+	return nil
 }
 
 func requiredLimit(lookup func(string) (string, bool), name string) (int64, error) {
@@ -160,8 +218,20 @@ func parsePort(value string) (int64, error) {
 
 func validateRouterURL(value string) error {
 	parsed, err := url.Parse(value)
-	if err != nil || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" || parsed.Path != "" {
+	if err != nil || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.User != nil || parsed.RawQuery != "" || parsed.ForceQuery || parsed.Fragment != "" || strings.Contains(value, "#") || parsed.Path != "" {
 		return fmt.Errorf("%s must be an http or https origin URL without credentials, query, or fragment", RouterEnvironment)
+	}
+	if parsed.Hostname() == "" {
+		return fmt.Errorf("%s must declare a host", RouterEnvironment)
+	}
+	if portText := parsed.Port(); portText != "" {
+		port, err := parsePort(portText)
+		if err != nil || port < 1 || port > 65535 {
+			return fmt.Errorf("%s port must be an integer from 1 through 65535", RouterEnvironment)
+		}
+	}
+	if strings.HasSuffix(parsed.Host, ":") {
+		return fmt.Errorf("%s must use a valid host:port", RouterEnvironment)
 	}
 	return nil
 }
