@@ -190,6 +190,9 @@ func acceptanceCard(agentID, name, endpoint, capability string, permissions []st
 }
 
 func acceptanceCardWithTimeout(agentID, name, endpoint, capability string, permissions []string, streaming bool, timeoutMS int64) []byte {
+	if permissions == nil {
+		permissions = []string{}
+	}
 	card := contracts.AgentCard{
 		SchemaVersion: contracts.AgentCardSchemaVersion, AgentID: agentID, Name: name,
 		Description: "Deterministic acceptance Agent", Owner: contracts.AgentOwner{ID: "acceptance-owner", DisplayName: "Acceptance Owner"}, Version: "1.0.0",
@@ -197,6 +200,7 @@ func acceptanceCardWithTimeout(agentID, name, endpoint, capability string, permi
 		Skills:         []contracts.AgentSkill{{ID: capability, Name: capability, Description: "Acceptance capability", InputSchema: contracts.JSONSchema{"type": "object"}, OutputSchema: contracts.JSONSchema{"type": "object"}, RequiredPermissions: permissions}},
 		Authentication: contracts.AgentAuthentication{Type: "none"}, Limits: contracts.AgentLimits{TimeoutMS: timeoutMS, MaxInputBytes: json.Number("1048576"), MaxOutputBytes: json.Number("1048576"), Streaming: streaming},
 	}
+	card.Permissions = make([]contracts.PermissionDeclaration, 0, len(permissions))
 	for _, permission := range permissions {
 		card.Permissions = append(card.Permissions, contracts.PermissionDeclaration{ID: permission, Description: permission})
 	}
