@@ -26,6 +26,7 @@ type StaticPrincipal struct {
 type Config struct {
 	DatabaseURL        string
 	ListenAddress      string
+	CORSAllowedOrigins []string
 	AuthMode           string
 	Principals         []StaticPrincipal
 	InternalAuthMode   string
@@ -61,6 +62,10 @@ func Load() (Config, error) {
 	if err := validateListenAddress(listenAddress); err != nil {
 		return Config{}, fmt.Errorf("NEKIRO_LISTEN_ADDRESS is invalid: %w", err)
 	}
+	corsOrigins, err := loadCORSAllowedOrigins()
+	if err != nil {
+		return Config{}, err
+	}
 
 	authMode, err := requiredEnv("NEKIRO_AUTH_MODE")
 	if err != nil {
@@ -94,9 +99,41 @@ func Load() (Config, error) {
 		return Config{}, fmt.Errorf("NEKIRO_INTERNAL_DEV_AUTH_PRINCIPALS_JSON is invalid: %w", err)
 	}
 	return Config{
-		DatabaseURL: databaseURL, ListenAddress: listenAddress, AuthMode: authMode,
+		DatabaseURL: databaseURL, ListenAddress: listenAddress, CORSAllowedOrigins: corsOrigins, AuthMode: authMode,
 		Principals: principals, InternalAuthMode: internalAuthMode, InternalPrincipals: internalPrincipals,
 	}, nil
+}
+
+func loadCORSAllowedOrigins() ([]string, error) {
+	value, err := requiredEnv("NEKIRO_CORS_ALLOWED_ORIGINS")
+	if err != nil {
+		return nil, err
+	}
+	origins := strings.Split(value, ",")
+	seen := make(map[string]struct{}, len(origins))
+	for index, origin := range origins {
+		if origin == "" || origin != strings.TrimSpace(origin) || origin == "*" || strings.ContainsAny(origin, "?#") {
+			return nil, fmt.Errorf("NEKIRO_CORS_ALLOWED_ORIGINS entry %d is invalid", index+1)
+		}
+		parsed, err := url.Parse(origin)
+		if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" || parsed.User != nil || parsed.Path != "" || parsed.RawQuery != "" || parsed.Fragment != "" {
+			return nil, fmt.Errorf("NEKIRO_CORS_ALLOWED_ORIGINS entry %d is invalid", index+1)
+		}
+		if parsed.ForceQuery || parsed.RawFragment != "" {
+			return nil, fmt.Errorf("NEKIRO_CORS_ALLOWED_ORIGINS entry %d is invalid", index+1)
+		}
+		if port := parsed.Port(); port != "" {
+			parsedPort, parseErr := strconv.Atoi(port)
+			if parseErr != nil || parsedPort < 1 || parsedPort > 65535 {
+				return nil, fmt.Errorf("NEKIRO_CORS_ALLOWED_ORIGINS entry %d is invalid", index+1)
+			}
+		}
+		if _, exists := seen[origin]; exists {
+			return nil, fmt.Errorf("NEKIRO_CORS_ALLOWED_ORIGINS contains duplicate origin %q", origin)
+		}
+		seen[origin] = struct{}{}
+	}
+	return origins, nil
 }
 
 func LoadDatabaseURL() (string, error) {

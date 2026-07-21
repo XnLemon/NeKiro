@@ -149,7 +149,7 @@ func serve(ctx context.Context, logger *slog.Logger) error {
 
 	server := &http.Server{
 		Addr:              cfg.ListenAddress,
-		Handler:           mux,
+		Handler:           gateway.CORS(cfg.CORSAllowedOrigins, mux),
 		ReadHeaderTimeout: 5 * time.Second,
 		IdleTimeout:       60 * time.Second,
 	}
