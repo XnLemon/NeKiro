@@ -142,6 +142,7 @@ jobs:
           NEKIRO_ROUTER_AGENT_PRINCIPALS_JSON: '[{"workspaceId":"workspace-acceptance","agentId":"runtime-a","tokenSha256":"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"}]'
           NEKIRO_ROUTER_INTERNAL_BEARER_TOKEN: compose-router-token
           NEKIRO_CONTROL_PLANE_SERVICE_TOKEN: compose-control-plane-token
+          NEKIRO_CORS_ALLOWED_ORIGINS: http://127.0.0.1:3000
           NEKIRO_CONTROL_PLANE_INTERNAL_REQUEST_MAX_BYTES: "1048576"
           NEKIRO_GATEWAY_INVOCATION_REQUEST_MAX_BYTES: "1048576"
           NEKIRO_GATEWAY_SSE_EVENT_MAX_BYTES: "65536"
@@ -206,6 +207,7 @@ jobs:
       NEKIRO_ROUTER_AGENT_PRINCIPALS_JSON: '[{"workspaceId":"workspace-acceptance","agentId":"runtime-a","tokenSha256":"e304d0370532633d535824a897d5c03445b636e8d1649064aa35a8fb50fef200"}]'
       NEKIRO_ROUTER_INTERNAL_BEARER_TOKEN: router-internal-token
       NEKIRO_CONTROL_PLANE_SERVICE_TOKEN: control-plane-internal-token
+      NEKIRO_CORS_ALLOWED_ORIGINS: http://127.0.0.1:3000
       NEKIRO_CONTROL_PLANE_INTERNAL_REQUEST_MAX_BYTES: "1048576"
       NEKIRO_GATEWAY_INVOCATION_REQUEST_MAX_BYTES: "1048576"
       NEKIRO_GATEWAY_SSE_EVENT_MAX_BYTES: "65536"
