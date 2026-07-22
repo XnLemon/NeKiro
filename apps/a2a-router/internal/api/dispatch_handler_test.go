@@ -308,6 +308,85 @@ func TestDispatchWithLedgerCommitsTerminalSuccessBeforeResult(t *testing.T) {
 	}
 }
 
+func TestDispatchRequiresResolvedReleaseProvenanceAndPersistsExactPair(t *testing.T) {
+	digest := strings.Repeat("a", 64)
+	resolved := contracts.ResolveAgentResponse{
+		Card: dispatchResolvedCard("https://agent.example/a2a"),
+		Installation: contracts.ResolvedInstallation{
+			InstalledReleaseID: "release-a", AgentCardDigest: digest,
+		},
+	}
+	transport := &transportStub{result: json.RawMessage("{\"kind\":\"message\",\"messageId\":\"agent-message\",\"role\":\"agent\",\"parts\":[{\"kind\":\"data\",\"data\":{\"ok\":true}}]}")}
+	ledger := &ledgerRecorder{}
+	handler := newDispatchLedgerTestHandler(t, authStub{caller: auth.Caller{ID: "control-plane"}}, &resolverStub{response: resolved}, transport, ledger, 4096)
+	response := invokeDispatch(handler, "application/json", "application/json", trustedDispatchBody(false, "release-a", digest))
+	if response.Code != http.StatusOK || transport.calls != 1 {
+		t.Fatalf("status=%d transport=%d body=%s", response.Code, transport.calls, response.Body.String())
+	}
+	assertLedgerLifecycle(t, ledger.events, []string{"created", "routing", "started", "succeeded"})
+	for index, event := range ledger.events {
+		if event.AgentReleaseID != "release-a" || event.AgentCardDigest != digest {
+			t.Fatalf("event %d provenance = %q/%q", index, event.AgentReleaseID, event.AgentCardDigest)
+		}
+	}
+
+	for _, test := range []struct {
+		name     string
+		body     string
+		resolved contracts.ResolveAgentResponse
+	}{
+		{name: "request omits trusted pair", body: validDispatchBody(false), resolved: resolved},
+		{name: "release differs", body: trustedDispatchBody(false, "release-other", digest), resolved: resolved},
+		{name: "digest differs", body: trustedDispatchBody(false, "release-a", strings.Repeat("b", 64)), resolved: resolved},
+		{name: "resolution omits trusted pair", body: trustedDispatchBody(false, "release-a", digest), resolved: contracts.ResolveAgentResponse{Card: resolved.Card}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			transport := &transportStub{result: json.RawMessage(`{"kind":"message"}`)}
+			ledger := &ledgerRecorder{}
+			handler := newDispatchLedgerTestHandler(t, authStub{caller: auth.Caller{ID: "control-plane"}}, &resolverStub{response: test.resolved}, transport, ledger, 4096)
+			response := invokeDispatch(handler, "application/json", "application/json", test.body)
+			var platformError contracts.CorrelatedPlatformErrorV4
+			if response.Code != http.StatusServiceUnavailable || json.Unmarshal(response.Body.Bytes(), &platformError) != nil || platformError.Code != contracts.ErrorCodeDependency {
+				t.Fatalf("status=%d error=%#v body=%s", response.Code, platformError, response.Body.String())
+			}
+			if transport.calls != 0 || len(ledger.events) != 0 {
+				t.Fatalf("transport=%d ledger=%d", transport.calls, len(ledger.events))
+			}
+		})
+	}
+}
+
+func TestDispatchChildRejectsResolvedReleaseProvenanceMismatchBeforeLedger(t *testing.T) {
+	digest := strings.Repeat("a", 64)
+	resolver := &resolverStub{response: contracts.ResolveAgentResponse{
+		Card: dispatchResolvedCard("https://agent.example/a2a"),
+		Installation: contracts.ResolvedInstallation{
+			InstalledReleaseID: "release-resolved", AgentCardDigest: digest,
+		},
+	}}
+	transport := &transportStub{result: json.RawMessage(`{"kind":"message"}`)}
+	ledger := &ledgerRecorder{}
+	handler, err := NewDispatchHandlerWithTransportAndLedger(authStub{caller: auth.Caller{ID: "agent-a"}}, resolver, transport, ledger, 4096, time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dispatch := contracts.DispatchInvocationRequestV3{
+		InvocationID: "inv-child", RootTaskID: "task-root", ParentInvocationID: "inv-parent", TraceID: "trace-child",
+		Caller: contracts.Caller{Type: "agent", ID: "agent-parent"}, WorkspaceID: "workspace-a",
+		TargetAgentID: "agent-a", AgentCardVersion: "1.0.0", AgentReleaseID: "release-request",
+		AgentCardDigest: digest, Capability: "capability-a", Input: json.RawMessage(`{}`), Stream: false,
+	}
+	response := httptest.NewRecorder()
+	handler.DispatchChild(response, httptest.NewRequest(http.MethodPost, "/agent/v1/invocations", nil), dispatch, "application/json")
+	var platformError contracts.PreCorrelationPlatformErrorV4
+	if response.Code != http.StatusServiceUnavailable || json.Unmarshal(response.Body.Bytes(), &platformError) != nil || platformError.Code != contracts.ErrorCodeDependency {
+		t.Fatalf("status=%d error=%#v body=%s", response.Code, platformError, response.Body.String())
+	}
+	if transport.calls != 0 || len(ledger.events) != 0 {
+		t.Fatalf("transport=%d ledger=%d", transport.calls, len(ledger.events))
+	}
+}
+
 func TestDispatchWithLedgerRecordsTerminalFailureForTransportError(t *testing.T) {
 	resolver := &resolverStub{response: contracts.ResolveAgentResponse{Card: dispatchResolvedCard("https://agent.example/a2a")}}
 	transport := &transportStub{err: errors.New("agent endpoint offline")}
@@ -981,6 +1060,10 @@ func validDispatchBody(stream bool) string {
 		return `{"invocationId":"inv-a","rootTaskId":"task-a","traceId":"trace-a","caller":{"type":"user","id":"owner-a"},"workspaceId":"workspace-a","targetAgentId":"agent-a","agentCardVersion":"1.0.0","capability":"capability-a","input":{"q":"x"},"stream":true}`
 	}
 	return `{"invocationId":"inv-a","rootTaskId":"task-a","traceId":"trace-a","caller":{"type":"user","id":"owner-a"},"workspaceId":"workspace-a","targetAgentId":"agent-a","agentCardVersion":"1.0.0","capability":"capability-a","input":{"q":"x"},"stream":false}`
+}
+
+func trustedDispatchBody(stream bool, releaseID, digest string) string {
+	return strings.Replace(validDispatchBody(stream), `"agentCardVersion":"1.0.0"`, `"agentCardVersion":"1.0.0","agentReleaseId":"`+releaseID+`","agentCardDigest":"`+digest+`"`, 1)
 }
 
 func dispatchResolvedCard(endpoint string) contracts.AgentCard {

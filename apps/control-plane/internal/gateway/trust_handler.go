@@ -194,7 +194,7 @@ func trustErrorStatus(code contracts.TrustedPublicationErrorCode) (int, error) {
 
 func trustErrorCode(err error) contracts.TrustedPublicationErrorCode {
 	switch {
-	case errors.Is(err, catalog.ErrInvalid):
+	case errors.Is(err, catalog.ErrInvalid), errors.Is(err, catalog.ErrReleaseInvalid):
 		return contracts.TrustedErrorValidation
 	case errors.Is(err, catalog.ErrEndpointInvalid):
 		return contracts.TrustedErrorInvalidEndpoint
@@ -204,9 +204,9 @@ func trustErrorCode(err error) contracts.TrustedPublicationErrorCode {
 		return contracts.TrustedErrorRedirectNotAllowed
 	case errors.Is(err, catalog.ErrForbidden):
 		return contracts.TrustedErrorForbidden
-	case errors.Is(err, catalog.ErrBindingNotFound), errors.Is(err, catalog.ErrChallengeNotFound), errors.Is(err, catalog.ErrProviderNotFound), errors.Is(err, catalog.ErrNotFound):
+	case errors.Is(err, catalog.ErrBindingNotFound), errors.Is(err, catalog.ErrChallengeNotFound), errors.Is(err, catalog.ErrProviderNotFound), errors.Is(err, catalog.ErrReleaseNotFound), errors.Is(err, catalog.ErrNotFound):
 		return contracts.TrustedErrorNotFound
-	case errors.Is(err, catalog.ErrChallengeExpired), errors.Is(err, catalog.ErrChallengeReused), errors.Is(err, catalog.ErrTrustConflict):
+	case errors.Is(err, catalog.ErrChallengeExpired), errors.Is(err, catalog.ErrChallengeReused), errors.Is(err, catalog.ErrTrustConflict), errors.Is(err, catalog.ErrReleaseConflict):
 		if errors.Is(err, catalog.ErrChallengeExpired) {
 			return contracts.TrustedErrorChallengeExpired
 		}

@@ -522,11 +522,13 @@ func TestAgentHandlerNestedJSONSuccessPath(t *testing.T) {
 		Skills:         []contracts.AgentSkill{{ID: "summarize"}},
 		Limits:         contracts.AgentLimits{TimeoutMS: 5000, MaxInputBytes: "4096", MaxOutputBytes: "4096", Streaming: false},
 	}
+	cardDigest := strings.Repeat("a", 64)
 	resolver := &resolverStub{response: contracts.ResolveAgentResponse{
 		Card: targetCard,
 		Installation: contracts.ResolvedInstallation{
 			InstallationID: "inst-01", WorkspaceID: "ws_test789",
 			AgentID: "agent_target02", InstalledVersion: "2.0.0",
+			InstalledReleaseID: "release-target", AgentCardDigest: cardDigest,
 			AcceptedPermissions: []string{}, Status: "enabled",
 		},
 	}}
@@ -543,7 +545,9 @@ func TestAgentHandlerNestedJSONSuccessPath(t *testing.T) {
 	}
 
 	ledgerReader := &mockNestedLedgerReader{invocation: runningParentDetail()}
-	versionResolver := &mockVersionResolver{response: contracts.ResolveInstalledVersionResponse{Version: "2.0.0"}}
+	versionResolver := &mockVersionResolver{response: contracts.ResolveInstalledVersionResponse{
+		Version: "2.0.0", ReleaseID: "release-target", AgentCardDigest: cardDigest,
+	}}
 
 	handler, err := NewAgentInvocationHandler(binding, ledgerReader, versionResolver, dispatchHandler, 1048576, 30*time.Second)
 	if err != nil {
@@ -611,6 +615,9 @@ func TestAgentHandlerNestedJSONSuccessPath(t *testing.T) {
 		if event.AgentCardVersion != "2.0.0" {
 			t.Errorf("event[%d].AgentCardVersion = %s, want 2.0.0", i, event.AgentCardVersion)
 		}
+		if event.AgentReleaseID != "release-target" || event.AgentCardDigest != cardDigest {
+			t.Errorf("event[%d] provenance = %q/%q", i, event.AgentReleaseID, event.AgentCardDigest)
+		}
 		// Content-exclusion: no input/output stored in Ledger.
 		if event.ChunkIndex != nil || event.ChunkBytes != nil {
 			t.Errorf("event[%d] stores content metadata: %+v", i, event)
@@ -626,6 +633,9 @@ func TestAgentHandlerNestedJSONSuccessPath(t *testing.T) {
 	}
 	if transport.dispatch.Caller.Type != "agent" {
 		t.Errorf("transport dispatch Caller.Type = %s, want agent", transport.dispatch.Caller.Type)
+	}
+	if transport.dispatch.AgentReleaseID != "release-target" || transport.dispatch.AgentCardDigest != cardDigest {
+		t.Errorf("transport dispatch provenance = %q/%q", transport.dispatch.AgentReleaseID, transport.dispatch.AgentCardDigest)
 	}
 }
 

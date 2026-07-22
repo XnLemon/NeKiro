@@ -4,6 +4,7 @@
   "title": "NeKiro Trusted Publication v1",
   "$defs": {
     "identifier": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$" },
+    "semver": { "type": "string", "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\\.[0-9A-Za-z-]+)*)?(\\+[0-9A-Za-z-]+(\\.[0-9A-Za-z-]+)*)?$" },
     "endpointBinding": {
       "type": "object",
       "additionalProperties": false,
@@ -12,7 +13,7 @@
         "bindingId": { "$ref": "#/$defs/identifier" },
         "providerId": { "$ref": "#/$defs/identifier" },
         "agentId": { "$ref": "#/$defs/identifier" },
-        "agentCardVersion": { "type": "string", "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\\.[0-9A-Za-z-]+)*)?(\\+[0-9A-Za-z-]+(\\.[0-9A-Za-z-]+)*)?$" },
+        "agentCardVersion": { "$ref": "#/$defs/semver" },
         "endpoint": { "type": "string", "format": "uri", "pattern": "^https?://" },
         "verificationMethod": { "type": "string", "enum": ["http_well_known"] },
         "verificationStatus": { "enum": ["pending", "verified", "failed", "revoked"] },
@@ -44,6 +45,30 @@
         "challengeUrl": { "type": "string", "format": "uri" },
         "proof": { "type": "string", "minLength": 1, "maxLength": 128 },
         "expiresAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "agentRelease": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["releaseId", "providerId", "agentId", "agentCardVersion", "cardDigest", "endpointBindingId", "endpointOrigin", "endpointPath", "verificationMethod", "state", "createdAt", "updatedAt"],
+      "properties": {
+        "releaseId": { "$ref": "#/$defs/identifier" },
+        "providerId": { "$ref": "#/$defs/identifier" },
+        "agentId": { "$ref": "#/$defs/identifier" },
+        "agentCardVersion": { "$ref": "#/$defs/semver" },
+        "cardDigest": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "endpointBindingId": { "$ref": "#/$defs/identifier" },
+        "endpointOrigin": { "type": "string", "format": "uri", "pattern": "^https?://" },
+        "endpointPath": { "type": "string", "minLength": 1 },
+        "verificationMethod": { "type": "string", "enum": ["http_well_known"] },
+        "verificationEvidenceDigest": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "state": { "enum": ["draft", "pending_verification", "verified", "published", "suspended", "revoked"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" },
+        "verifiedAt": { "type": "string", "format": "date-time" },
+        "publishedAt": { "type": "string", "format": "date-time" },
+        "suspendedAt": { "type": "string", "format": "date-time" },
+        "revokedAt": { "type": "string", "format": "date-time" }
       }
     }
   }

@@ -27,3 +27,15 @@ func TestEmbeddedMigrationMatchesOwnedSQLFile(t *testing.T) {
 		t.Fatal("embedded Workspace migration differs from apps/control-plane/migrations/003_workspace.sql")
 	}
 }
+
+func TestEmbeddedReleaseMigrationMatchesOwnedSQLFile(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "..", "migrations", "004_workspace_installation_release.sql"))
+	if err != nil {
+		t.Fatalf("read Workspace release migration: %v", err)
+	}
+	want := strings.ReplaceAll(string(data), "\r\n", "\n")
+	got := strings.ReplaceAll(string(migration002), "\r\n", "\n")
+	if got != want {
+		t.Fatal("embedded Workspace release migration differs from apps/control-plane/migrations/004_workspace_installation_release.sql")
+	}
+}

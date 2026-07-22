@@ -18,6 +18,9 @@ var (
 	ErrAgentNotInstalled    = errors.New("agent is not installed")
 	ErrInstallationDisabled = errors.New("installation is disabled")
 	ErrAgentDisabled        = errors.New("agent version is disabled")
+	ErrReleaseUnpublished   = errors.New("agent release is not published")
+	ErrReleaseSuspended     = errors.New("agent release is suspended")
+	ErrReleaseRevoked       = errors.New("agent release is revoked")
 	ErrCapabilityNotAllowed = errors.New("capability is not allowed")
 	safeIdentifierRE        = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$`)
 )
@@ -29,6 +32,8 @@ type AuthenticatedCaller struct {
 
 type AuthorizedInvocation struct {
 	AgentCardVersion string
+	AgentReleaseID   string
+	AgentCardDigest  string
 }
 
 type Clock func() time.Time
@@ -49,7 +54,7 @@ func (OwnerPolicy) Authorize(ownerID, callerID string) error {
 
 // CatalogReader is the only Catalog dependency exposed to Workspace.
 type CatalogReader interface {
-	SelectPublished(context.Context, string, string) (catalog.AgentVersion, error)
+	SelectInstallable(context.Context, string, string) (catalog.AgentVersion, error)
 	GetVersion(context.Context, string, string) (catalog.AgentVersion, error)
 }
 

@@ -64,6 +64,15 @@ func TestRuntimeBReadinessDoesNotCreateTaskState(t *testing.T) {
 	}
 }
 
+func TestRuntimeBUnavailableFixtureReturnsServiceUnavailable(t *testing.T) {
+	request := httptest.NewRequest(http.MethodPost, "/unavailable", nil)
+	response := httptest.NewRecorder()
+	NewHTTPHandler(NewHandler()).ServeHTTP(response, request)
+	if response.Code != http.StatusServiceUnavailable {
+		t.Fatalf("unavailable fixture status=%d body=%q", response.Code, response.Body.String())
+	}
+}
+
 func TestOfficialA2AClientAllActiveOperations(t *testing.T) {
 	handler := NewHandler()
 	server := httptest.NewServer(NewHTTPHandler(handler))

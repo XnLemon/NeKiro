@@ -2,8 +2,10 @@ package contracts
 
 import (
 	"bytes"
+	"encoding/hex"
 	"errors"
 	"fmt"
+	"strings"
 
 	semver "github.com/Masterminds/semver/v3"
 	"github.com/santhosh-tekuri/jsonschema/v6"
@@ -24,27 +26,30 @@ var (
 )
 
 var platformErrorV4Messages = map[PlatformErrorCode]string{
-	ErrorCodeValidationError:       "The request is invalid.",
-	ErrorCodeUnauthenticated:       "Authentication is required.",
-	ErrorCodeForbidden:             "The requested operation is not allowed.",
-	ErrorCodeNotFound:              "The requested resource was not found.",
-	ErrorCodeConflict:              "The requested operation conflicts with current state.",
-	ErrorCodeNotAcceptable:         "The requested result mode is not acceptable.",
-	ErrorCodePayloadTooLarge:       "The payload is too large.",
-	ErrorCodeAgentNotInstalled:     "The Agent is not installed in this Workspace.",
-	ErrorCodeInstallationDisabled:  "The Agent installation is disabled.",
-	ErrorCodeAgentDisabled:         "The Agent version is disabled.",
-	ErrorCodeCapabilityNotAllowed:  "The requested capability is not allowed.",
-	ErrorCodeRouteNotFound:         "No route is available for the Agent.",
-	ErrorCodeAgentAuthUnsupported:  "The Agent authentication type is not supported for invocation.",
-	ErrorCodeAgentResponseTooLarge: "The Agent response is too large.",
-	ErrorCodeA2AProtocol:           "The Agent returned an invalid A2A response.",
-	ErrorCodeAgentUnavailable:      "The Agent is unavailable.",
-	ErrorCodeAgentExecutionFailed:  "The Agent failed to complete the invocation.",
-	ErrorCodeDependency:            "A required platform dependency failed.",
-	ErrorCodeTimeout:               "The invocation timed out.",
-	ErrorCodeCanceled:              "The invocation was canceled.",
-	ErrorCodeInternal:              "The platform could not complete the request.",
+	ErrorCodeValidationError:         "The request is invalid.",
+	ErrorCodeUnauthenticated:         "Authentication is required.",
+	ErrorCodeForbidden:               "The requested operation is not allowed.",
+	ErrorCodeNotFound:                "The requested resource was not found.",
+	ErrorCodeConflict:                "The requested operation conflicts with current state.",
+	ErrorCodeNotAcceptable:           "The requested result mode is not acceptable.",
+	ErrorCodePayloadTooLarge:         "The payload is too large.",
+	ErrorCodeAgentNotInstalled:       "The Agent is not installed in this Workspace.",
+	ErrorCodeInstallationDisabled:    "The Agent installation is disabled.",
+	ErrorCodeAgentDisabled:           "The Agent version is disabled.",
+	ErrorCodeAgentReleaseUnpublished: "The Agent release is not published.",
+	ErrorCodeAgentReleaseSuspended:   "The Agent release is suspended.",
+	ErrorCodeAgentReleaseRevoked:     "The Agent release is revoked.",
+	ErrorCodeCapabilityNotAllowed:    "The requested capability is not allowed.",
+	ErrorCodeRouteNotFound:           "No route is available for the Agent.",
+	ErrorCodeAgentAuthUnsupported:    "The Agent authentication type is not supported for invocation.",
+	ErrorCodeAgentResponseTooLarge:   "The Agent response is too large.",
+	ErrorCodeA2AProtocol:             "The Agent returned an invalid A2A response.",
+	ErrorCodeAgentUnavailable:        "The Agent is unavailable.",
+	ErrorCodeAgentExecutionFailed:    "The Agent failed to complete the invocation.",
+	ErrorCodeDependency:              "A required platform dependency failed.",
+	ErrorCodeTimeout:                 "The invocation timed out.",
+	ErrorCodeCanceled:                "The invocation was canceled.",
+	ErrorCodeInternal:                "The platform could not complete the request.",
 }
 
 type RuntimeContractValidator struct {
@@ -131,7 +136,35 @@ func (v *RuntimeContractValidator) ValidateInvocationEventV03(event InvocationEv
 	if err := validateMappedValue(v.event, event); err != nil {
 		return err
 	}
+	if err := ValidateInvocationReleaseProvenance(event.AgentReleaseID, event.AgentCardDigest); err != nil {
+		return err
+	}
 	return validateRuntimeNestedErrorCorrelation(event.InvocationID, event.RootTaskID, event.TraceID, event.Error)
+}
+
+// ValidateInvocationReleaseProvenance keeps the additive release metadata
+// truthful: legacy invocations carry neither field, while trusted invocations
+// carry a safe Release ID and the canonical lower-case SHA-256 Card digest.
+// The absent pair is the wire-level legacy/unverified encoding retained by
+// Invocation Event 0.3; it is never inferred by Catalog for new versions.
+func ValidateInvocationReleaseProvenance(releaseID, cardDigest string) error {
+	if (releaseID == "") != (cardDigest == "") {
+		return errors.New("invocation release provenance must contain both release ID and card digest")
+	}
+	if releaseID == "" {
+		return nil
+	}
+	if err := validateSafeContractIdentifier("Agent Release ID", releaseID); err != nil {
+		return err
+	}
+	if len(cardDigest) != 64 || cardDigest != strings.ToLower(cardDigest) {
+		return errors.New("agent card digest must be canonical lower-case SHA-256")
+	}
+	decoded, err := hex.DecodeString(cardDigest)
+	if err != nil || len(decoded) != 32 {
+		return errors.New("agent card digest must be canonical lower-case SHA-256")
+	}
+	return nil
 }
 
 func (v *RuntimeContractValidator) ValidateInvocationResultStreamEventV2(event InvocationResultStreamEventV2) error {
@@ -347,6 +380,7 @@ func (v *RuntimeContractValidator) ValidateInvocationDetailResponseV4(workspaceI
 			event.ParentInvocationID != detail.Invocation.ParentInvocationID || event.TraceID != detail.Invocation.TraceID ||
 			event.Caller != detail.Invocation.Caller || event.WorkspaceID != detail.Invocation.WorkspaceID ||
 			event.TargetAgentID != detail.Invocation.TargetAgentID || event.AgentCardVersion != detail.Invocation.AgentCardVersion ||
+			event.AgentReleaseID != detail.Invocation.AgentReleaseID || event.AgentCardDigest != detail.Invocation.AgentCardDigest ||
 			event.Capability != detail.Invocation.Capability {
 			return errors.New("invocation projection context does not match its events")
 		}
@@ -398,6 +432,9 @@ func ValidateTraceResponseV4(workspaceID string, traceID TraceID, response Trace
 // required field from its zero value; enforce those required fields and their
 // primitive constraints explicitly before exposing a 200 response.
 func validateInvocationRecordV4(record InvocationRecordV4) error {
+	if err := ValidateInvocationReleaseProvenance(record.AgentReleaseID, record.AgentCardDigest); err != nil {
+		return err
+	}
 	for name, value := range map[string]string{
 		"invocation id":   record.InvocationID,
 		"root task id":    record.RootTaskID,
@@ -462,6 +499,7 @@ func sameRuntimeInvocationContext(left, right InvocationEventV03) bool {
 		left.ParentInvocationID == right.ParentInvocationID && left.TraceID == right.TraceID &&
 		left.Caller == right.Caller && left.WorkspaceID == right.WorkspaceID &&
 		left.TargetAgentID == right.TargetAgentID && left.AgentCardVersion == right.AgentCardVersion &&
+		left.AgentReleaseID == right.AgentReleaseID && left.AgentCardDigest == right.AgentCardDigest &&
 		left.Capability == right.Capability
 }
 

@@ -18,7 +18,13 @@ RUNTIME_A_TARGET_AGENT_ID
 RUNTIME_A_TARGET_CAPABILITY
 RUNTIME_A_RESPONSE_LIMIT_BYTES
 RUNTIME_A_EVENT_LIMIT_BYTES
+NEKIRO_AGENT_CHALLENGE_DIRECTORY
 ```
+
+`NEKIRO_AGENT_CHALLENGE_DIRECTORY` is an absolute, explicitly configured
+directory used only to serve provider-owned one-time HTTP ownership proofs at
+`/.well-known/nekiro/challenges/{challengeId}`. It has no default and is not a
+platform secret store.
 
 The child slice accepts JSON `message/send` requests with exactly one data part
 containing `fixture: "success"` and a JSON `value`. Streaming and task storage

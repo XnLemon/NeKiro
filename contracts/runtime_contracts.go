@@ -45,6 +45,8 @@ type DispatchInvocationRequestV3 struct {
 	WorkspaceID        string          `json:"workspaceId"`
 	TargetAgentID      string          `json:"targetAgentId"`
 	AgentCardVersion   string          `json:"agentCardVersion"`
+	AgentReleaseID     string          `json:"agentReleaseId,omitempty"`
+	AgentCardDigest    string          `json:"agentCardDigest,omitempty"`
 	Capability         string          `json:"capability"`
 	Input              json.RawMessage `json:"input"`
 	Stream             bool            `json:"stream"`
@@ -81,6 +83,8 @@ type InvocationEventV03 struct {
 	WorkspaceID        string           `json:"workspaceId"`
 	TargetAgentID      string           `json:"targetAgentId"`
 	AgentCardVersion   string           `json:"agentCardVersion"`
+	AgentReleaseID     string           `json:"agentReleaseId,omitempty"`
+	AgentCardDigest    string           `json:"agentCardDigest,omitempty"`
 	Capability         string           `json:"capability"`
 	ChunkIndex         *int64           `json:"chunkIndex,omitempty"`
 	ChunkBytes         *int64           `json:"chunkBytes,omitempty"`
@@ -110,6 +114,8 @@ type InvocationRecordV4 struct {
 	WorkspaceID        string            `json:"workspaceId"`
 	TargetAgentID      string            `json:"targetAgentId"`
 	AgentCardVersion   string            `json:"agentCardVersion"`
+	AgentReleaseID     string            `json:"agentReleaseId,omitempty"`
+	AgentCardDigest    string            `json:"agentCardDigest,omitempty"`
 	Capability         string            `json:"capability"`
 	Status             string            `json:"status"`
 	LatencyMS          *int64            `json:"latencyMs,omitempty"`
@@ -143,5 +149,7 @@ type ResolveInstalledVersionRequest struct {
 
 // ResolveInstalledVersionResponse carries the exact pinned installedVersion.
 type ResolveInstalledVersionResponse struct {
-	Version string `json:"version"`
+	Version         string `json:"version"`
+	ReleaseID       string `json:"releaseId,omitempty"`
+	AgentCardDigest string `json:"agentCardDigest,omitempty"`
 }

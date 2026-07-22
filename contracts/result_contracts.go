@@ -71,11 +71,14 @@ var platformErrorV2Messages = map[PlatformErrorCode]string{
 }
 
 var platformErrorV3Messages = func() map[PlatformErrorCode]string {
-	messages := make(map[PlatformErrorCode]string, len(platformErrorV2Messages)+1)
+	messages := make(map[PlatformErrorCode]string, len(platformErrorV2Messages)+4)
 	for code, message := range platformErrorV2Messages {
 		messages[code] = message
 	}
 	messages[ErrorCodeInstallationDisabled] = "The Agent installation is disabled."
+	messages[ErrorCodeAgentReleaseUnpublished] = "The Agent release is not published."
+	messages[ErrorCodeAgentReleaseSuspended] = "The Agent release is suspended."
+	messages[ErrorCodeAgentReleaseRevoked] = "The Agent release is revoked."
 	return messages
 }()
 

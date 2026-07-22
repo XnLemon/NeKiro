@@ -113,7 +113,7 @@ func TestBuildChildDispatchRequest(t *testing.T) {
 	}
 
 	input := []byte(`{"query":"test"}`)
-	dispatchReq := BuildChildDispatchRequest(child, "agent_target02", "summarize", input, false, "2.0.0")
+	dispatchReq := BuildChildDispatchRequest(child, "agent_target02", "summarize", input, false, "2.0.0", "", "")
 
 	if dispatchReq.InvocationID != child.ChildInvocationID {
 		t.Errorf("invocation ID mismatch: got %s, want %s", dispatchReq.InvocationID, child.ChildInvocationID)

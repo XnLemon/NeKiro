@@ -117,7 +117,7 @@ func newAcceptanceHTTPHarness(t *testing.T) *acceptanceHTTPHarness {
 	t.Cleanup(agentServer.Close)
 	card := integrationCard()
 	card.Protocol.Endpoint = agentServer.URL
-	if err := registerPublishedCard(ctx, catalogService, card); err != nil {
+	if err := registerLegacyPublishedCard(ctx, pool, catalogService, card); err != nil {
 		t.Fatalf("publish acceptance fixture Card: %v", err)
 	}
 
@@ -313,7 +313,7 @@ func TestAcceptanceWorkspaceControlPlaneHTTPWorkflow(t *testing.T) {
 		card.AgentID = agentID
 		card.Name = "Acceptance " + agentID
 		card.Protocol.Endpoint = harness.agentEndpoint
-		if err := registerPublishedCard(context.Background(), harness.catalog, card); err != nil {
+		if err := registerLegacyPublishedCard(context.Background(), harness.pool, harness.catalog, card); err != nil {
 			t.Fatalf("publish %s: %v", agentID, err)
 		}
 		response := harness.request(t, http.MethodPost, "/v3/workspaces/acceptance-workspace/installations", harness.ownerToken, contracts.InstallAgentRequest{

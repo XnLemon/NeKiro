@@ -79,9 +79,11 @@ func (service *Service) GetVersion(ctx context.Context, agentID, version string)
 	return service.store.Get(ctx, agentID, version)
 }
 
-// SelectPublished applies Catalog-owned SemVer selection and returns the exact
-// Card fact selected at this call's linearization point.
-func (service *Service) SelectPublished(ctx context.Context, agentID, constraint string) (AgentVersion, error) {
+// SelectInstallable applies Catalog-owned SemVer selection and trust
+// eligibility, then returns the exact Card/Release facts selected at this
+// call's linearization point. It never silently selects an alternate version
+// after the highest matching version fails the release gate.
+func (service *Service) SelectInstallable(ctx context.Context, agentID, constraint string) (AgentVersion, error) {
 	if !ValidIdentifier(agentID) {
 		return AgentVersion{}, ErrInvalid
 	}
@@ -89,7 +91,7 @@ func (service *Service) SelectPublished(ctx context.Context, agentID, constraint
 	if err != nil || strings.TrimSpace(constraint) == "" {
 		return AgentVersion{}, ErrInvalid
 	}
-	candidates, err := service.store.Published(ctx, agentID)
+	candidates, err := service.store.InstallationCandidates(ctx, agentID)
 	if err != nil {
 		return AgentVersion{}, err
 	}
@@ -112,7 +114,37 @@ func (service *Service) SelectPublished(ctx context.Context, agentID, constraint
 	if selectedVersion == nil {
 		return AgentVersion{}, ErrNotFound
 	}
+	if err := installabilityError(selected); err != nil {
+		return AgentVersion{}, err
+	}
 	return selected, nil
+}
+
+func installabilityError(candidate AgentVersion) error {
+	if candidate.Release == nil {
+		if candidate.LegacyUnverified && candidate.Status == PublicationPublished {
+			return nil
+		}
+		return ErrReleaseUnpublished
+	}
+	release := candidate.Release
+	if release.ReleaseID == "" || release.AgentID != candidate.Card.AgentID ||
+		release.AgentCardVersion != candidate.Card.Version || release.CardDigest != candidate.CardDigest {
+		return ErrDependency
+	}
+	switch release.State {
+	case ReleasePublished:
+		if candidate.Status != PublicationPublished {
+			return ErrDependency
+		}
+		return nil
+	case ReleaseSuspended:
+		return ErrReleaseSuspended
+	case ReleaseRevoked:
+		return ErrReleaseRevoked
+	default:
+		return ErrReleaseUnpublished
+	}
 }
 
 var prereleaseComparator = regexp.MustCompile(`(?:^|[<>=~^*xX\s])v?\d+\.\d+\.\d+-[0-9A-Za-z-]+`)

@@ -66,7 +66,7 @@ func TestCatalogPostgreSQLAndHTTPAcceptance(t *testing.T) {
 	binary := buildControlPlane(t, root)
 	assertV1ToV2Migration(t, databaseURL, root, pool)
 	runCommand(t, root, databaseURL, binary, "migrate", "up")
-	assertCatalogSchemaV3(t, pool)
+	assertCatalogSchemaV4(t, pool)
 	runCommand(t, root, databaseURL, binary, "migrate", "up")
 	assertUnsupportedMigrationLeavesPopulatedCatalog(t, root, databaseURL, binary, pool)
 
@@ -523,21 +523,28 @@ JOIN pg_attribute description
 	}
 }
 
-func assertCatalogSchemaV3(t *testing.T, pool *pgxpool.Pool) {
+func assertCatalogSchemaV4(t *testing.T, pool *pgxpool.Pool) {
 	t.Helper()
 	var version int
-	var providers, bindings, challenges bool
+	var providers, bindings, challenges, releases, legacyMarker bool
 	err := pool.QueryRow(context.Background(), `
 SELECT version,
        to_regclass('catalog.providers') IS NOT NULL,
        to_regclass('catalog.endpoint_bindings') IS NOT NULL,
-       to_regclass('catalog.verification_challenges') IS NOT NULL
-FROM catalog.schema_version`).Scan(&version, &providers, &bindings, &challenges)
+       to_regclass('catalog.verification_challenges') IS NOT NULL,
+       to_regclass('catalog.agent_releases') IS NOT NULL,
+       EXISTS (
+         SELECT 1 FROM information_schema.columns
+         WHERE table_schema = 'catalog' AND table_name = 'agent_versions'
+           AND column_name = 'legacy_unverified' AND data_type = 'boolean'
+           AND is_nullable = 'NO'
+       )
+FROM catalog.schema_version`).Scan(&version, &providers, &bindings, &challenges, &releases, &legacyMarker)
 	if err != nil {
-		t.Fatalf("inspect Catalog schema v3: %v", err)
+		t.Fatalf("inspect Catalog schema v4: %v", err)
 	}
-	if version != 3 || !providers || !bindings || !challenges {
-		t.Fatalf("Catalog schema v3 = version %d, providers %t, bindings %t, challenges %t", version, providers, bindings, challenges)
+	if version != 4 || !providers || !bindings || !challenges || !releases || !legacyMarker {
+		t.Fatalf("Catalog schema v4 = version %d, providers %t, bindings %t, challenges %t, releases %t, legacy marker %t", version, providers, bindings, challenges, releases, legacyMarker)
 	}
 }
 
@@ -643,6 +650,7 @@ type migrationGuardSnapshot struct {
 	registeredAt        time.Time
 	publishedAt         time.Time
 	publicationSequence int64
+	legacyUnverified    bool
 	capabilityID        string
 	clockSequence       int64
 }
@@ -676,8 +684,9 @@ VALUES ($1, $2, $3)`, card.AgentID, card.Owner.ID, createdAt); err != nil {
 	if _, err := tx.Exec(ctx, `
 INSERT INTO catalog.agent_versions (
     agent_id, version, schema_version, card, card_name, card_description,
-    card_digest, publication_status, registered_at, published_at, publication_sequence
-) VALUES ($1, $2, $3, $4, $5, $6, $7, 'published', $8, $8, 1)`,
+    card_digest, publication_status, registered_at, published_at, publication_sequence,
+    legacy_unverified
+) VALUES ($1, $2, $3, $4, $5, $6, $7, 'published', $8, $8, 1, false)`,
 		card.AgentID, card.Version, card.SchemaVersion, string(cardJSON), card.Name,
 		card.Description, cardDigest[:], createdAt); err != nil {
 		t.Fatalf("seed migration guard version: %v", err)
@@ -698,7 +707,7 @@ VALUES ($1, $2, $3)`, card.AgentID, card.Version, card.Skills[0].ID); err != nil
 	if output, err := command.CombinedOutput(); err == nil {
 		t.Fatalf("unsupported migrate down succeeded: %s", output)
 	}
-	assertCatalogSchemaV3(t, pool)
+	assertCatalogSchemaV4(t, pool)
 	after := readMigrationGuardSnapshot(t, pool)
 	if after != before {
 		t.Fatalf("unsupported migrate down changed Catalog\nbefore: %#v\nafter:  %#v", before, after)
@@ -741,6 +750,7 @@ SELECT sv.version,
        v.registered_at,
        v.published_at,
        v.publication_sequence,
+       v.legacy_unverified,
        c.capability_id,
        p.last_sequence
 FROM catalog.schema_version sv
@@ -761,6 +771,7 @@ WHERE i.agent_id = 'migration-guard-agent' AND p.singleton = true`).Scan(
 		&snapshot.registeredAt,
 		&snapshot.publishedAt,
 		&snapshot.publicationSequence,
+		&snapshot.legacyUnverified,
 		&snapshot.capabilityID,
 		&snapshot.clockSequence,
 	)
@@ -1055,10 +1066,10 @@ func seedPublishedVersions(t *testing.T, pool *pgxpool.Pool, start, count int) {
 		cardJSON := mustJSON(t, card)
 		cardDigest := sha256.Sum256(cardJSON)
 		sequence++
-		versionRows = append(versionRows, []any{"scale-agent", version, "0.2", string(cardJSON), card.Name, card.Description, cardDigest[:], "published", registeredAt, registeredAt, sequence, nil})
+		versionRows = append(versionRows, []any{"scale-agent", version, "0.2", string(cardJSON), card.Name, card.Description, cardDigest[:], "published", registeredAt, registeredAt, sequence, nil, false})
 		capabilityRows = append(capabilityRows, []any{"scale-agent", version, "scale.test"})
 	}
-	if _, err := tx.CopyFrom(ctx, pgx.Identifier{"catalog", "agent_versions"}, []string{"agent_id", "version", "schema_version", "card", "card_name", "card_description", "card_digest", "publication_status", "registered_at", "published_at", "publication_sequence", "disabled_at"}, pgx.CopyFromRows(versionRows)); err != nil {
+	if _, err := tx.CopyFrom(ctx, pgx.Identifier{"catalog", "agent_versions"}, []string{"agent_id", "version", "schema_version", "card", "card_name", "card_description", "card_digest", "publication_status", "registered_at", "published_at", "publication_sequence", "disabled_at", "legacy_unverified"}, pgx.CopyFromRows(versionRows)); err != nil {
 		t.Fatalf("seed scale versions: %v", err)
 	}
 	if _, err := tx.CopyFrom(ctx, pgx.Identifier{"catalog", "agent_version_capabilities"}, []string{"agent_id", "version", "capability_id"}, pgx.CopyFromRows(capabilityRows)); err != nil {
@@ -1088,8 +1099,8 @@ func seedLatePublication(t *testing.T, pool *pgxpool.Pool) {
 		t.Fatal(err)
 	}
 	if _, err := tx.Exec(ctx, `
-INSERT INTO catalog.agent_versions (agent_id, version, schema_version, card, card_name, card_description, card_digest, publication_status, registered_at, published_at, publication_sequence)
-VALUES ('scale-agent', '2.0.0', '0.2', $1, $2, $3, $4, 'published', now(), now(), $5)`, string(cardJSON), card.Name, card.Description, cardDigest[:], sequence); err != nil {
+INSERT INTO catalog.agent_versions (agent_id, version, schema_version, card, card_name, card_description, card_digest, publication_status, registered_at, published_at, publication_sequence, legacy_unverified)
+VALUES ('scale-agent', '2.0.0', '0.2', $1, $2, $3, $4, 'published', now(), now(), $5, false)`, string(cardJSON), card.Name, card.Description, cardDigest[:], sequence); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := tx.Exec(ctx, `INSERT INTO catalog.agent_version_capabilities (agent_id, version, capability_id) VALUES ('scale-agent', '2.0.0', 'scale.test')`); err != nil {

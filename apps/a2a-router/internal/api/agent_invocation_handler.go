@@ -185,6 +185,8 @@ func (handler *AgentInvocationHandler) serve(writer http.ResponseWriter, request
 		nestedRequest.Input,
 		nestedRequest.Stream,
 		versionResponse.Version,
+		versionResponse.ReleaseID,
+		versionResponse.AgentCardDigest,
 	)
 	handler.dispatchHandler.DispatchChild(writer, request.WithContext(ctx), childDispatchRequest, accept)
 }
@@ -336,6 +338,9 @@ func mapControlPlaneCodeToAgentBoundary(code contracts.PlatformErrorCode) contra
 	case contracts.ErrorCodeForbidden, contracts.ErrorCodeInstallationDisabled,
 		contracts.ErrorCodeAgentDisabled, contracts.ErrorCodeCapabilityNotAllowed:
 		return contracts.ErrorCodeForbidden
+	case contracts.ErrorCodeAgentReleaseUnpublished, contracts.ErrorCodeAgentReleaseSuspended,
+		contracts.ErrorCodeAgentReleaseRevoked:
+		return code
 	case contracts.ErrorCodeTimeout:
 		return contracts.ErrorCodeTimeout
 	case contracts.ErrorCodeCanceled:

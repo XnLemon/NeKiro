@@ -122,6 +122,18 @@ func TestInvocationHandlerMapsWorkspaceBeforeRootAndRouterAfterRootErrors(t *tes
 			t.Fatalf("error=%v", document)
 		}
 	})
+	t.Run("Release state is exact and pre-correlation", func(t *testing.T) {
+		dispatcher := &invocationDispatcherStub{err: workspace.ErrReleaseRevoked}
+		response := invokeWithTestHandler(t, dispatcher)
+		if response.Code != http.StatusConflict {
+			t.Fatalf("status=%d", response.Code)
+		}
+		var document map[string]any
+		_ = json.Unmarshal(response.Body.Bytes(), &document)
+		if document["code"] != string(contracts.ErrorCodeAgentReleaseRevoked) || document["invocationId"] != nil {
+			t.Fatalf("error=%v", document)
+		}
+	})
 	t.Run("Router dependency is correlated", func(t *testing.T) {
 		dispatcher := &invocationDispatcherStub{err: &invocation.DispatchError{Code: contracts.ErrorCodeDependency, InvocationID: "inv-root", RootTaskID: "task-root", Cause: errors.New("offline")}}
 		response := invokeWithTestHandler(t, dispatcher)

@@ -97,7 +97,7 @@ func TestWorkspaceV3OperationsDeclareSecurityTraceAndExactErrors(t *testing.T) {
 		},
 		{
 			path: "/v3/workspaces/{workspaceId}/installations", method: "POST", success: 201,
-			failures: map[int][]string{400: {"VALIDATION_ERROR"}, 401: {"UNAUTHENTICATED"}, 403: {"FORBIDDEN"}, 404: {"NOT_FOUND"}, 409: {"CONFLICT"}, 503: {"DEPENDENCY_ERROR"}},
+			failures: map[int][]string{400: {"VALIDATION_ERROR"}, 401: {"UNAUTHENTICATED"}, 403: {"FORBIDDEN", "AGENT_RELEASE_UNPUBLISHED", "AGENT_RELEASE_SUSPENDED", "AGENT_RELEASE_REVOKED"}, 404: {"NOT_FOUND"}, 409: {"CONFLICT"}, 503: {"DEPENDENCY_ERROR"}},
 		},
 		{
 			path: "/v3/workspaces/{workspaceId}/installations", method: "GET", success: 200,
@@ -145,6 +145,17 @@ func TestResolveAgentResponsePreservesExactRequestIdentity(t *testing.T) {
 	response := ResolveAgentResponse{Card: card, Installation: ResolvedInstallation{InstallationID: "installation-resolve", WorkspaceID: request.WorkspaceID, AgentID: request.AgentID, InstalledVersion: request.Version, AcceptedPermissions: []string{"document.read"}, Status: "enabled"}}
 	if err := validator.ValidateResolveAgentResponseForRequest(request, response); err != nil {
 		t.Fatalf("valid exact resolution response rejected: %v", err)
+	}
+	trusted := response
+	trusted.Installation.InstalledReleaseID = "release-resolve"
+	trusted.Installation.AgentCardDigest = strings.Repeat("a", 64)
+	if err := validator.ValidateResolveAgentResponseForRequest(request, trusted); err != nil {
+		t.Fatalf("valid trusted resolution response rejected: %v", err)
+	}
+	partialProvenance := trusted
+	partialProvenance.Installation.AgentCardDigest = ""
+	if err := validator.ValidateResolveAgentResponseForRequest(request, partialProvenance); err == nil {
+		t.Fatal("resolution response with partial Release provenance was accepted")
 	}
 	unauthorized := response
 	unauthorized.Installation.AcceptedPermissions = nil

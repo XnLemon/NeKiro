@@ -76,7 +76,7 @@ func TestStoreValidateCandidateChecksEventAndTimestampPolicy(t *testing.T) {
 func TestScanProjectionAndEventDecodeNullableFields(t *testing.T) {
 	projection, err := scanProjection(valueScanner{values: []any{
 		"inv-a", "task-a", sql.NullString{String: "parent-a", Valid: true}, contracts.TraceID("trace-a"),
-		"user", "caller-a", "workspace-a", "agent-a", "1.0.0", "capability-a", "succeeded",
+		"user", "caller-a", "workspace-a", "agent-a", "1.0.0", sql.NullString{}, []byte(nil), "capability-a", "succeeded",
 		sql.NullInt64{Int64: 7, Valid: true}, sql.NullString{String: string(contracts.ErrorCodeAgentExecutionFailed), Valid: true},
 		time.Date(2026, 7, 19, 12, 0, 0, 0, time.UTC), time.Date(2026, 7, 19, 12, 0, 1, 0, time.UTC),
 	}})
@@ -86,7 +86,7 @@ func TestScanProjectionAndEventDecodeNullableFields(t *testing.T) {
 
 	event, err := scanEvent(valueScanner{values: []any{
 		"event-a", "inv-a", int64(3), time.Date(2026, 7, 19, 12, 0, 1, 0, time.UTC), "failed", "failed",
-		"task-a", sql.NullString{}, contracts.TraceID("trace-a"), "user", "caller-a", "workspace-a", "agent-a", "1.0.0", "capability-a",
+		"task-a", sql.NullString{}, contracts.TraceID("trace-a"), "user", "caller-a", "workspace-a", "agent-a", "1.0.0", sql.NullString{}, []byte(nil), "capability-a",
 		sql.NullInt64{Int64: 1, Valid: true}, sql.NullInt64{Int64: 10, Valid: true}, sql.NullInt64{Int64: 7, Valid: true}, sql.NullString{String: string(contracts.ErrorCodeAgentExecutionFailed), Valid: true},
 	}})
 	if err != nil || event.SchemaVersion != contracts.RuntimeInvocationEventSchemaVersion || event.Error == nil || event.Error.Code != contracts.ErrorCodeAgentExecutionFailed || event.ChunkIndex == nil || *event.ChunkIndex != 1 {

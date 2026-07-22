@@ -85,7 +85,7 @@ func TestInvokeToRecordAcceptance(t *testing.T) {
 	runtimeA := acceptanceCard("runtime-a", "Runtime A", "http://runtime-a:8091", "runtime.cross", nil, false)
 	runtimeB := acceptanceCard("runtime-b", "Runtime B", "http://runtime-b:8092", "runtime.echo", []string{"text.read"}, true)
 	runtimeProtocol := acceptanceCard("runtime-protocol", "Runtime Protocol Fixture", "http://runtime-b:8092", "runtime.protocol", nil, false)
-	runtimeRoute := acceptanceCard("runtime-route", "Runtime Route Fixture", "http://runtime-unavailable:8099", "runtime.route", nil, false)
+	runtimeRoute := acceptanceCard("runtime-route", "Runtime Route Fixture", "http://runtime-b:8092/unavailable", "runtime.route", nil, false)
 	runtimeTimeout := acceptanceCardWithTimeout("runtime-timeout", "Runtime Timeout Fixture", "http://runtime-b:8092", "runtime.timeout", nil, true, 50)
 	runtimeInterrupted := acceptanceCard("runtime-interrupted", "Runtime Interrupted Fixture", "http://runtime-b:8092", "runtime.interrupted", nil, true)
 	registerAndPublish(t, client, env, runtimeA)
@@ -226,9 +226,85 @@ func registerAndPublish(t *testing.T, client *http.Client, env acceptanceEnv, ca
 	if err := json.Unmarshal(card, &value); err != nil {
 		t.Fatal(err)
 	}
-	published := doRequest(t, client, env.controlPlane+fmt.Sprintf("/v3/agents/%s/versions/%s/publish", value.AgentID, value.Version), http.MethodPost, env.ownerToken, "", nil)
-	if published.status != http.StatusOK {
-		t.Fatalf("publish %s status=%d body=%s", value.AgentID, published.status, published.body)
+	const providerID = "provider-acceptance"
+	bindingResult := doRequest(t, client, env.controlPlane+fmt.Sprintf("/v4/providers/%s/agents/%s/endpoint-bindings", providerID, value.AgentID), http.MethodPost, env.ownerToken, "application/json", contracts.CreateEndpointBindingRequest{Endpoint: value.Protocol.Endpoint, Method: "http_well_known", Version: value.Version})
+	if bindingResult.status != http.StatusCreated {
+		t.Fatalf("create binding %s status=%d body=%s", value.AgentID, bindingResult.status, bindingResult.body)
+	}
+	var binding contracts.EndpointBindingResponse
+	if err := json.Unmarshal(bindingResult.body, &binding); err != nil || binding.BindingID == "" || binding.VerificationStatus != "pending" {
+		t.Fatalf("decode pending binding %s: value=%#v error=%v", value.AgentID, binding, err)
+	}
+	challengeResult := doRequest(t, client, env.controlPlane+fmt.Sprintf("/v4/providers/%s/endpoint-bindings/%s/challenges", providerID, binding.BindingID), http.MethodPost, env.ownerToken, "", nil)
+	if challengeResult.status != http.StatusCreated {
+		t.Fatalf("create challenge %s status=%d", value.AgentID, challengeResult.status)
+	}
+	var challenge contracts.VerificationChallengeResponse
+	if err := json.Unmarshal(challengeResult.body, &challenge); err != nil || challenge.ChallengeID == "" || challenge.Proof == "" {
+		t.Fatalf("decode challenge %s error=%v", value.AgentID, err)
+	}
+	service := challengeService(t, value.Protocol.Endpoint)
+	completed := func() httpResult {
+		writeChallengeProof(t, env.composeFile, service, challenge.ChallengeID, challenge.Proof)
+		defer removeChallengeProof(t, env.composeFile, service, challenge.ChallengeID)
+		return doRequest(t, client, env.controlPlane+fmt.Sprintf("/v4/providers/%s/endpoint-bindings/%s/challenges/%s/complete", providerID, binding.BindingID, challenge.ChallengeID), http.MethodPost, env.ownerToken, "", nil)
+	}()
+	if completed.status != http.StatusOK {
+		t.Fatalf("complete challenge %s status=%d body=%s", value.AgentID, completed.status, completed.body)
+	}
+	var verified contracts.EndpointBindingResponse
+	if err := json.Unmarshal(completed.body, &verified); err != nil || verified.VerificationStatus != "verified" || verified.VerificationEvidenceDigest == nil {
+		t.Fatalf("decode verified binding %s: value=%#v error=%v", value.AgentID, verified, err)
+	}
+	releaseResult := doRequest(t, client, env.controlPlane+fmt.Sprintf("/v4/providers/%s/agents/%s/releases", providerID, value.AgentID), http.MethodPost, env.ownerToken, "application/json", contracts.CreateAgentReleaseRequest{Version: value.Version, EndpointBindingID: binding.BindingID})
+	if releaseResult.status != http.StatusCreated {
+		t.Fatalf("create release %s status=%d body=%s", value.AgentID, releaseResult.status, releaseResult.body)
+	}
+	var release contracts.AgentReleaseResponse
+	if err := json.Unmarshal(releaseResult.body, &release); err != nil || release.ReleaseID == "" || release.State != contracts.ReleaseStateVerified || release.VerificationEvidenceDigest == nil {
+		t.Fatalf("decode verified release %s: value=%#v error=%v", value.AgentID, release, err)
+	}
+	publishedResult := doRequest(t, client, env.controlPlane+fmt.Sprintf("/v4/releases/%s/publish", release.ReleaseID), http.MethodPost, env.ownerToken, "", nil)
+	if publishedResult.status != http.StatusOK {
+		t.Fatalf("publish release %s status=%d body=%s", value.AgentID, publishedResult.status, publishedResult.body)
+	}
+	var published contracts.AgentReleaseResponse
+	if err := json.Unmarshal(publishedResult.body, &published); err != nil || published.State != contracts.ReleaseStatePublished || published.PublishedAt == nil {
+		t.Fatalf("decode published release %s: value=%#v error=%v", value.AgentID, published, err)
+	}
+}
+
+func challengeService(t *testing.T, endpoint string) string {
+	t.Helper()
+	parsed, err := url.Parse(endpoint)
+	if err != nil {
+		t.Fatalf("parse challenge endpoint: %v", err)
+	}
+	switch parsed.Hostname() {
+	case "runtime-a":
+		return "runtime-a"
+	case "runtime-b":
+		return "runtime-b"
+	default:
+		t.Fatalf("endpoint %q has no acceptance challenge service", endpoint)
+		return ""
+	}
+}
+
+func writeChallengeProof(t *testing.T, composeFile, service, challengeID, proof string) {
+	t.Helper()
+	command := exec.CommandContext(t.Context(), "docker", "compose", "--file", composeFile, "exec", "-T", service, "sh", "-c", `umask 077; cat > "$NEKIRO_AGENT_CHALLENGE_DIRECTORY/$1"`, "sh", challengeID)
+	command.Stdin = strings.NewReader(proof)
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("write %s challenge proof: %v output=%s", service, err, output)
+	}
+}
+
+func removeChallengeProof(t *testing.T, composeFile, service, challengeID string) {
+	t.Helper()
+	command := exec.CommandContext(t.Context(), "docker", "compose", "--file", composeFile, "exec", "-T", service, "sh", "-c", `rm "$NEKIRO_AGENT_CHALLENGE_DIRECTORY/$1"`, "sh", challengeID)
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("remove %s challenge proof: %v output=%s", service, err, output)
 	}
 }
 

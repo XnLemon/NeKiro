@@ -19,7 +19,7 @@ func TestCheckSchemaRequiresDatabaseAndPropagatesQueryFailure(t *testing.T) {
 }
 
 func TestCheckSchemaAcceptsExactShapeAndRejectsMismatch(t *testing.T) {
-	ready := []any{int32(ExpectedSchemaVersion), 15, 19, 15, 19, true, true, true, true}
+	ready := []any{int32(ExpectedSchemaVersion), 17, 21, 17, 21, true, true, true, true}
 	if err := CheckSchema(context.Background(), rowQuerierStub{row: scanRow{values: ready}}); err != nil {
 		t.Fatalf("exact schema rejected: %v", err)
 	}

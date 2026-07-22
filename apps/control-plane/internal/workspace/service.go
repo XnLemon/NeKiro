@@ -84,12 +84,12 @@ func (service *Service) Install(ctx context.Context, caller AuthenticatedCaller,
 	if current {
 		return contracts.Installation{}, ErrConflict
 	}
-	selected, err := service.catalog.SelectPublished(ctx, request.AgentID, request.VersionConstraint)
+	selected, err := service.catalog.SelectInstallable(ctx, request.AgentID, request.VersionConstraint)
 	if err != nil {
 		return contracts.Installation{}, mapCatalogError(err)
 	}
-	if selected.Status != catalog.PublicationPublished {
-		return contracts.Installation{}, ErrDependency
+	if err := validateReleaseEligibility(selected, releaseID(selected)); err != nil {
+		return contracts.Installation{}, err
 	}
 	permissions, err := validatePermissionSubset(selected.Card, request.AcceptedPermissions)
 	if err != nil {
@@ -106,6 +106,7 @@ func (service *Service) Install(ctx context.Context, caller AuthenticatedCaller,
 	installation := contracts.Installation{
 		InstallationID: installationID, WorkspaceID: workspaceID, AgentID: request.AgentID,
 		VersionConstraint: request.VersionConstraint, InstalledVersion: selected.Card.Version,
+		InstalledReleaseID:  releaseID(selected),
 		AcceptedPermissions: permissions, Status: "enabled", InstalledAt: now, UpdatedAt: now,
 	}
 	if err := service.validator.ValidateInstallation(installation); err != nil {
@@ -218,8 +219,8 @@ func (service *Service) Resolve(ctx context.Context, request contracts.ResolveAg
 	if err != nil {
 		return contracts.ResolveAgentResponse{}, mapCatalogError(err)
 	}
-	if version.Status != catalog.PublicationPublished {
-		return contracts.ResolveAgentResponse{}, ErrAgentDisabled
+	if err := validateReleaseEligibility(version, installation.InstalledReleaseID); err != nil {
+		return contracts.ResolveAgentResponse{}, err
 	}
 	var skill *contracts.AgentSkill
 	for index := range version.Card.Skills {
@@ -231,9 +232,11 @@ func (service *Service) Resolve(ctx context.Context, request contracts.ResolveAg
 	if skill == nil || !containsAll(installation.AcceptedPermissions, skill.RequiredPermissions) {
 		return contracts.ResolveAgentResponse{}, ErrCapabilityNotAllowed
 	}
+	releaseID, cardDigest := releaseProvenance(version, installation.InstalledReleaseID)
 	response := contracts.ResolveAgentResponse{Card: version.Card, Installation: contracts.ResolvedInstallation{
 		InstallationID: installation.InstallationID, WorkspaceID: installation.WorkspaceID,
 		AgentID: installation.AgentID, InstalledVersion: installation.InstalledVersion,
+		InstalledReleaseID: releaseID, AgentCardDigest: cardDigest,
 		AcceptedPermissions: installation.AcceptedPermissions, Status: installation.Status,
 	}}
 	if err := service.validator.ValidateResolveAgentResponseForRequest(request, response); err != nil {
@@ -275,7 +278,7 @@ func (service *Service) ResolveInstalledVersion(ctx context.Context, request con
 	if err != nil {
 		return contracts.ResolveInstalledVersionResponse{}, err
 	}
-	return contracts.ResolveInstalledVersionResponse{Version: authorized.AgentCardVersion}, nil
+	return contracts.ResolveInstalledVersionResponse{Version: authorized.AgentCardVersion, ReleaseID: authorized.AgentReleaseID, AgentCardDigest: authorized.AgentCardDigest}, nil
 }
 
 func (service *Service) resolveAuthorizedInvocation(ctx context.Context, workspaceID, agentID, capability string) (AuthorizedInvocation, error) {
@@ -296,8 +299,8 @@ func (service *Service) resolveAuthorizedInvocation(ctx context.Context, workspa
 	if err != nil {
 		return AuthorizedInvocation{}, mapCatalogError(err)
 	}
-	if version.Status != catalog.PublicationPublished {
-		return AuthorizedInvocation{}, ErrAgentDisabled
+	if err := validateReleaseEligibility(version, installation.InstalledReleaseID); err != nil {
+		return AuthorizedInvocation{}, err
 	}
 	var required []string
 	found := false
@@ -311,7 +314,55 @@ func (service *Service) resolveAuthorizedInvocation(ctx context.Context, workspa
 	if !found || !containsAll(installation.AcceptedPermissions, required) {
 		return AuthorizedInvocation{}, ErrCapabilityNotAllowed
 	}
-	return AuthorizedInvocation{AgentCardVersion: installation.InstalledVersion}, nil
+	releaseID, cardDigest := releaseProvenance(version, installation.InstalledReleaseID)
+	return AuthorizedInvocation{AgentCardVersion: installation.InstalledVersion, AgentReleaseID: releaseID, AgentCardDigest: cardDigest}, nil
+}
+
+func releaseID(version catalog.AgentVersion) string {
+	if version.Release == nil {
+		return ""
+	}
+	return version.Release.ReleaseID
+}
+
+func releaseProvenance(version catalog.AgentVersion, installedReleaseID string) (string, string) {
+	if installedReleaseID == "" {
+		return "", ""
+	}
+	return version.Release.ReleaseID, hex.EncodeToString(version.Release.CardDigest[:])
+}
+
+func validateReleaseEligibility(version catalog.AgentVersion, installedReleaseID string) error {
+	if installedReleaseID == "" {
+		if version.Status != catalog.PublicationPublished {
+			return ErrAgentDisabled
+		}
+		if !version.LegacyUnverified {
+			return ErrReleaseUnpublished
+		}
+		return nil
+	}
+	if version.Release == nil {
+		return ErrDependency
+	}
+	release := version.Release
+	if release.ReleaseID == "" || installedReleaseID != release.ReleaseID ||
+		release.AgentID != version.Card.AgentID || release.AgentCardVersion != version.Card.Version || release.CardDigest != version.CardDigest {
+		return ErrDependency
+	}
+	switch release.State {
+	case catalog.ReleasePublished:
+		if version.Status != catalog.PublicationPublished {
+			return ErrDependency
+		}
+		return nil
+	case catalog.ReleaseSuspended:
+		return ErrReleaseSuspended
+	case catalog.ReleaseRevoked:
+		return ErrReleaseRevoked
+	default:
+		return ErrReleaseUnpublished
+	}
 }
 
 func validConstraint(value string) bool {
@@ -374,6 +425,14 @@ func mapCatalogError(err error) error {
 		return ErrInvalid
 	case errors.Is(err, catalog.ErrNotFound):
 		return ErrNotFound
+	case errors.Is(err, catalog.ErrReleaseSuspended):
+		return ErrReleaseSuspended
+	case errors.Is(err, catalog.ErrReleaseRevoked):
+		return ErrReleaseRevoked
+	case errors.Is(err, catalog.ErrReleaseUnpublished):
+		return ErrReleaseUnpublished
+	case errors.Is(err, catalog.ErrReleaseUnavailable):
+		return ErrReleaseUnpublished
 	case errors.Is(err, catalog.ErrConflict):
 		return ErrConflict
 	case errors.Is(err, catalog.ErrForbidden):

@@ -2,53 +2,44 @@
 
 ## Consistency result
 
-**PASS for Slice A planning; implementation is scoped to T001–T008.**
+**PASS for Slice B planning; implementation is scoped to T009–T011.**
 
 - Constitution: provider/release verification is a Control Plane prerequisite
   for the Phase 1 loop and does not introduce runtime-framework behavior.
-- Spec ↔ Plan: endpoint proof, network restrictions, typed failures, secret
-  safety, and compatibility are represented in both artifacts.
-- Plan ↔ Tasks: T001–T008 cover the complete Slice A design; later slices are
-  explicitly deferred and dependency-ordered.
-- Contracts ↔ ownership: Registry owns provider/binding/challenge facts;
-  Gateway exposes only versioned northbound operations; Router and Workspace
-  are not given storage access.
-- Fallback policy: no default endpoint, localhost exception, retry, redirect,
-  empty success, or dependency-to-business-state conversion is introduced.
+- Spec → Plan: release binding, state transitions, typed failures, secret
+  safety, compatibility, and exact Workspace pins are represented in both
+  artifacts.
+- Plan → Tasks: T009–T011 cover the release contract, Registry state machine,
+  Workspace gate, migrations, and lifecycle tests; Router credentials and the
+  Client SDK remain explicitly deferred.
+- Contracts → ownership: Registry owns provider/binding/release facts;
+  Workspace owns installation pins; Gateway exposes only versioned operations.
+- Fallback policy: no default release, implicit verification, legacy upgrade,
+  retry, or dependency-to-business-state conversion is introduced.
+
+## Slice B implementation gate
+
+- `AgentRelease` is a separate Registry fact with copied immutable Card,
+  endpoint, provider, binding, and evidence fields; no existing Card payload is
+  rewritten.
+- Release transitions are row-locked and typed. A transition never changes a
+  bound fact, and a revoked release is terminal.
+- Workspace copies `installedReleaseId` for trusted rows and rejects every
+  non-published/non-verified release state. The optional field is limited to
+  explicitly marked pre-v4 rows and is not treated as trust evidence.
+- Catalog and Workspace migration readiness checks are updated with exact
+  columns, FK, state/timestamp, digest, and index assertions before serving.
 
 ## Risks carried into implementation review
 
-1. DNS resolution can change between validation and connect. The HTTP client
-   boundary must retain the approved policy and avoid following redirects.
-2. Challenge proof must be compared in constant time and must not be logged.
-3. Schema/migration readiness must fail closed when a new table or constraint
-   is missing.
-4. Existing legacy published samples must remain readable without being
+1. A binding can be revoked or a provider suspended after release creation;
+   every verification and publish transition must re-read current state.
+2. Release state and the legacy publication projection must commit together so
+   discovery cannot expose a pending or revoked trusted release.
+3. Installation creation and exact resolution must copy the same release ID;
+   a Card version alone is not sufficient trust evidence.
+4. Existing pre-v4 published rows must remain readable without being
    silently upgraded to verified.
-
-## Implementation evidence
-
-- Trusted Publication v1 JSON Schema and OpenAPI define exact Card-version
-  binding, SemVer prerelease/build compatibility, and typed public verification
-  errors.
-- Registry persistence uses migration 003, an Agent-to-Provider first-claim
-  rule, nullable evidence/failure fields, named FK/status/digest checks, and
-  fail-closed readiness checks for required columns and types.
-- Verification performs strict endpoint canonicalization, one-time challenge
-  reservation, constant-time proof comparison, DNS policy checks, destination
-  pinning, redirect rejection, explicit timeout/expiry handling, and TLS hook
-  clearing.
-- Gateway tests assert authenticated forwarding of provider, Agent, Card
-  version, typed public errors, and absence of raw dependency/proof details.
-- Catalog tests cover canonical aliases, reserved/private/loopback/link-local/
-  multicast/unspecified/CGNAT ranges, DNS dependency/empty results, wrong
-  proof, redirect, endpoint unavailability, expiry races, HTTPS pinning,
-  suspended providers, endpoint mismatch, and concurrent challenges.
-- `go test ./...`, `go vet ./apps/control-plane/...`, `golangci-lint run ./...`,
-  `git diff --check`, and Compose config validation with explicit environment
-  passed. PostgreSQL integration and Compose E2E require Docker/PostgreSQL;
-  the local Docker daemon is not available. Race testing is environment
-  blocked because the workstation has no C compiler for CGO.
 
 ## Fallback audit
 

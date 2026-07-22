@@ -234,6 +234,10 @@ func (handler *DispatchHandler) DispatchChild(writer http.ResponseWriter, reques
 		handler.writePreError(writer, dispatchRequest.TraceID, code)
 		return
 	}
+	if err := validateResolvedReleaseProvenance(dispatchRequest, resolved); err != nil {
+		handler.writePreError(writer, dispatchRequest.TraceID, contracts.ErrorCodeDependency)
+		return
+	}
 	if handler.transport != nil && dispatchRequest.Stream {
 		if handler.streaming == nil || handler.ledger == nil {
 			handler.writeCorrelatedError(writer, dispatchRequest, contracts.ErrorCodeRouteNotFound)
@@ -339,6 +343,10 @@ func (handler *DispatchHandler) dispatch(writer http.ResponseWriter, request *ht
 			code = contracts.ErrorCodeTimeout
 		}
 		handler.writeCorrelatedError(writer, dispatchRequest, code)
+		return
+	}
+	if err := validateResolvedReleaseProvenance(dispatchRequest, resolved); err != nil {
+		handler.writeCorrelatedError(writer, dispatchRequest, contracts.ErrorCodeDependency)
 		return
 	}
 	if handler.transport != nil && dispatchRequest.Stream {
@@ -456,6 +464,9 @@ func validateDispatch(value contracts.DispatchInvocationRequestV3) error {
 	if _, err := semver.StrictNewVersion(value.AgentCardVersion); err != nil {
 		return errors.New("dispatch Agent Card version is invalid")
 	}
+	if err := contracts.ValidateInvocationReleaseProvenance(value.AgentReleaseID, value.AgentCardDigest); err != nil {
+		return err
+	}
 	if _, err := contracts.ParseTraceID(string(value.TraceID)); err != nil {
 		return err
 	}
@@ -481,6 +492,9 @@ func validateChildDispatch(value contracts.DispatchInvocationRequestV3) error {
 	if _, err := semver.StrictNewVersion(value.AgentCardVersion); err != nil {
 		return errors.New("child dispatch Agent Card version is invalid")
 	}
+	if err := contracts.ValidateInvocationReleaseProvenance(value.AgentReleaseID, value.AgentCardDigest); err != nil {
+		return err
+	}
 	if _, err := contracts.ParseTraceID(string(value.TraceID)); err != nil {
 		return err
 	}
@@ -493,6 +507,16 @@ func validateChildDispatch(value contracts.DispatchInvocationRequestV3) error {
 	var input map[string]json.RawMessage
 	if json.Unmarshal(value.Input, &input) != nil || input == nil {
 		return errors.New("child dispatch input must be object")
+	}
+	return nil
+}
+
+func validateResolvedReleaseProvenance(request contracts.DispatchInvocationRequestV3, resolved contracts.ResolveAgentResponse) error {
+	if err := contracts.ValidateInvocationReleaseProvenance(resolved.Installation.InstalledReleaseID, resolved.Installation.AgentCardDigest); err != nil {
+		return err
+	}
+	if request.AgentReleaseID != resolved.Installation.InstalledReleaseID || request.AgentCardDigest != resolved.Installation.AgentCardDigest {
+		return errors.New("resolved release provenance does not match dispatch")
 	}
 	return nil
 }
@@ -956,6 +980,8 @@ func lifecycleEvent(request contracts.DispatchInvocationRequestV3, sequence int6
 		WorkspaceID:        request.WorkspaceID,
 		TargetAgentID:      request.TargetAgentID,
 		AgentCardVersion:   request.AgentCardVersion,
+		AgentReleaseID:     request.AgentReleaseID,
+		AgentCardDigest:    request.AgentCardDigest,
 		Capability:         request.Capability,
 	}
 }
@@ -1005,7 +1031,9 @@ func errorStatus(code contracts.PlatformErrorCode) int {
 		return http.StatusConflict
 	case contracts.ErrorCodeUnauthenticated:
 		return http.StatusUnauthorized
-	case contracts.ErrorCodeForbidden, contracts.ErrorCodeCapabilityNotAllowed, contracts.ErrorCodeInstallationDisabled, contracts.ErrorCodeAgentDisabled:
+	case contracts.ErrorCodeForbidden, contracts.ErrorCodeCapabilityNotAllowed, contracts.ErrorCodeInstallationDisabled,
+		contracts.ErrorCodeAgentDisabled, contracts.ErrorCodeAgentReleaseUnpublished,
+		contracts.ErrorCodeAgentReleaseSuspended, contracts.ErrorCodeAgentReleaseRevoked:
 		return http.StatusForbidden
 	case contracts.ErrorCodeAgentNotInstalled, contracts.ErrorCodeNotFound:
 		return http.StatusNotFound

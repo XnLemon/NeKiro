@@ -207,7 +207,9 @@ func invocationErrorStatus(code contracts.PlatformErrorCode) (int, error) {
 		return http.StatusNotFound, nil
 	case contracts.ErrorCodeNotAcceptable:
 		return http.StatusNotAcceptable, nil
-	case contracts.ErrorCodeConflict, contracts.ErrorCodeInstallationDisabled, contracts.ErrorCodeAgentDisabled, contracts.ErrorCodeCanceled:
+	case contracts.ErrorCodeConflict, contracts.ErrorCodeInstallationDisabled, contracts.ErrorCodeAgentDisabled,
+		contracts.ErrorCodeAgentReleaseUnpublished, contracts.ErrorCodeAgentReleaseSuspended,
+		contracts.ErrorCodeAgentReleaseRevoked, contracts.ErrorCodeCanceled:
 		return http.StatusConflict, nil
 	case contracts.ErrorCodePayloadTooLarge:
 		return http.StatusRequestEntityTooLarge, nil

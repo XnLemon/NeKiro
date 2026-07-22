@@ -72,6 +72,8 @@ func (service *Service) Dispatch(
 		WorkspaceID:      workspaceID,
 		TargetAgentID:    request.AgentID,
 		AgentCardVersion: authorized.AgentCardVersion,
+		AgentReleaseID:   authorized.AgentReleaseID,
+		AgentCardDigest:  authorized.AgentCardDigest,
 		Capability:       request.Capability,
 		Input:            input,
 		Stream:           request.Stream,

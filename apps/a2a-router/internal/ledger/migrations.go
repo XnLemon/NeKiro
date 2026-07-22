@@ -11,15 +11,19 @@ import (
 	"github.com/jackc/tern/v2/migrate"
 )
 
-const ExpectedSchemaVersion int32 = 1
+const ExpectedSchemaVersion int32 = 2
 
 var ErrSchemaVersionMismatch = errors.New("ledger schema version mismatch")
 
 //go:embed 001_ledger.sql
 var migration001 []byte
 
+//go:embed 002_release_provenance.sql
+var migration002 []byte
+
 var migrationFiles = fstest.MapFS{
-	"001_ledger.sql": &fstest.MapFile{Data: migration001, Mode: 0o444},
+	"001_ledger.sql":             &fstest.MapFile{Data: migration001, Mode: 0o444},
+	"002_release_provenance.sql": &fstest.MapFile{Data: migration002, Mode: 0o444},
 }
 
 type RowQuerier interface {
@@ -66,23 +70,25 @@ SELECT version,
        (SELECT count(*) FROM information_schema.columns WHERE table_schema = 'ledger' AND table_name = 'invocation_events'),
        (SELECT count(*) FROM information_schema.columns
         WHERE table_schema = 'ledger' AND table_name = 'invocations'
-          AND ((column_name IN ('invocation_id','root_task_id','parent_invocation_id','trace_id','caller_id','workspace_id','target_agent_id','agent_card_version','capability')
+          AND ((column_name IN ('invocation_id','root_task_id','parent_invocation_id','trace_id','caller_id','workspace_id','target_agent_id','agent_card_version','agent_release_id','capability')
                 AND data_type = 'character varying' AND character_maximum_length = 128 AND collation_name = 'C')
             OR (column_name IN ('caller_type','status') AND data_type = 'character varying' AND character_maximum_length = 16 AND collation_name = 'C')
+            OR (column_name = 'agent_card_digest' AND data_type = 'bytea')
             OR (column_name = 'error_code' AND data_type = 'character varying' AND character_maximum_length = 64 AND collation_name = 'C')
             OR (column_name = 'latency_ms' AND data_type = 'bigint')
             OR (column_name IN ('created_at','updated_at') AND data_type = 'timestamp with time zone' AND datetime_precision = 6))
-          AND is_nullable = CASE WHEN column_name IN ('parent_invocation_id','latency_ms','error_code') THEN 'YES' ELSE 'NO' END),
+          AND is_nullable = CASE WHEN column_name IN ('parent_invocation_id','agent_release_id','agent_card_digest','latency_ms','error_code') THEN 'YES' ELSE 'NO' END),
        (SELECT count(*) FROM information_schema.columns
         WHERE table_schema = 'ledger' AND table_name = 'invocation_events'
-          AND ((column_name IN ('event_id','invocation_id','root_task_id','parent_invocation_id','trace_id','caller_id','workspace_id','target_agent_id','agent_card_version','capability')
+          AND ((column_name IN ('event_id','invocation_id','root_task_id','parent_invocation_id','trace_id','caller_id','workspace_id','target_agent_id','agent_card_version','agent_release_id','capability')
                 AND data_type = 'character varying' AND character_maximum_length = 128 AND collation_name = 'C')
             OR (column_name IN ('event_type','status','caller_type') AND data_type = 'character varying' AND character_maximum_length = 16 AND collation_name = 'C')
+            OR (column_name = 'agent_card_digest' AND data_type = 'bytea')
             OR (column_name = 'error_code' AND data_type = 'character varying' AND character_maximum_length = 64 AND collation_name = 'C')
             OR (column_name IN ('sequence','chunk_index','chunk_bytes','latency_ms') AND data_type = 'bigint')
             OR (column_name = 'occurred_at' AND data_type = 'timestamp with time zone' AND datetime_precision = 6))
-          AND is_nullable = CASE WHEN column_name IN ('parent_invocation_id','chunk_index','chunk_bytes','latency_ms','error_code') THEN 'YES' ELSE 'NO' END),
-       (SELECT count(*) = 10 AND bool_and(
+          AND is_nullable = CASE WHEN column_name IN ('parent_invocation_id','agent_release_id','agent_card_digest','chunk_index','chunk_bytes','latency_ms','error_code') THEN 'YES' ELSE 'NO' END),
+       (SELECT count(*) = 13 AND bool_and(
             convalidated AND NOT condeferrable AND NOT condeferred AND
             CASE conname
               WHEN 'invocations_pkey' THEN contype = 'p' AND conkey = ARRAY[1]::smallint[]
@@ -97,11 +103,14 @@ SELECT version,
               WHEN 'invocations_error_code' THEN contype = 'c' AND conkey = ARRAY[13]::smallint[] AND NOT connoinherit
               WHEN 'invocations_timestamp_order' THEN contype = 'c' AND conkey = ARRAY[14,15]::smallint[] AND NOT connoinherit
               WHEN 'invocations_terminal_shape' THEN contype = 'c' AND conkey = ARRAY[11,12,13]::smallint[] AND NOT connoinherit
+              WHEN 'invocations_release_id_format' THEN contype = 'c' AND conkey = ARRAY[16]::smallint[] AND NOT connoinherit
+              WHEN 'invocations_release_digest_length' THEN contype = 'c' AND conkey = ARRAY[17]::smallint[] AND NOT connoinherit
+              WHEN 'invocations_release_provenance_pair' THEN contype = 'c' AND conkey = ARRAY[16,17]::smallint[] AND NOT connoinherit
               ELSE false
             END
             AND (contype <> 'c' OR pg_get_constraintdef(oid, true) <> 'CHECK (true)')
         ) FROM pg_constraint WHERE conrelid = to_regclass('ledger.invocations')),
-       (SELECT count(*) = 12 AND bool_and(
+       (SELECT count(*) = 15 AND bool_and(
             convalidated AND NOT condeferrable AND NOT condeferred AND
             CASE conname
               WHEN 'invocation_events_pkey' THEN contype = 'p' AND conkey = ARRAY[1]::smallint[]
@@ -118,6 +127,9 @@ SELECT version,
               WHEN 'invocation_events_field_shape' THEN contype = 'c' AND conkey = ARRAY[5,16,17,18,19]::smallint[] AND NOT connoinherit
               WHEN 'invocation_events_terminal_error' THEN contype = 'c' AND conkey = ARRAY[5,19]::smallint[] AND NOT connoinherit
               WHEN 'invocation_events_error_code' THEN contype = 'c' AND conkey = ARRAY[19]::smallint[] AND NOT connoinherit
+              WHEN 'invocation_events_release_id_format' THEN contype = 'c' AND conkey = ARRAY[20]::smallint[] AND NOT connoinherit
+              WHEN 'invocation_events_release_digest_length' THEN contype = 'c' AND conkey = ARRAY[21]::smallint[] AND NOT connoinherit
+              WHEN 'invocation_events_release_provenance_pair' THEN contype = 'c' AND conkey = ARRAY[20,21]::smallint[] AND NOT connoinherit
               ELSE false
             END
             AND (contype <> 'c' OR pg_get_constraintdef(oid, true) <> 'CHECK (true)')
@@ -157,8 +169,8 @@ FROM ledger.schema_version`).Scan(
 	if err != nil {
 		return fmt.Errorf("read ledger schema: %w", err)
 	}
-	if version != ExpectedSchemaVersion || projectionColumns != 15 || eventColumns != 19 ||
-		projectionColumnShape != 15 || eventColumnShape != 19 ||
+	if version != ExpectedSchemaVersion || projectionColumns != 17 || eventColumns != 21 ||
+		projectionColumnShape != 17 || eventColumnShape != 21 ||
 		!projectionConstraintsReady || !eventConstraintsReady || !indexesReady || !immutableTrigger {
 		return ErrSchemaVersionMismatch
 	}

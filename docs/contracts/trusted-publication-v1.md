@@ -16,7 +16,31 @@ does not permit Console or client applications to call the Agent directly.
    and SHA-256 evidence digest, never the proof.
 
 Creating a verified endpoint binding does not publish an Agent Release. The
-immutable release state machine is delivered in Spec 023 Slice B / Issue #49.
+release lifecycle endpoints create an immutable release, verify a pending
+binding, publish the exact verified release, and suspend/revoke without
+changing any bound fact.
+
+Workspace installation copies the exact published Release ID. The Catalog
+migration marks every pre-v4 published row, including the Phase 1 samples, as
+`legacy_unverified`; newly registered or old-API-published versions without a
+Release cannot use the legacy installation path. For a trusted installation,
+version resolution evaluates the highest SemVer match for the requested
+constraint and does not silently downgrade when that release fails the trust
+gate.
+Gateway Dispatch, Router lifecycle events, and the append-only Ledger persist
+the Release ID and canonical Card SHA-256 digest as metadata. These fields are
+optional only for the explicitly pre-v4 legacy compatibility path and are
+always omitted as a pair there. The absent pair is the explicit
+legacy/unverified encoding for existing Invocation Event 0.3 payloads; Catalog
+still requires its internal `legacy_unverified` marker before creating one.
+Control Plane exact resolution returns the Catalog-owned pair, and Router
+rejects an omitted or mismatched dispatch pair before Agent transport or Ledger
+writes. Router does not recompute the digest from normalized Card response JSON.
+
+Workspace and invocation boundaries expose Release gate failures without raw
+storage detail: `AGENT_RELEASE_UNPUBLISHED`, `AGENT_RELEASE_SUSPENDED`, and
+`AGENT_RELEASE_REVOKED` remain distinct from `INSTALLATION_DISABLED` and
+`AGENT_DISABLED`.
 
 ## Network policy
 
@@ -38,6 +62,13 @@ The following settings are required:
   hosts)
 
 The verification timeout must be shorter than the challenge TTL.
+
+The Compose Sample Agents expose the same well-known route from an explicitly
+configured `NEKIRO_AGENT_CHALLENGE_DIRECTORY`. The operator writes the
+exact one-time proof to a file named exactly after `challengeId`, without
+adding a trailing newline, and removes it after challenge completion. This
+Agent-side directory has no default; a missing, blank, relative, or malformed
+path fails Sample Agent startup instead of silently selecting storage.
 
 ## Failure semantics
 

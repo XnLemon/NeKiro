@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/Nene7ko/NeKiro/contracts"
@@ -30,13 +31,14 @@ func TestRouterClientUsesOnlyFrozenInternalV3Direction(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	request := contracts.DispatchInvocationRequestV3{InvocationID: "inv-a", RootTaskID: "task-a", TraceID: "trace-a", Caller: contracts.Caller{Type: "user", ID: "owner-a"}, WorkspaceID: "workspace-a", TargetAgentID: "agent-a", AgentCardVersion: "1.0.0", Capability: "capability-a", Input: []byte(`{}`), Stream: true}
+	digest := strings.Repeat("a", 64)
+	request := contracts.DispatchInvocationRequestV3{InvocationID: "inv-a", RootTaskID: "task-a", TraceID: "trace-a", Caller: contracts.Caller{Type: "user", ID: "owner-a"}, WorkspaceID: "workspace-a", TargetAgentID: "agent-a", AgentCardVersion: "1.0.0", AgentReleaseID: "release-a", AgentCardDigest: digest, Capability: "capability-a", Input: []byte(`{}`), Stream: true}
 	response, err := client.Dispatch(context.Background(), request, contracts.InvocationResultModeSSE)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer func() { _ = response.Body.Close() }()
-	if received.InvocationID != request.InvocationID || response.StatusCode != 200 || response.ContentType != "text/event-stream" || response.Headers.Get("x-nek-trace-id") != "trace-router" {
+	if received.InvocationID != request.InvocationID || received.AgentReleaseID != request.AgentReleaseID || received.AgentCardDigest != digest || response.StatusCode != 200 || response.ContentType != "text/event-stream" || response.Headers.Get("x-nek-trace-id") != "trace-router" {
 		t.Fatalf("received=%#v response=%#v", received, response)
 	}
 }

@@ -132,6 +132,7 @@ services:
       dockerfile: agents/runtime-b/Dockerfile
     environment:
       RUNTIME_B_LISTEN_ADDR: "0.0.0.0:8092"
+      NEKIRO_AGENT_CHALLENGE_DIRECTORY: "/tmp/nekiro-challenges"
     networks:
       - platform-internal
     healthcheck:
@@ -154,6 +155,7 @@ services:
       RUNTIME_A_TARGET_CAPABILITY: "runtime.echo"
       RUNTIME_A_RESPONSE_LIMIT_BYTES: "${RUNTIME_A_RESPONSE_LIMIT_BYTES:?RUNTIME_A_RESPONSE_LIMIT_BYTES must be set and non-empty}"
       RUNTIME_A_EVENT_LIMIT_BYTES: "${RUNTIME_A_EVENT_LIMIT_BYTES:?RUNTIME_A_EVENT_LIMIT_BYTES must be set and non-empty}"
+      NEKIRO_AGENT_CHALLENGE_DIRECTORY: "/tmp/nekiro-challenges"
     depends_on:
       a2a-router:
         condition: service_healthy

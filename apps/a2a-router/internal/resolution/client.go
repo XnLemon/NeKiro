@@ -215,6 +215,9 @@ func (client *Client) ResolveInstalledVersion(ctx context.Context, requestValue 
 	if _, err := semver.StrictNewVersion(resolved.Version); err != nil {
 		return contracts.ResolveInstalledVersionResponse{}, errors.New("control plane version resolution returned an invalid version")
 	}
+	if err := contracts.ValidateInvocationReleaseProvenance(resolved.ReleaseID, resolved.AgentCardDigest); err != nil {
+		return contracts.ResolveInstalledVersionResponse{}, fmt.Errorf("control plane version resolution returned invalid release provenance: %w", err)
+	}
 	return resolved, nil
 }
 
@@ -238,6 +241,9 @@ func validateInstalledVersionFailure(statusCode int, request contracts.ResolveIn
 	case http.StatusForbidden:
 		allowedCode = platformError.Code == contracts.ErrorCodeInstallationDisabled ||
 			platformError.Code == contracts.ErrorCodeAgentDisabled ||
+			platformError.Code == contracts.ErrorCodeAgentReleaseUnpublished ||
+			platformError.Code == contracts.ErrorCodeAgentReleaseSuspended ||
+			platformError.Code == contracts.ErrorCodeAgentReleaseRevoked ||
 			platformError.Code == contracts.ErrorCodeCapabilityNotAllowed
 		requiresCorrelated = true
 	case http.StatusNotFound:

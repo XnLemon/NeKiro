@@ -56,6 +56,19 @@ unspecified behavior explicit:
 - all five Catalog operations require Gateway Bearer authentication;
 - every Catalog response carries the Gateway-assigned `x-nek-trace-id`;
 - registration and lifecycle mutation enforce immutable owner identity;
+- Trusted Publication v1 release records copy exact Card, endpoint binding,
+  provider, and digest facts; `installedReleaseId` is an additive optional
+  Installation field for trusted pins. Catalog migration marks every pre-v4
+  published row as `legacy_unverified`; a missing Release on
+  a new version is not a compatibility signal. Trusted invocation metadata
+  carries the exact Release ID and Card digest into Router/Ledger records;
+  the absence of both fields is the explicit legacy/unverified wire encoding
+  retained for historical events. Control Plane Internal v2 additively returns
+  the exact Catalog-owned Card digest beside `installedReleaseId`, and Router
+  rejects dispatch provenance that omits or differs from that pair instead of
+  recomputing historical Card bytes;
+- Platform Error v3/v4 add stable Release-state codes for unpublished,
+  suspended, and revoked Releases; no previously valid error payload changes;
 - published exact versions are authenticated-visible, while draft and disabled
   exact versions are owner-visible only;
 - omitted discovery limit is the product policy `25`, explicit limits are

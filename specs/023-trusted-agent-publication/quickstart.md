@@ -8,6 +8,13 @@
 5. Continue with the release lifecycle in Sub-Issue #49. An endpoint binding
    alone does not publish or install an Agent.
 
+For the repository Sample Agents, configure the absolute
+`NEKIRO_AGENT_CHALLENGE_DIRECTORY`, write the exact returned proof without
+adding a newline to `{directory}/{challengeId}`, complete the challenge through
+the Gateway, then remove the proof file. The Sample Agent fails startup when
+the directory configuration is absent or invalid; it never chooses a fallback
+directory.
+
 The service does not retry a failed challenge, follow redirects, or select a
 different endpoint. Correct the provider endpoint or explicitly change the
 approved network policy, then create a new challenge.

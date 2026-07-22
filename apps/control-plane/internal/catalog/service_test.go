@@ -39,7 +39,7 @@ func (store *fakeStore) Register(_ context.Context, version AgentVersion) (Agent
 func (store *fakeStore) Get(context.Context, string, string) (AgentVersion, error) {
 	return store.getEntry, store.getErr
 }
-func (store *fakeStore) Published(context.Context, string) ([]AgentVersion, error) {
+func (store *fakeStore) InstallationCandidates(context.Context, string) ([]AgentVersion, error) {
 	return store.published, store.publishedErr
 }
 func (store *fakeStore) Publish(_ context.Context, _, _ string, callerID string, at time.Time) (AgentVersion, error) {
@@ -148,6 +148,48 @@ func TestServiceSearchReturnsExplicitItemsAndCursor(t *testing.T) {
 	}
 	if result.Entries == nil || len(result.Entries) != 0 || result.NextCursor != nil {
 		t.Fatalf("empty search result = %#v", result)
+	}
+}
+
+func TestSelectInstallableGatesHighestMatchingReleaseState(t *testing.T) {
+	card := testCard("agent-release-gate", "owner-a", "1.0.0")
+	digest := [32]byte{1}
+	tests := []struct {
+		name  string
+		state ReleaseState
+		want  error
+	}{
+		{name: "unverified", want: ErrReleaseUnpublished},
+		{name: "pending", state: ReleasePendingVerification, want: ErrReleaseUnpublished},
+		{name: "suspended", state: ReleaseSuspended, want: ErrReleaseSuspended},
+		{name: "revoked", state: ReleaseRevoked, want: ErrReleaseRevoked},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			candidate := AgentVersion{Card: card, CardDigest: digest, Status: PublicationPublished}
+			if test.name == "unverified" {
+				candidate.Release = nil
+			} else {
+				candidate.Release = &AgentRelease{ReleaseID: "release-" + test.name, AgentID: card.AgentID, AgentCardVersion: card.Version, CardDigest: digest, State: test.state}
+			}
+			service := newTestService(t, &fakeStore{published: []AgentVersion{candidate}}, time.Now())
+			if _, err := service.SelectInstallable(context.Background(), card.AgentID, "^1.0.0"); !errors.Is(err, test.want) {
+				t.Fatalf("selection error = %v, want %v", err, test.want)
+			}
+		})
+	}
+
+	trusted := AgentVersion{Card: card, CardDigest: digest, Status: PublicationPublished, Release: &AgentRelease{
+		ReleaseID: "release-trusted", AgentID: card.AgentID, AgentCardVersion: card.Version, CardDigest: digest, State: ReleasePublished,
+	}}
+	higher := card
+	higher.Version = "2.0.0"
+	service := newTestService(t, &fakeStore{published: []AgentVersion{
+		trusted,
+		{Card: higher, Status: PublicationPublished},
+	}}, time.Now())
+	if _, err := service.SelectInstallable(context.Background(), card.AgentID, ">=1.0.0"); !errors.Is(err, ErrReleaseUnpublished) {
+		t.Fatalf("highest untrusted version error = %v, want unpublished", err)
 	}
 }
 

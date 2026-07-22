@@ -57,6 +57,24 @@ func TestClientResolveSendsExactInternalV2Request(t *testing.T) {
 	}
 }
 
+func TestClientResolveAcceptsExactTrustedProvenancePair(t *testing.T) {
+	digest := strings.Repeat("a", 64)
+	trustedResponse := strings.Replace(validResolveResponse, `"acceptedPermissions":[]`, `"installedReleaseId":"release-a","agentCardDigest":"`+digest+`","acceptedPermissions":[]`, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		writer.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(writer, trustedResponse)
+	}))
+	defer server.Close()
+	client, err := NewClient(server.Client(), server.URL, "control-token", 4096)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolved, err := client.Resolve(context.Background(), validResolveRequest())
+	if err != nil || resolved.Installation.InstalledReleaseID != "release-a" || resolved.Installation.AgentCardDigest != digest {
+		t.Fatalf("trusted resolution = %#v, %v", resolved, err)
+	}
+}
+
 func TestClientResolveMapsTypedFailuresAndDependenciesWithoutRetry(t *testing.T) {
 	calls := 0
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
@@ -83,6 +101,7 @@ func TestClientResolveRejectsSuccessThatChangesAuthorizedFacts(t *testing.T) {
 		{name: "changed Card Agent", body: strings.Replace(validResolveResponse, `"agentId":"agent-a"`, `"agentId":"agent-b"`, 1)},
 		{name: "changed Workspace", body: strings.Replace(validResolveResponse, `"workspaceId":"workspace-a"`, `"workspaceId":"workspace-b"`, 1)},
 		{name: "missing capability", body: strings.Replace(validResolveResponse, `"id":"capability-a"`, `"id":"capability-b"`, 1)},
+		{name: "partial Release provenance", body: strings.Replace(validResolveResponse, `"acceptedPermissions":[]`, `"installedReleaseId":"release-a","acceptedPermissions":[]`, 1)},
 		{name: "unknown member", body: strings.Replace(validResolveResponse, `{"card":`, `{"unexpected":true,"card":`, 1)},
 		{name: "trailing value", body: validResolveResponse + `{}`},
 	} {
@@ -199,6 +218,7 @@ func TestClientResolveInstalledVersionAcceptsDeclaredErrorPhases(t *testing.T) {
 		{name: "correlated bad request", statusCode: http.StatusBadRequest, code: contracts.ErrorCodeValidationError, correlated: true, traceID: requestValue.TraceID},
 		{name: "pre-correlation unauthenticated", statusCode: http.StatusUnauthorized, code: contracts.ErrorCodeUnauthenticated, traceID: "trace-generated"},
 		{name: "correlated forbidden", statusCode: http.StatusForbidden, code: contracts.ErrorCodeCapabilityNotAllowed, correlated: true, traceID: requestValue.TraceID},
+		{name: "correlated revoked release", statusCode: http.StatusForbidden, code: contracts.ErrorCodeAgentReleaseRevoked, correlated: true, traceID: requestValue.TraceID},
 		{name: "correlated not found", statusCode: http.StatusNotFound, code: contracts.ErrorCodeAgentNotInstalled, correlated: true, traceID: requestValue.TraceID},
 		{name: "correlated dependency", statusCode: http.StatusServiceUnavailable, code: contracts.ErrorCodeDependency, correlated: true, traceID: requestValue.TraceID},
 	}
@@ -229,6 +249,38 @@ func TestClientResolveInstalledVersionAcceptsDeclaredErrorPhases(t *testing.T) {
 			var failure *Failure
 			if !errors.As(err, &failure) || failure.StatusCode != test.statusCode || failure.Code != test.code || failure.TraceID != test.traceID {
 				t.Fatalf("failure=%#v err=%v", failure, err)
+			}
+		})
+	}
+}
+
+func TestClientResolveInstalledVersionValidatesReleaseProvenancePair(t *testing.T) {
+	requestValue := validInstalledVersionRequest()
+	for _, test := range []struct {
+		name  string
+		body  string
+		valid bool
+	}{
+		{name: "legacy pair absent", body: `{"version":"1.0.0"}`, valid: true},
+		{name: "trusted pair present", body: `{"version":"1.0.0","releaseId":"release-a","agentCardDigest":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}`, valid: true},
+		{name: "release only", body: `{"version":"1.0.0","releaseId":"release-a"}`},
+		{name: "digest only", body: `{"version":"1.0.0","agentCardDigest":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}`},
+		{name: "invalid digest", body: `{"version":"1.0.0","releaseId":"release-a","agentCardDigest":"bad"}`},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+				writer.Header().Set("Content-Type", "application/json")
+				writer.Header().Set("x-nek-trace-id", string(requestValue.TraceID))
+				_, _ = io.WriteString(writer, test.body)
+			}))
+			defer server.Close()
+			client, err := NewClientWithVersionURL(server.Client(), server.URL, server.URL, "control-token", 4096)
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = client.ResolveInstalledVersion(context.Background(), requestValue)
+			if (err == nil) != test.valid {
+				t.Fatalf("valid=%t error=%v", test.valid, err)
 			}
 		})
 	}

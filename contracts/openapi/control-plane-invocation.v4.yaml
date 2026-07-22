@@ -134,6 +134,12 @@ components:
       type: object
       additionalProperties: false
       required: [invocationId, rootTaskId, traceId, caller, workspaceId, targetAgentId, agentCardVersion, capability, status, createdAt, updatedAt]
+      oneOf:
+        - required: [agentReleaseId, agentCardDigest]
+        - not:
+            anyOf:
+              - required: [agentReleaseId]
+              - required: [agentCardDigest]
       properties:
         invocationId: { $ref: ../schemas/common.v1.schema.json#/$defs/invocationId }
         rootTaskId: { $ref: ../schemas/common.v1.schema.json#/$defs/taskId }
@@ -143,6 +149,8 @@ components:
         workspaceId: { $ref: ../schemas/common.v1.schema.json#/$defs/workspaceId }
         targetAgentId: { $ref: ../schemas/common.v1.schema.json#/$defs/agentId }
         agentCardVersion: { $ref: ../schemas/common.v1.schema.json#/$defs/semver }
+        agentReleaseId: { $ref: ../schemas/common.v1.schema.json#/$defs/safeIdentifier }
+        agentCardDigest: { type: string, pattern: '^[0-9a-f]{64}$' }
         capability: { $ref: ../schemas/common.v1.schema.json#/$defs/capabilityId }
         status: { enum: [pending, routing, running, succeeded, failed, canceled, timed_out] }
         latencyMs: { type: integer, minimum: 0 }
@@ -184,7 +192,7 @@ components:
     Forbidden: { description: Pre-acceptance Workspace/capability forbidden, x-platform-error-codes: [FORBIDDEN, CAPABILITY_NOT_ALLOWED], content: { application/json: { schema: { $ref: "#/components/schemas/PreCorrelationPlatformError" } } } }
     NotFound: { description: Pre-acceptance Workspace/installation/resource not found, x-platform-error-codes: [NOT_FOUND, AGENT_NOT_INSTALLED], content: { application/json: { schema: { $ref: "#/components/schemas/PreCorrelationPlatformError" } } } }
     NotAcceptable: { description: Pre-acceptance stream and Accept mismatch, x-platform-error-codes: [NOT_ACCEPTABLE], content: { application/json: { schema: { $ref: "#/components/schemas/PreCorrelationPlatformError" } } } }
-    Conflict: { description: Failure may occur before or after acceptance; correlated shape is mandatory after acceptance, x-platform-error-codes: [CONFLICT, INSTALLATION_DISABLED, AGENT_DISABLED, CANCELED], content: { application/json: { schema: { $ref: "#/components/schemas/PhasePlatformError" } } } }
+    Conflict: { description: Failure may occur before or after acceptance; correlated shape is mandatory after acceptance, x-platform-error-codes: [CONFLICT, INSTALLATION_DISABLED, AGENT_DISABLED, AGENT_RELEASE_UNPUBLISHED, AGENT_RELEASE_SUSPENDED, AGENT_RELEASE_REVOKED, CANCELED], content: { application/json: { schema: { $ref: "#/components/schemas/PhasePlatformError" } } } }
     PayloadTooLarge: { description: Pre-acceptance public request overflow, x-platform-error-codes: [PAYLOAD_TOO_LARGE], content: { application/json: { schema: { $ref: "#/components/schemas/PreCorrelationPlatformError" } } } }
     AgentFailure: { description: Post-acceptance exact Agent/protocol/auth/response-size failure, x-platform-error-codes: [AGENT_AUTH_UNSUPPORTED, AGENT_RESPONSE_TOO_LARGE, AGENT_EXECUTION_FAILED, A2A_PROTOCOL_ERROR], content: { application/json: { schema: { $ref: "#/components/schemas/CorrelatedPlatformError" } } } }
     Unavailable: { description: May occur before/after acceptance; correlated shape is mandatory after acceptance, x-platform-error-codes: [ROUTE_NOT_FOUND, AGENT_UNAVAILABLE, DEPENDENCY_ERROR], content: { application/json: { schema: { $ref: "#/components/schemas/PhasePlatformError" } } } }

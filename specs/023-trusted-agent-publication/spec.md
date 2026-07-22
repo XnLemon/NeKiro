@@ -40,6 +40,9 @@ bound fact requires a new release; historical releases remain queryable.
 Given a Workspace installs an Agent, when version resolution runs, then it
 selects an exact release that is published and verified. Pending, suspended,
 revoked, or unverified releases are rejected with a distinguishable error.
+Resolution evaluates the highest SemVer version matching the requested
+constraint and never silently downgrades to a lower version after that release
+fails the trust gate.
 
 ### Scenario 5: Operator can recover a failed publication
 
@@ -69,10 +72,15 @@ action are visible without exposing challenge secrets or other credentials.
   evidence, and publication timestamps.
 - **R-006 Immutable history**: Once a release is published or revoked, its
   bound facts MUST NOT be updated in place. A changed Card or endpoint MUST
-  create a new release identity.
+  create a new release identity. Because the endpoint is a versioned Agent
+  Card fact, an endpoint change MUST first register a new Card version; one
+  Card version maps to at most one release identity.
 - **R-007 Installation gate**: Workspace installation and invocation MUST
   resolve an exact published, verified release and MUST reject other release
-  states.
+  states. Unpublished/unverified, suspended, and revoked releases MUST produce
+  the distinct stable codes `AGENT_RELEASE_UNPUBLISHED`,
+  `AGENT_RELEASE_SUSPENDED`, and `AGENT_RELEASE_REVOKED`; disabled
+  Installations remain `INSTALLATION_DISABLED`.
 - **R-008 Secret safety**: Challenge values, signing material, API keys, and
   tokens MUST NOT appear in Agent Cards, public responses, logs, errors, or
   Ledger records.
@@ -83,6 +91,16 @@ action are visible without exposing challenge secrets or other credentials.
   and managed invocation remain compatible for already published sample
   Agents. Legacy unverified sample fixtures MUST NOT be treated as evidence
   that production publication is trusted.
+- **R-011 Ledger release provenance**: Every invocation resolved from a trusted
+  release MUST carry the exact `releaseId` and Card digest through the Router
+  into the immutable Invocation Ledger projection and events. Historical
+  pre-v4 published rows MUST be explicitly marked unverified in Catalog, and the
+  absence of both release provenance fields is their wire-level Ledger
+  encoding. Before invoking an Agent or appending Ledger events, Router MUST
+  compare the dispatch provenance pair with the exact Catalog-owned pair
+  returned by Control Plane resolution and fail explicitly on omission or
+  mismatch. A newly registered version MUST NOT become legacy merely because it
+  has no Release row.
 
 ## Non-goals
 
@@ -136,3 +154,33 @@ The retention period for verification evidence and the operator workflow for
 manual suspension are deferred to the operator runbook sub-issue. This Spec
 requires their state and audit category to be visible, but does not invent a
 retention or approval policy.
+
+## Slice B lifecycle decisions (#49)
+
+The Registry stores an `Agent Release` as a separate immutable identity from
+the Agent Card version. A release records the exact Card digest, provider,
+endpoint binding, canonical endpoint origin/path, and verification evidence
+digest. The Card version and release binding are never updated in place; a
+changed Card or endpoint is represented by a new release identity.
+
+Release creation may reference a pending or already verified binding. It
+starts in `pending_verification` for a pending binding and in `verified` for a
+verified binding, copying the exact existing evidence in the latter case. A
+pending release becomes `verified` only after the referenced binding is
+verified, and any release becomes `published` only through an explicit state
+transition. A release can move from `verified` to `published`, and a verified
+or published release can move to `suspended` or `revoked`; terminal `revoked`
+state and all bound facts are immutable. Invalid transitions return a typed
+conflict and never look like not-found or success.
+
+Workspace installations persist the exact `releaseId` when they select a
+trusted release. The field is additive and optional only for historical
+installations that resolve an explicitly marked pre-v4 version; those legacy
+rows remain explicitly unverified and are not eligible for the new release
+state machine. New release rows must have a non-empty release identity. The
+Catalog migration marks every pre-v4 published row explicitly because Trusted
+Publication did not exist when any of them were published;
+post-migration registrations and old publication attempts without a Release
+are not eligible for installation. Trusted invocation projections and events
+persist the pinned Release ID and Card digest so historical Ledger reads cannot
+be reinterpreted after a later publication change.

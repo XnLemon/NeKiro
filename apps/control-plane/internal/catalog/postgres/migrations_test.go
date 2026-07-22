@@ -25,6 +25,7 @@ func TestEmbeddedMigrationsMatchOwnedSQLFiles(t *testing.T) {
 		{name: "schema v1", filename: "001_catalog.sql", embedded: migration001},
 		{name: "schema v2", filename: "002_card_text.sql", embedded: migration002},
 		{name: "schema v3", filename: "003_trusted_publication.sql", embedded: migration003},
+		{name: "schema v4", filename: "004_agent_release.sql", embedded: string(migration004)},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

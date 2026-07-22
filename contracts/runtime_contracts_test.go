@@ -219,6 +219,14 @@ func TestRuntimeContractWorkspaceScopedProjectionAndLineageReads(t *testing.T) {
 	if validator.ValidateInvocationDetailResponseV4("workspace-1", detail) == nil {
 		t.Fatal("cross-Workspace Invocation projection was accepted")
 	}
+	detail = InvocationDetailResponseV4{Invocation: record, Events: []InvocationEventV03{event}}
+	detail.Invocation.AgentReleaseID = "release-projection"
+	detail.Invocation.AgentCardDigest = strings.Repeat("a", 64)
+	detail.Events[0].AgentReleaseID = "release-event"
+	detail.Events[0].AgentCardDigest = strings.Repeat("b", 64)
+	if validator.ValidateInvocationDetailResponseV4("workspace-1", detail) == nil {
+		t.Fatal("Invocation projection/event Release provenance mismatch was accepted")
+	}
 
 	trace := TraceResponseV4{TraceID: "trace-1", Invocations: []InvocationRecordV4{record}}
 	if err := ValidateTraceResponseV4("workspace-1", "trace-1", trace); err != nil {
@@ -442,6 +450,9 @@ func TestRuntimeContractPostAcceptanceErrorsRequireCorrelation(t *testing.T) {
 	agentFailure := document.Paths.Find("/internal/v3/invocations").Post.Responses.Status(502).Value.Content["application/json"].Schema
 	valid := CorrelatedPlatformErrorV4{Code: ErrorCodeAgentAuthUnsupported, Message: platformErrorV4Messages[ErrorCodeAgentAuthUnsupported], TraceID: "trace-1", InvocationID: "inv-1", RootTaskID: "task-1"}
 	validateOpenAPIValue(t, agentFailure, valid)
+	forbidden := document.Paths.Find("/internal/v3/invocations").Post.Responses.Status(403).Value.Content["application/json"].Schema
+	validateOpenAPIValue(t, forbidden, PreCorrelationPlatformErrorV4{Code: ErrorCodeForbidden, Message: platformErrorV4Messages[ErrorCodeForbidden], TraceID: "trace-1"})
+	validateOpenAPIValue(t, forbidden, CorrelatedPlatformErrorV4{Code: ErrorCodeAgentReleaseSuspended, Message: platformErrorV4Messages[ErrorCodeAgentReleaseSuspended], TraceID: "trace-1", InvocationID: "inv-1", RootTaskID: "task-1"})
 }
 
 func TestRuntimeContractStreamV2ValidatorRequiresCorrelatedError(t *testing.T) {
@@ -494,6 +505,13 @@ func TestRuntimeContractSchemasAndContentExclusion(t *testing.T) {
 		Input: json.RawMessage(`{"text":"value"}`), Stream: false,
 	}
 	validateOpenAPIValue(t, document.Components.Schemas["DispatchInvocationRequest"], request)
+	partial := request
+	partial.AgentReleaseID = "release-partial"
+	assertOpenAPIValueRejected(t, document.Components.Schemas["DispatchInvocationRequest"], partial)
+	trusted := request
+	trusted.AgentReleaseID = "release-trusted"
+	trusted.AgentCardDigest = strings.Repeat("a", 64)
+	validateOpenAPIValue(t, document.Components.Schemas["DispatchInvocationRequest"], trusted)
 
 	for _, schemaPath := range []string{
 		"schemas/platform-error.v4.schema.json",
@@ -515,6 +533,35 @@ func TestRuntimeContractSchemasAndContentExclusion(t *testing.T) {
 	eventSchema := readContractJSONObject(t, "schemas/invocation-event.v0.3.schema.json")
 	properties := requiredJSONObject(t, eventSchema, "properties")
 	assertObjectKeysAbsent(t, "Invocation Event 0.3", properties, "input", "result", "chunk", "output", "payload", "endpoint", "credential")
+}
+
+func TestInvocationReleaseProvenanceIsOptionalButAtomic(t *testing.T) {
+	validator, err := NewRuntimeContractValidator()
+	if err != nil {
+		t.Fatal(err)
+	}
+	base := InvocationEventV03{
+		SchemaVersion: RuntimeInvocationEventSchemaVersion, EventID: "event-provenance", Sequence: 0,
+		OccurredAt: "2026-07-16T00:00:00Z", Type: "created", Status: "pending",
+		InvocationID: "inv-provenance", RootTaskID: "task-provenance", TraceID: "trace-provenance",
+		Caller: Caller{Type: "user", ID: "user-provenance"}, WorkspaceID: "workspace-provenance",
+		TargetAgentID: "agent-provenance", AgentCardVersion: "1.0.0", Capability: "capability.read",
+	}
+	if err := validator.ValidateInvocationEventV03(base); err != nil {
+		t.Fatalf("legacy provenance omission rejected: %v", err)
+	}
+	base.AgentReleaseID = "release-provenance"
+	if err := validator.ValidateInvocationEventV03(base); err == nil {
+		t.Fatal("release ID without Card digest accepted")
+	}
+	base.AgentCardDigest = strings.Repeat("a", 64)
+	if err := validator.ValidateInvocationEventV03(base); err != nil {
+		t.Fatalf("trusted provenance rejected: %v", err)
+	}
+	base.AgentCardDigest = strings.Repeat("A", 64)
+	if err := validator.ValidateInvocationEventV03(base); err == nil {
+		t.Fatal("non-canonical Card digest accepted")
+	}
 }
 
 func TestRouterInternalRootRequestRejectsParentInvocationIDOnWire(t *testing.T) {

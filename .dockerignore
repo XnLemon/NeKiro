@@ -7,6 +7,9 @@
 !sdks/agent-sdk/
 !sdks/agent-sdk/**
 !agents/
+!agents/internal/
+!agents/internal/challengeproof/
+!agents/internal/challengeproof/**
 !agents/runtime-a/
 !agents/runtime-a/**
 !agents/runtime-b/

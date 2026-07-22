@@ -52,6 +52,7 @@ func validateInstallationV2Semantics(installation Installation) error {
 func ValidateInstallationImmutablePin(before, after Installation) error {
 	if before.VersionConstraint != after.VersionConstraint ||
 		before.InstalledVersion != after.InstalledVersion ||
+		before.InstalledReleaseID != after.InstalledReleaseID ||
 		len(before.AcceptedPermissions) != len(after.AcceptedPermissions) {
 		return &InstallationSemanticValidationError{RuleID: InstallationRuleImmutablePin}
 	}

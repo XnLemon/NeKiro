@@ -124,8 +124,8 @@ components:
       x-platform-error-codes: [UNAUTHENTICATED]
       content: { application/json: { schema: { $ref: "#/components/schemas/PreCorrelationPlatformError" } } }
     Forbidden:
-      description: Authenticated Workspace or Agent does not match the committed parent principal
-      x-platform-error-codes: [FORBIDDEN]
+      description: Authenticated principal mismatch or target Release is not invokable
+      x-platform-error-codes: [FORBIDDEN, AGENT_RELEASE_UNPUBLISHED, AGENT_RELEASE_SUSPENDED, AGENT_RELEASE_REVOKED]
       content: { application/json: { schema: { $ref: "#/components/schemas/PreCorrelationPlatformError" } } }
     ParentNotFound:
       description: Parent Invocation is absent from the trusted Ledger boundary

@@ -163,6 +163,7 @@ type Installation struct {
 	AgentID             string     `json:"agentId"`
 	VersionConstraint   string     `json:"versionConstraint"`
 	InstalledVersion    string     `json:"installedVersion"`
+	InstalledReleaseID  string     `json:"installedReleaseId,omitempty"`
 	AcceptedPermissions []string   `json:"acceptedPermissions"`
 	Status              string     `json:"status"`
 	InstalledAt         time.Time  `json:"installedAt"`
@@ -193,23 +194,26 @@ type Caller struct {
 type PlatformErrorCode string
 
 const (
-	ErrorCodeValidationError      PlatformErrorCode = "VALIDATION_ERROR"
-	ErrorCodeUnauthenticated      PlatformErrorCode = "UNAUTHENTICATED"
-	ErrorCodeForbidden            PlatformErrorCode = "FORBIDDEN"
-	ErrorCodeNotFound             PlatformErrorCode = "NOT_FOUND"
-	ErrorCodeConflict             PlatformErrorCode = "CONFLICT"
-	ErrorCodeAgentNotInstalled    PlatformErrorCode = "AGENT_NOT_INSTALLED"
-	ErrorCodeInstallationDisabled PlatformErrorCode = "INSTALLATION_DISABLED"
-	ErrorCodeAgentDisabled        PlatformErrorCode = "AGENT_DISABLED"
-	ErrorCodeCapabilityNotAllowed PlatformErrorCode = "CAPABILITY_NOT_ALLOWED"
-	ErrorCodeRouteNotFound        PlatformErrorCode = "ROUTE_NOT_FOUND"
-	ErrorCodeA2AProtocol          PlatformErrorCode = "A2A_PROTOCOL_ERROR"
-	ErrorCodeAgentUnavailable     PlatformErrorCode = "AGENT_UNAVAILABLE"
-	ErrorCodeAgentExecutionFailed PlatformErrorCode = "AGENT_EXECUTION_FAILED"
-	ErrorCodeDependency           PlatformErrorCode = "DEPENDENCY_ERROR"
-	ErrorCodeTimeout              PlatformErrorCode = "TIMEOUT"
-	ErrorCodeCanceled             PlatformErrorCode = "CANCELED"
-	ErrorCodeInternal             PlatformErrorCode = "INTERNAL_ERROR"
+	ErrorCodeValidationError         PlatformErrorCode = "VALIDATION_ERROR"
+	ErrorCodeUnauthenticated         PlatformErrorCode = "UNAUTHENTICATED"
+	ErrorCodeForbidden               PlatformErrorCode = "FORBIDDEN"
+	ErrorCodeNotFound                PlatformErrorCode = "NOT_FOUND"
+	ErrorCodeConflict                PlatformErrorCode = "CONFLICT"
+	ErrorCodeAgentNotInstalled       PlatformErrorCode = "AGENT_NOT_INSTALLED"
+	ErrorCodeInstallationDisabled    PlatformErrorCode = "INSTALLATION_DISABLED"
+	ErrorCodeAgentDisabled           PlatformErrorCode = "AGENT_DISABLED"
+	ErrorCodeAgentReleaseUnpublished PlatformErrorCode = "AGENT_RELEASE_UNPUBLISHED"
+	ErrorCodeAgentReleaseSuspended   PlatformErrorCode = "AGENT_RELEASE_SUSPENDED"
+	ErrorCodeAgentReleaseRevoked     PlatformErrorCode = "AGENT_RELEASE_REVOKED"
+	ErrorCodeCapabilityNotAllowed    PlatformErrorCode = "CAPABILITY_NOT_ALLOWED"
+	ErrorCodeRouteNotFound           PlatformErrorCode = "ROUTE_NOT_FOUND"
+	ErrorCodeA2AProtocol             PlatformErrorCode = "A2A_PROTOCOL_ERROR"
+	ErrorCodeAgentUnavailable        PlatformErrorCode = "AGENT_UNAVAILABLE"
+	ErrorCodeAgentExecutionFailed    PlatformErrorCode = "AGENT_EXECUTION_FAILED"
+	ErrorCodeDependency              PlatformErrorCode = "DEPENDENCY_ERROR"
+	ErrorCodeTimeout                 PlatformErrorCode = "TIMEOUT"
+	ErrorCodeCanceled                PlatformErrorCode = "CANCELED"
+	ErrorCodeInternal                PlatformErrorCode = "INTERNAL_ERROR"
 )
 
 type PlatformError = PlatformErrorV2
@@ -279,6 +283,8 @@ type ResolvedInstallation struct {
 	WorkspaceID         string   `json:"workspaceId"`
 	AgentID             string   `json:"agentId"`
 	InstalledVersion    string   `json:"installedVersion"`
+	InstalledReleaseID  string   `json:"installedReleaseId,omitempty"`
+	AgentCardDigest     string   `json:"agentCardDigest,omitempty"`
 	AcceptedPermissions []string `json:"acceptedPermissions"`
 	Status              string   `json:"status"`
 }

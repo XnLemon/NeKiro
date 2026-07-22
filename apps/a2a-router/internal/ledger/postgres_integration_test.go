@@ -68,6 +68,19 @@ func TestPostgresLedgerLifecycleLineageAndRestart(t *testing.T) {
 	if detail.Invocation.Status != "succeeded" || len(detail.Events) != 5 || detail.Events[3].ChunkBytes == nil || *detail.Events[3].ChunkBytes != 17 {
 		t.Fatalf("completed Invocation detail = %#v", detail)
 	}
+	trusted := baseEvent("inv-trusted-release", "task-trusted-release", "trace-trusted-release", "workspace-a", time.Date(2026, 7, 16, 12, 0, 10, 0, time.UTC))
+	trusted.AgentReleaseID = "release-trusted"
+	trusted.AgentCardDigest = strings.Repeat("a", 64)
+	appendEvent(t, store, trusted)
+	appendEvent(t, store, nextEvent(trusted, 1, "routing", "routing"))
+	appendEvent(t, store, nextEvent(trusted, 2, "started", "running"))
+	trustedSuccess := nextEvent(trusted, 3, "succeeded", "succeeded")
+	trustedSuccess.LatencyMS = &latency
+	appendEvent(t, store, trustedSuccess)
+	trustedDetail, err := store.GetInvocation(ctx, "workspace-a", trusted.InvocationID)
+	if err != nil || trustedDetail.Invocation.AgentReleaseID != trusted.AgentReleaseID || trustedDetail.Invocation.AgentCardDigest != trusted.AgentCardDigest || trustedDetail.Events[3].AgentReleaseID != trusted.AgentReleaseID || trustedDetail.Events[3].AgentCardDigest != trusted.AgentCardDigest {
+		t.Fatalf("trusted release provenance = %#v, %v", trustedDetail, err)
+	}
 	beforeCount := eventCount(t, ctx, pool, "inv-root")
 	late := nextEvent(base, 5, "failed", "failed")
 	late.LatencyMS = &latency

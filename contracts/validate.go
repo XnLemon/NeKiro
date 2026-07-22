@@ -404,6 +404,9 @@ func (v *Validator) ValidateResolveAgentResponseForRequest(request ResolveAgentR
 		response.Installation.Status != "enabled" {
 		return errors.New("resolved Installation identity does not match request")
 	}
+	if err := ValidateInvocationReleaseProvenance(response.Installation.InstalledReleaseID, response.Installation.AgentCardDigest); err != nil {
+		return fmt.Errorf("resolved Installation release provenance is invalid: %w", err)
+	}
 	for index := 1; index < len(response.Installation.AcceptedPermissions); index++ {
 		if response.Installation.AcceptedPermissions[index-1] >= response.Installation.AcceptedPermissions[index] {
 			return errors.New("resolved Installation permissions are not canonical")

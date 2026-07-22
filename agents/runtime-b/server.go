@@ -18,6 +18,9 @@ func NewHTTPHandler(handler *Handler) http.Handler {
 	mux.HandleFunc("GET /readyz", func(writer http.ResponseWriter, _ *http.Request) {
 		writer.WriteHeader(http.StatusOK)
 	})
+	mux.HandleFunc("/unavailable", func(writer http.ResponseWriter, _ *http.Request) {
+		http.Error(writer, http.StatusText(http.StatusServiceUnavailable), http.StatusServiceUnavailable)
+	})
 	mux.HandleFunc("/", func(writer http.ResponseWriter, request *http.Request) {
 		writer.Header().Set("Content-Type", "application/json")
 		jsonRPCHandler.ServeHTTP(writer, request)

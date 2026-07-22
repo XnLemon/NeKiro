@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	_ "embed"
 	"errors"
 	"fmt"
 	"testing/fstest"
@@ -10,9 +11,12 @@ import (
 	"github.com/jackc/tern/v2/migrate"
 )
 
-const ExpectedSchemaVersion int32 = 1
+const ExpectedSchemaVersion int32 = 2
 
 var ErrSchemaVersionMismatch = errors.New("workspace schema version mismatch")
+
+//go:embed 002_workspace_installation_release.sql
+var migration002 []byte
 
 // migration001 is generated from apps/control-plane/migrations/003_workspace.sql.
 const migration001 = `CREATE SCHEMA IF NOT EXISTS workspace;
@@ -65,7 +69,8 @@ DROP TABLE workspace.workspaces;
 `
 
 var migrationFiles = fstest.MapFS{
-	"001_workspace.sql": &fstest.MapFile{Data: []byte(migration001), Mode: 0o444},
+	"001_workspace.sql":                      &fstest.MapFile{Data: []byte(migration001), Mode: 0o444},
+	"002_workspace_installation_release.sql": &fstest.MapFile{Data: migration002, Mode: 0o444},
 }
 
 type RowQuerier interface {
@@ -155,13 +160,13 @@ SELECT version,
         ),
         to_regclass('workspace.installations') IS NOT NULL,
         (
-            SELECT COUNT(*) = 10
+           SELECT COUNT(*) = 11
             FROM information_schema.columns
             WHERE table_schema = 'workspace'
               AND table_name = 'installations'
         )
         AND (
-            SELECT COUNT(*) = 10
+           SELECT COUNT(*) = 11
             FROM information_schema.columns
             WHERE table_schema = 'workspace'
               AND table_name = 'installations'
@@ -192,6 +197,11 @@ SELECT version,
                   AND data_type = 'timestamp with time zone'
                   AND datetime_precision = 6
                   AND is_nullable = 'YES'
+                  OR column_name = 'installed_release_id'
+                  AND data_type = 'character varying'
+                  AND character_maximum_length = 128
+                  AND collation_name = 'C'
+                  AND is_nullable = 'YES'
               )
               AND ordinal_position = CASE column_name
                   WHEN 'installation_id' THEN 1
@@ -204,15 +214,16 @@ SELECT version,
                   WHEN 'installed_at' THEN 8
                   WHEN 'updated_at' THEN 9
                   WHEN 'uninstalled_at' THEN 10
+                  WHEN 'installed_release_id' THEN 11
               END
         ),
         (
-            SELECT COUNT(*) = 8
+           SELECT COUNT(*) = 9
             FROM pg_constraint
             WHERE conrelid = to_regclass('workspace.installations')
         )
         AND (
-            SELECT COUNT(*) = 8
+           SELECT COUNT(*) = 9
            FROM pg_constraint
            WHERE conrelid = to_regclass('workspace.installations')
              AND convalidated
@@ -249,6 +260,9 @@ SELECT version,
                   OR conname = 'installations_state_timestamps'
                   AND contype = 'c'
                   AND pg_get_constraintdef(oid) = 'CHECK (((((status)::text = ANY ((ARRAY[''enabled''::character varying, ''disabled''::character varying])::text[])) AND (uninstalled_at IS NULL)) OR (((status)::text = ''uninstalled''::text) AND (uninstalled_at IS NOT NULL) AND (uninstalled_at = updated_at))))'
+                  OR conname = 'installations_release_id_format'
+                  AND contype = 'c'
+                  AND pg_get_constraintdef(oid) = 'CHECK (((installed_release_id IS NULL) OR ((installed_release_id)::text ~ ''^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$''::text)))'
               )
         ),
        EXISTS (

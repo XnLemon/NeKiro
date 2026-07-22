@@ -468,6 +468,12 @@ func workspaceErrorCode(err error) contracts.PlatformErrorCode {
 		return contracts.ErrorCodeInstallationDisabled
 	case errors.Is(err, workspace.ErrAgentDisabled):
 		return contracts.ErrorCodeAgentDisabled
+	case errors.Is(err, workspace.ErrReleaseUnpublished):
+		return contracts.ErrorCodeAgentReleaseUnpublished
+	case errors.Is(err, workspace.ErrReleaseSuspended):
+		return contracts.ErrorCodeAgentReleaseSuspended
+	case errors.Is(err, workspace.ErrReleaseRevoked):
+		return contracts.ErrorCodeAgentReleaseRevoked
 	case errors.Is(err, workspace.ErrCapabilityNotAllowed):
 		return contracts.ErrorCodeCapabilityNotAllowed
 	case errors.Is(err, workspace.ErrDependency):
@@ -508,7 +514,9 @@ func workspaceErrorStatus(code contracts.PlatformErrorCode) (int, error) {
 		return http.StatusBadRequest, nil
 	case contracts.ErrorCodeUnauthenticated:
 		return http.StatusUnauthorized, nil
-	case contracts.ErrorCodeForbidden, contracts.ErrorCodeAgentDisabled, contracts.ErrorCodeInstallationDisabled, contracts.ErrorCodeCapabilityNotAllowed:
+	case contracts.ErrorCodeForbidden, contracts.ErrorCodeAgentDisabled, contracts.ErrorCodeInstallationDisabled,
+		contracts.ErrorCodeAgentReleaseUnpublished, contracts.ErrorCodeAgentReleaseSuspended,
+		contracts.ErrorCodeAgentReleaseRevoked, contracts.ErrorCodeCapabilityNotAllowed:
 		return http.StatusForbidden, nil
 	case contracts.ErrorCodeNotFound, contracts.ErrorCodeAgentNotInstalled:
 		return http.StatusNotFound, nil

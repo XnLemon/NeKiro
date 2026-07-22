@@ -18,6 +18,15 @@ func TestTrustedPublicationOpenAPIAndSchemaMappings(t *testing.T) {
 	validateOpenAPIValue(t, document.Paths.Find("/v4/providers/{providerId}/agents/{agentId}/endpoint-bindings").Post.Responses.Status(201).Value.Content["application/json"].Schema, binding)
 	validateOpenAPIValue(t, document.Paths.Find("/v4/providers/{providerId}/agents/{agentId}/endpoint-bindings").Post.RequestBody.Value.Content["application/json"].Schema, map[string]any{"endpoint": "https://agent.example/a2a", "method": "http_well_known", "version": "1.0.0-beta.1+build.7"})
 	validateOpenAPIValue(t, document.Paths.Find("/v4/providers/{providerId}/endpoint-bindings/{bindingId}/challenges").Post.Responses.Status(201).Value.Content["application/json"].Schema, challenge)
+	release := AgentReleaseResponse{ReleaseID: "release-1", ProviderID: "provider-1", AgentID: "agent-1", AgentCardVersion: "1.0.0-beta.1+build.7", CardDigest: digest, EndpointBindingID: "binding-1", EndpointOrigin: "https://agent.example", EndpointPath: "/a2a", VerificationMethod: "http_well_known", VerificationEvidenceDigest: &digest, State: ReleaseStatePublished, CreatedAt: now, UpdatedAt: now, VerifiedAt: &now, PublishedAt: &now}
+	validateOpenAPIValue(t, document.Paths.Find("/v4/providers/{providerId}/agents/{agentId}/releases").Post.RequestBody.Value.Content["application/json"].Schema, CreateAgentReleaseRequest{Version: "1.0.0-beta.1+build.7", EndpointBindingID: "binding-1"})
+	assertOpenAPIValueRejected(t, document.Paths.Find("/v4/providers/{providerId}/agents/{agentId}/releases").Post.RequestBody.Value.Content["application/json"].Schema, CreateAgentReleaseRequest{Version: "not-semver", EndpointBindingID: "binding-1"})
+	assertOpenAPIValueRejected(t, document.Paths.Find("/v4/providers/{providerId}/agents/{agentId}/releases").Post.RequestBody.Value.Content["application/json"].Schema, CreateAgentReleaseRequest{Version: "1.0.0", EndpointBindingID: "bad binding"})
+	assertOpenAPIValueRejected(t, document.Components.Parameters["releaseId"].Value.Schema, "bad release")
+	validateOpenAPIValue(t, document.Paths.Find("/v4/providers/{providerId}/agents/{agentId}/releases").Post.Responses.Status(201).Value.Content["application/json"].Schema, release)
+	for _, path := range []string{"/v4/releases/{releaseId}/verify", "/v4/releases/{releaseId}/publish", "/v4/releases/{releaseId}/suspend", "/v4/releases/{releaseId}/revoke"} {
+		validateOpenAPIValue(t, document.Paths.Find(path).Post.Responses.Status(200).Value.Content["application/json"].Schema, release)
+	}
 	publicError, err := NewTrustedPublicationError(TrustedErrorRedirectNotAllowed, "trace-trusted-publication")
 	if err != nil {
 		t.Fatal(err)

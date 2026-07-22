@@ -101,11 +101,11 @@ components:
           schema:
             $ref: "#/components/schemas/PreCorrelationPlatformError"
     Forbidden:
-      description: Installation or Agent version is disabled, or capability is not authorized
+      description: Installation, Agent version, Release state, or capability is not authorized
       headers:
         x-nek-trace-id:
           $ref: "#/components/headers/TraceID"
-      x-platform-error-codes: [INSTALLATION_DISABLED, AGENT_DISABLED, CAPABILITY_NOT_ALLOWED]
+      x-platform-error-codes: [INSTALLATION_DISABLED, AGENT_DISABLED, AGENT_RELEASE_UNPUBLISHED, AGENT_RELEASE_SUSPENDED, AGENT_RELEASE_REVOKED, CAPABILITY_NOT_ALLOWED]
       x-platform-error-correlation:
         source: request
         exactFields: [invocationId, rootTaskId, traceId]
@@ -179,6 +179,9 @@ components:
         `installation.agentId` MUST equal the request `agentId`; `card.version`
         and `installation.installedVersion` MUST equal the request `version`;
         and `installation.workspaceId` MUST equal the request `workspaceId`.
+        Trusted installations return `installedReleaseId` and the exact
+        Catalog-owned `agentCardDigest` as an atomic pair; pre-v4 legacy
+        installations omit both.
       type: object
       additionalProperties: false
       required: [card, installation]
@@ -191,6 +194,12 @@ components:
       type: object
       additionalProperties: false
       required: [installationId, workspaceId, agentId, installedVersion, acceptedPermissions, status]
+      oneOf:
+        - required: [installedReleaseId, agentCardDigest]
+        - not:
+            anyOf:
+              - required: [installedReleaseId]
+              - required: [agentCardDigest]
       properties:
         installationId:
           $ref: ../schemas/common.v1.schema.json#/$defs/installationId
@@ -200,6 +209,11 @@ components:
           $ref: ../schemas/common.v1.schema.json#/$defs/agentId
         installedVersion:
           $ref: ../schemas/common.v1.schema.json#/$defs/semver
+        installedReleaseId:
+          $ref: ../schemas/common.v1.schema.json#/$defs/safeIdentifier
+        agentCardDigest:
+          type: string
+          pattern: '^[0-9a-f]{64}$'
         acceptedPermissions:
           type: array
           uniqueItems: true

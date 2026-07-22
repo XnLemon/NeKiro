@@ -108,6 +108,10 @@ func serve(ctx context.Context, logger *slog.Logger) error {
 	if err != nil {
 		return err
 	}
+	releaseService, err := catalog.NewReleaseService(catalogStore, catalogStore, catalogStore, time.Now)
+	if err != nil {
+		return err
+	}
 	internalAuthenticator, err := gateway.NewDevelopmentStaticAuthenticator(cfg.InternalPrincipals)
 	if err != nil {
 		return fmt.Errorf("initialize internal authenticator: %w", err)
@@ -156,6 +160,11 @@ func serve(ctx context.Context, logger *slog.Logger) error {
 		return err
 	}
 	trustHandler.RegisterRoutes(mux)
+	releaseHandler, err := gateway.NewReleaseHandler(authenticator, releaseService, traces, logger)
+	if err != nil {
+		return err
+	}
+	releaseHandler.RegisterRoutes(mux)
 	workspaceHandler.RegisterRoutes(mux)
 	invocationHandler.RegisterRoutes(mux)
 	invocationReadHandler.RegisterRoutes(mux)

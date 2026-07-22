@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	_ "embed"
 	"errors"
 	"fmt"
 	"testing/fstest"
@@ -10,9 +11,15 @@ import (
 	"github.com/jackc/tern/v2/migrate"
 )
 
-const ExpectedSchemaVersion int32 = 3
+const ExpectedSchemaVersion int32 = 4
 
 var ErrSchemaVersionMismatch = errors.New("catalog schema version mismatch")
+
+// migration004 is kept beside the embedded migration source so the migration
+// runner and the owned apps/control-plane/migrations file cannot drift.
+//
+//go:embed 004_agent_release.sql
+var migration004 []byte
 
 // migration001 is generated from apps/control-plane/migrations/001_catalog.sql.
 const migration001 = `CREATE SCHEMA IF NOT EXISTS catalog;
@@ -208,6 +215,7 @@ var migrationFiles = fstest.MapFS{
 	"001_catalog.sql":             &fstest.MapFile{Data: []byte(migration001), Mode: 0o444},
 	"002_card_text.sql":           &fstest.MapFile{Data: []byte(migration002), Mode: 0o444},
 	"003_trusted_publication.sql": &fstest.MapFile{Data: []byte(migration003), Mode: 0o444},
+	"004_agent_release.sql":       &fstest.MapFile{Data: migration004, Mode: 0o444},
 }
 
 type RowQuerier interface {
@@ -250,6 +258,7 @@ func CheckSchema(ctx context.Context, db RowQuerier) error {
 	var cardTextReady bool
 	var cardNameReady bool
 	var cardDescriptionReady bool
+	var legacyUnverifiedReady bool
 	var providersPresent bool
 	var bindingsPresent bool
 	var challengesPresent bool
@@ -257,6 +266,12 @@ func CheckSchema(ctx context.Context, db RowQuerier) error {
 	var trustForeignKeysReady bool
 	var trustStatusChecksReady bool
 	var trustDigestChecksReady bool
+	var releasesPresent bool
+	var releaseColumnsReady bool
+	var releaseForeignKeysReady bool
+	var releaseChecksReady bool
+	var releaseIndexesReady bool
+	var releaseImmutableTrigger bool
 	err := db.QueryRow(ctx, `
 WITH required_columns(table_name, column_name, is_nullable, data_type) AS (VALUES
     ('agent_identities', 'provider_id', 'YES', 'character varying'),
@@ -287,7 +302,8 @@ WITH required_columns(table_name, column_name, is_nullable, data_type) AS (VALUE
     ('verification_challenges', 'proof_digest', 'NO', 'bytea'),
     ('verification_challenges', 'expires_at', 'NO', 'timestamp with time zone'),
     ('verification_challenges', 'used_at', 'YES', 'timestamp with time zone'),
-    ('verification_challenges', 'created_at', 'NO', 'timestamp with time zone')
+    ('verification_challenges', 'created_at', 'NO', 'timestamp with time zone'),
+    ('agent_versions', 'legacy_unverified', 'NO', 'boolean')
 )
 SELECT version,
        to_regclass('catalog.agent_identities') IS NOT NULL,
@@ -318,10 +334,17 @@ SELECT version,
           AND column_name = 'card_description'
           AND data_type = 'text'
           AND is_nullable = 'NO'),
+       (SELECT count(*) = 1
+        FROM information_schema.columns
+        WHERE table_schema = 'catalog'
+          AND table_name = 'agent_versions'
+          AND column_name = 'legacy_unverified'
+          AND data_type = 'boolean'
+          AND is_nullable = 'NO'),
        to_regclass('catalog.providers') IS NOT NULL,
        to_regclass('catalog.endpoint_bindings') IS NOT NULL,
        to_regclass('catalog.verification_challenges') IS NOT NULL,
-       (SELECT count(*) = 29
+       (SELECT count(*) = 30
         FROM required_columns expected
         JOIN information_schema.columns actual
           ON actual.table_schema = 'catalog'
@@ -363,6 +386,7 @@ FROM catalog.schema_version`).Scan(
 		&cardTextReady,
 		&cardNameReady,
 		&cardDescriptionReady,
+		&legacyUnverifiedReady,
 		&providersPresent,
 		&bindingsPresent,
 		&challengesPresent,
@@ -374,7 +398,66 @@ FROM catalog.schema_version`).Scan(
 	if err != nil {
 		return fmt.Errorf("read catalog schema version: %w", err)
 	}
-	if version != ExpectedSchemaVersion || !identitiesPresent || !clockPresent || !versionsPresent || !capabilitiesPresent || !clockReady || !cardTextReady || !cardNameReady || !cardDescriptionReady || !providersPresent || !bindingsPresent || !challengesPresent || !trustColumnsReady || !trustForeignKeysReady || !trustStatusChecksReady || !trustDigestChecksReady {
+	if err := db.QueryRow(ctx, `
+WITH required_release_columns(column_name, is_nullable, data_type) AS (VALUES
+    ('release_id', 'NO', 'character varying'),
+    ('provider_id', 'NO', 'character varying'),
+    ('agent_id', 'NO', 'character varying'),
+    ('agent_card_version', 'NO', 'text'),
+    ('card_digest', 'NO', 'bytea'),
+    ('endpoint_binding_id', 'NO', 'character varying'),
+    ('endpoint_origin', 'NO', 'text'),
+    ('endpoint_path', 'NO', 'text'),
+    ('verification_method', 'NO', 'character varying'),
+    ('verification_evidence_digest', 'YES', 'bytea'),
+    ('state', 'NO', 'character varying'),
+    ('created_at', 'NO', 'timestamp with time zone'),
+    ('updated_at', 'NO', 'timestamp with time zone'),
+    ('verified_at', 'YES', 'timestamp with time zone'),
+    ('published_at', 'YES', 'timestamp with time zone'),
+    ('suspended_at', 'YES', 'timestamp with time zone'),
+    ('revoked_at', 'YES', 'timestamp with time zone')
+)
+SELECT to_regclass('catalog.agent_releases') IS NOT NULL,
+       (SELECT count(*) = 17
+        FROM required_release_columns expected
+        JOIN information_schema.columns actual
+          ON actual.table_schema = 'catalog'
+         AND actual.table_name = 'agent_releases'
+         AND actual.column_name = expected.column_name
+         AND actual.is_nullable = expected.is_nullable
+         AND actual.data_type = expected.data_type),
+       (SELECT count(*) = 3
+        FROM pg_constraint constraint_row
+        JOIN pg_class relation ON relation.oid = constraint_row.conrelid
+        JOIN pg_namespace namespace_row ON namespace_row.oid = relation.relnamespace
+        WHERE namespace_row.nspname = 'catalog'
+          AND relation.relname = 'agent_releases'
+          AND constraint_row.conname IN ('agent_releases_provider_fk', 'agent_releases_card_fk', 'agent_releases_binding_fk')
+          AND constraint_row.contype = 'f' AND constraint_row.convalidated),
+       (SELECT count(*) = 9
+        FROM pg_constraint constraint_row
+        JOIN pg_class relation ON relation.oid = constraint_row.conrelid
+        JOIN pg_namespace namespace_row ON namespace_row.oid = relation.relnamespace
+        WHERE namespace_row.nspname = 'catalog'
+          AND relation.relname = 'agent_releases'
+          AND constraint_row.conname IN ('agent_releases_release_id_format', 'agent_releases_provider_id_format', 'agent_releases_agent_id_format', 'agent_releases_card_digest_length', 'agent_releases_evidence_digest_length', 'agent_releases_state', 'agent_releases_method', 'agent_releases_timestamp_order', 'agent_releases_state_timestamps')
+          AND constraint_row.contype = 'c' AND constraint_row.convalidated),
+       to_regclass('catalog.agent_releases_agent_version_idx') IS NOT NULL
+       AND to_regclass('catalog.agent_releases_provider_state_idx') IS NOT NULL,
+       EXISTS (
+           SELECT 1 FROM pg_trigger trigger_row
+           JOIN pg_class relation ON relation.oid = trigger_row.tgrelid
+           WHERE relation.oid = to_regclass('catalog.agent_releases')
+             AND trigger_row.tgname = 'agent_releases_bound_immutable'
+             AND trigger_row.tgenabled = 'O' AND NOT trigger_row.tgisinternal
+       )`).Scan(
+		&releasesPresent, &releaseColumnsReady, &releaseForeignKeysReady,
+		&releaseChecksReady, &releaseIndexesReady, &releaseImmutableTrigger,
+	); err != nil {
+		return fmt.Errorf("read Agent Release schema: %w", err)
+	}
+	if version != ExpectedSchemaVersion || !identitiesPresent || !clockPresent || !versionsPresent || !capabilitiesPresent || !clockReady || !cardTextReady || !cardNameReady || !cardDescriptionReady || !legacyUnverifiedReady || !providersPresent || !bindingsPresent || !challengesPresent || !trustColumnsReady || !trustForeignKeysReady || !trustStatusChecksReady || !trustDigestChecksReady || !releasesPresent || !releaseColumnsReady || !releaseForeignKeysReady || !releaseChecksReady || !releaseIndexesReady || !releaseImmutableTrigger {
 		return ErrSchemaVersionMismatch
 	}
 	return nil

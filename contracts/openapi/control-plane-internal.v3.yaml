@@ -90,11 +90,11 @@ components:
           schema:
             $ref: "#/components/schemas/PreCorrelationPlatformError"
     Forbidden:
-      description: Installation is disabled or capability is not authorized
+      description: Installation, Release state, or capability is not authorized
       headers:
         x-nek-trace-id:
           $ref: "#/components/headers/TraceID"
-      x-platform-error-codes: [INSTALLATION_DISABLED, AGENT_DISABLED, CAPABILITY_NOT_ALLOWED]
+      x-platform-error-codes: [INSTALLATION_DISABLED, AGENT_DISABLED, AGENT_RELEASE_UNPUBLISHED, AGENT_RELEASE_SUSPENDED, AGENT_RELEASE_REVOKED, CAPABILITY_NOT_ALLOWED]
       content:
         application/json:
           schema:
@@ -141,9 +141,20 @@ components:
       type: object
       additionalProperties: false
       required: [version]
+      oneOf:
+        - required: [releaseId, agentCardDigest]
+        - not:
+            anyOf:
+              - required: [releaseId]
+              - required: [agentCardDigest]
       properties:
         version:
           $ref: ../schemas/common.v1.schema.json#/$defs/semver
+        releaseId:
+          $ref: ../schemas/common.v1.schema.json#/$defs/safeIdentifier
+        agentCardDigest:
+          type: string
+          pattern: '^[0-9a-f]{64}$'
     PreCorrelationPlatformError:
       allOf:
         - $ref: ../schemas/platform-error.v3.schema.json

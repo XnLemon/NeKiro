@@ -24,7 +24,7 @@ import (
 
 func TestWorkspaceInstallationPersistenceLifecycleAndResolution(t *testing.T) {
 	ctx := context.Background()
-	catalogService, workspaceService := integrationServices(t, ctx)
+	catalogService, workspaceService, _ := integrationServices(t, ctx)
 	owner := workspace.AuthenticatedCaller{ID: "owner-a"}
 	if _, err := workspaceService.CreateWorkspace(ctx, owner, contracts.CreateWorkspaceRequest{WorkspaceID: "workspace-integration"}); err != nil {
 		t.Fatalf("create Workspace: %v", err)
@@ -77,7 +77,7 @@ func TestWorkspaceInstallationPersistenceLifecycleAndResolution(t *testing.T) {
 
 func TestConcurrentInstallLeavesOneCurrentInstallation(t *testing.T) {
 	ctx := context.Background()
-	_, workspaceService := integrationServices(t, ctx)
+	_, workspaceService, _ := integrationServices(t, ctx)
 	owner := workspace.AuthenticatedCaller{ID: "owner-a"}
 	if _, err := workspaceService.CreateWorkspace(ctx, owner, contracts.CreateWorkspaceRequest{WorkspaceID: "workspace-race"}); err != nil {
 		t.Fatalf("create Workspace: %v", err)
@@ -116,7 +116,7 @@ func TestConcurrentInstallLeavesOneCurrentInstallation(t *testing.T) {
 
 func TestConcurrentWorkspaceCreateLeavesOneCommittedRow(t *testing.T) {
 	ctx := context.Background()
-	_, workspaceService := integrationServices(t, ctx)
+	_, workspaceService, _ := integrationServices(t, ctx)
 	owner := workspace.AuthenticatedCaller{ID: "owner-a"}
 
 	type createResult struct {
@@ -170,7 +170,7 @@ func TestConcurrentWorkspaceCreateLeavesOneCommittedRow(t *testing.T) {
 
 func TestWorkspaceCreateReadSurvivesStoreReconstruction(t *testing.T) {
 	ctx := context.Background()
-	catalogService, workspaceService := integrationServices(t, ctx)
+	catalogService, workspaceService, _ := integrationServices(t, ctx)
 	owner := workspace.AuthenticatedCaller{ID: "owner-a"}
 	created, err := workspaceService.CreateWorkspace(ctx, owner, contracts.CreateWorkspaceRequest{WorkspaceID: "workspace-root"})
 	if err != nil {
@@ -226,7 +226,7 @@ func TestWorkspaceCreateReadSurvivesStoreReconstruction(t *testing.T) {
 
 func TestInstallationInspectionHistorySurvivesStoreReconstruction(t *testing.T) {
 	ctx := context.Background()
-	catalogService, workspaceService := integrationServices(t, ctx)
+	catalogService, workspaceService, _ := integrationServices(t, ctx)
 	owner := workspace.AuthenticatedCaller{ID: "owner-a"}
 	if _, err := workspaceService.CreateWorkspace(ctx, owner, contracts.CreateWorkspaceRequest{WorkspaceID: "workspace-inspection-restart"}); err != nil {
 		t.Fatalf("create Workspace: %v", err)
@@ -333,7 +333,7 @@ func listAllInspectionInstallations(ctx context.Context, service *workspace.Serv
 
 func TestInstallPinsCommittedFieldsAndIgnoresNewPublication(t *testing.T) {
 	ctx := context.Background()
-	catalogService, workspaceService := integrationServices(t, ctx)
+	catalogService, workspaceService, pool := integrationServices(t, ctx)
 	owner := workspace.AuthenticatedCaller{ID: "owner-a"}
 	if _, err := workspaceService.CreateWorkspace(ctx, owner, contracts.CreateWorkspaceRequest{WorkspaceID: "workspace-pin"}); err != nil {
 		t.Fatal(err)
@@ -354,7 +354,7 @@ func TestInstallPinsCommittedFieldsAndIgnoresNewPublication(t *testing.T) {
 
 	newCard := integrationCard()
 	newCard.Version = "1.1.0"
-	if err := registerPublishedCard(ctx, catalogService, newCard); err != nil {
+	if err := registerLegacyPublishedCard(ctx, pool, catalogService, newCard); err != nil {
 		t.Fatalf("publish newer matching Card: %v", err)
 	}
 	unchanged, err := workspaceService.GetInstallation(ctx, owner, "workspace-pin", installation.InstallationID)
@@ -367,7 +367,7 @@ func TestInstallPinsCommittedFieldsAndIgnoresNewPublication(t *testing.T) {
 	emptyCard.Name = "Runtime Empty Permission"
 	emptyCard.Skills[0].RequiredPermissions = []string{}
 	emptyCard.Permissions = []contracts.PermissionDeclaration{}
-	if err := registerPublishedCard(ctx, catalogService, emptyCard); err != nil {
+	if err := registerLegacyPublishedCard(ctx, pool, catalogService, emptyCard); err != nil {
 		t.Fatalf("publish empty-permission Card: %v", err)
 	}
 	if _, err := workspaceService.CreateWorkspace(ctx, owner, contracts.CreateWorkspaceRequest{WorkspaceID: "workspace-empty-install"}); err != nil {
@@ -398,7 +398,7 @@ func TestInstallPinsCommittedFieldsAndIgnoresNewPublication(t *testing.T) {
 
 func TestInstallationLifecyclePersistsCommittedHistoryAcrossRestart(t *testing.T) {
 	ctx := context.Background()
-	catalogService, workspaceService := integrationServices(t, ctx)
+	catalogService, workspaceService, _ := integrationServices(t, ctx)
 	owner := workspace.AuthenticatedCaller{ID: "owner-a"}
 	if _, err := workspaceService.CreateWorkspace(ctx, owner, contracts.CreateWorkspaceRequest{WorkspaceID: "workspace-lifecycle-restart"}); err != nil {
 		t.Fatal(err)
@@ -477,7 +477,7 @@ func TestInstallationLifecyclePersistsCommittedHistoryAcrossRestart(t *testing.T
 
 func TestConcurrentLifecycleAndReinstallRequestsPreserveOneCurrentRow(t *testing.T) {
 	ctx := context.Background()
-	_, workspaceService := integrationServices(t, ctx)
+	_, workspaceService, _ := integrationServices(t, ctx)
 	owner := workspace.AuthenticatedCaller{ID: "owner-a"}
 	if _, err := workspaceService.CreateWorkspace(ctx, owner, contracts.CreateWorkspaceRequest{WorkspaceID: "workspace-lifecycle-race"}); err != nil {
 		t.Fatal(err)
@@ -618,7 +618,7 @@ func TestConcurrentLifecycleAndReinstallRequestsPreserveOneCurrentRow(t *testing
 func TestLifecycleDependencyFailuresRemainExplicit(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	_, workspaceService := integrationServices(t, context.Background())
+	_, workspaceService, _ := integrationServices(t, context.Background())
 	owner := workspace.AuthenticatedCaller{ID: "owner-a"}
 	if _, err := workspaceService.CreateWorkspace(context.Background(), owner, contracts.CreateWorkspaceRequest{WorkspaceID: "workspace-lifecycle-dependency"}); err != nil {
 		t.Fatal(err)
@@ -637,7 +637,7 @@ func TestLifecycleDependencyFailuresRemainExplicit(t *testing.T) {
 	}
 }
 
-func integrationServices(t *testing.T, ctx context.Context) (*catalog.Service, *workspace.Service) {
+func integrationServices(t *testing.T, ctx context.Context) (*catalog.Service, *workspace.Service, *pgxpool.Pool) {
 	t.Helper()
 	databaseURL := integrationDatabaseURL(t)
 	if _, err := pgx.ParseConfig(databaseURL); err != nil {
@@ -682,14 +682,14 @@ func integrationServices(t *testing.T, ctx context.Context) (*catalog.Service, *
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := registerPublishedCard(ctx, catalogService, integrationCard()); err != nil {
+	if err := registerLegacyPublishedCard(ctx, pool, catalogService, integrationCard()); err != nil {
 		t.Fatalf("publish fixture Card: %v", err)
 	}
 	workspaceService, err := workspace.NewService(workspaceStore, catalogService, workspace.OwnerPolicy{}, validator, time.Now, workspace.NewRandomID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return catalogService, workspaceService
+	return catalogService, workspaceService, pool
 }
 
 func integrationDatabaseURL(t *testing.T) string {
@@ -744,7 +744,7 @@ func sameInstallationPin(left, right contracts.Installation) bool {
 	return true
 }
 
-func registerPublishedCard(ctx context.Context, service *catalog.Service, card contracts.AgentCard) error {
+func registerLegacyPublishedCard(ctx context.Context, pool *pgxpool.Pool, service *catalog.Service, card contracts.AgentCard) error {
 	body, err := json.Marshal(contracts.RegisterAgentRequest{Card: card})
 	if err != nil {
 		return err
@@ -754,6 +754,16 @@ func registerPublishedCard(ctx context.Context, service *catalog.Service, card c
 	}
 	if _, err := service.Publish(ctx, catalog.AuthenticatedCaller{ID: "owner-a"}, card.AgentID, card.Version); err != nil {
 		return fmt.Errorf("publish Card: %w", err)
+	}
+	command, err := pool.Exec(ctx, `
+UPDATE catalog.agent_versions
+SET legacy_unverified = true
+WHERE agent_id = $1 AND version = $2 AND publication_status = 'published'`, card.AgentID, card.Version)
+	if err != nil {
+		return fmt.Errorf("mark pre-v4 legacy fixture: %w", err)
+	}
+	if command.RowsAffected() != 1 {
+		return fmt.Errorf("mark pre-v4 legacy fixture: updated %d rows", command.RowsAffected())
 	}
 	return nil
 }

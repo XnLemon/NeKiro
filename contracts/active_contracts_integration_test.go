@@ -143,7 +143,8 @@ func TestActiveOpenAPIToGoMappings(t *testing.T) {
 	}
 	resolveOperation := controlPlaneInternal.Paths.Find("/internal/v2/resolve-agent").Post
 	validateOpenAPIValue(t, resolveOperation.RequestBody.Value.Content["application/json"].Schema, resolveRequest)
-	validateOpenAPIValue(t, resolveOperation.Responses.Status(200).Value.Content["application/json"].Schema, ResolveAgentResponse{
+	resolveResponseSchema := resolveOperation.Responses.Status(200).Value.Content["application/json"].Schema
+	resolveResponse := ResolveAgentResponse{
 		Card: card,
 		Installation: ResolvedInstallation{
 			InstallationID:      installation.InstallationID,
@@ -153,7 +154,15 @@ func TestActiveOpenAPIToGoMappings(t *testing.T) {
 			AcceptedPermissions: installation.AcceptedPermissions,
 			Status:              installation.Status,
 		},
-	})
+	}
+	validateOpenAPIValue(t, resolveResponseSchema, resolveResponse)
+	trustedResolveResponse := resolveResponse
+	trustedResolveResponse.Installation.InstalledReleaseID = "release-active"
+	trustedResolveResponse.Installation.AgentCardDigest = strings.Repeat("a", 64)
+	validateOpenAPIValue(t, resolveResponseSchema, trustedResolveResponse)
+	partialResolveResponse := trustedResolveResponse
+	partialResolveResponse.Installation.AgentCardDigest = ""
+	assertOpenAPIValueRejected(t, resolveResponseSchema, partialResolveResponse)
 
 	router := loadOpenAPIDocument(t, filepath.Join("openapi", "router-internal.v2.yaml"))
 	dispatchRequest := DispatchInvocationRequest{

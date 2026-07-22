@@ -6,6 +6,7 @@ ARG GOSUMDB=sum.golang.org
 COPY go.mod go.sum ./
 COPY contracts ./contracts
 COPY sdks/agent-sdk ./sdks/agent-sdk
+COPY agents/internal/challengeproof ./agents/internal/challengeproof
 COPY agents/runtime-a/go.mod agents/runtime-a/go.sum ./agents/runtime-a/
 WORKDIR /src/agents/runtime-a
 RUN GOPROXY="$GOPROXY" GOSUMDB="$GOSUMDB" go mod download

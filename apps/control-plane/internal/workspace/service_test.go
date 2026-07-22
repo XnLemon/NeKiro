@@ -2,6 +2,7 @@ package workspace
 
 import (
 	"context"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -129,7 +130,7 @@ type memoryCatalog struct {
 	getCalls    int
 }
 
-func (reader *memoryCatalog) SelectPublished(_ context.Context, agentID, constraint string) (catalog.AgentVersion, error) {
+func (reader *memoryCatalog) SelectInstallable(_ context.Context, agentID, constraint string) (catalog.AgentVersion, error) {
 	reader.selectCalls++
 	if reader.selectErr != nil {
 		return catalog.AgentVersion{}, reader.selectErr
@@ -142,7 +143,7 @@ func (reader *memoryCatalog) SelectPublished(_ context.Context, agentID, constra
 	if err != nil {
 		return catalog.AgentVersion{}, err
 	}
-	return service.SelectPublished(context.Background(), agentID, constraint)
+	return service.SelectInstallable(context.Background(), agentID, constraint)
 }
 func (reader *memoryCatalog) GetVersion(_ context.Context, agentID, version string) (catalog.AgentVersion, error) {
 	reader.getCalls++
@@ -164,7 +165,7 @@ func (store *selectionStore) Register(context.Context, catalog.AgentVersion) (ca
 func (store *selectionStore) Get(_ context.Context, agentID, version string) (catalog.AgentVersion, error) {
 	return store.reader.GetVersion(context.Background(), agentID, version)
 }
-func (store *selectionStore) Published(context.Context, string) ([]catalog.AgentVersion, error) {
+func (store *selectionStore) InstallationCandidates(context.Context, string) ([]catalog.AgentVersion, error) {
 	return store.reader.candidates, nil
 }
 func (store *selectionStore) Publish(context.Context, string, string, string, time.Time) (catalog.AgentVersion, error) {
@@ -387,7 +388,7 @@ func TestInstallationInspectionPropagatesWorkspaceAndInstallationDependencies(t 
 
 func TestInstallPreservesExplicitEmptyPermissions(t *testing.T) {
 	card := testWorkspaceCard("agent-empty", "1.0.0", nil, nil)
-	reader := &memoryCatalog{candidates: []catalog.AgentVersion{{Card: card, Status: catalog.PublicationPublished}}}
+	reader := &memoryCatalog{candidates: []catalog.AgentVersion{{Card: card, Status: catalog.PublicationPublished, LegacyUnverified: true}}}
 	store := newMemoryStore()
 	service := newWorkspaceTestService(t, store, reader)
 	caller := AuthenticatedCaller{ID: "owner-a"}
@@ -410,9 +411,168 @@ func TestInstallPreservesExplicitEmptyPermissions(t *testing.T) {
 	}
 }
 
+func TestTrustedInstallationPinsExactReleaseAndRejectsReleaseStateChanges(t *testing.T) {
+	card := testWorkspaceCard("agent-trusted", "1.0.0", []string{"read"}, []string{"read"})
+	cardDigest := [32]byte{1}
+	release := &catalog.AgentRelease{ReleaseID: "release-trusted", AgentID: card.AgentID, AgentCardVersion: card.Version, CardDigest: cardDigest, State: catalog.ReleasePublished}
+	version := catalog.AgentVersion{Card: card, CardDigest: cardDigest, Status: catalog.PublicationPublished, Release: release}
+	reader := &memoryCatalog{candidates: []catalog.AgentVersion{version}, versions: map[string]catalog.AgentVersion{"agent-trusted/1.0.0": version}}
+	store := newMemoryStore()
+	service := newWorkspaceTestService(t, store, reader)
+	caller := AuthenticatedCaller{ID: "owner-a"}
+	if _, err := service.CreateWorkspace(context.Background(), caller, contracts.CreateWorkspaceRequest{WorkspaceID: "workspace-trusted"}); err != nil {
+		t.Fatal(err)
+	}
+	installation, err := service.Install(context.Background(), caller, "workspace-trusted", contracts.InstallAgentRequest{AgentID: card.AgentID, VersionConstraint: "^1.0.0", AcceptedPermissions: []string{"read"}})
+	if err != nil {
+		t.Fatalf("trusted install: %v", err)
+	}
+	if installation.InstalledReleaseID != release.ReleaseID {
+		t.Fatalf("installed release = %q, want %q", installation.InstalledReleaseID, release.ReleaseID)
+	}
+	authorized, err := service.AuthorizeInvocation(context.Background(), caller, "workspace-trusted", card.AgentID, "capability.read")
+	if err != nil || authorized.AgentReleaseID != release.ReleaseID || authorized.AgentCardDigest != hex.EncodeToString(cardDigest[:]) {
+		t.Fatalf("trusted authorization = %#v, %v", authorized, err)
+	}
+	resolved, err := service.Resolve(context.Background(), contracts.ResolveAgentRequest{
+		InvocationID: "inv-trusted", RootTaskID: "task-trusted", TraceID: "trace-trusted",
+		WorkspaceID: "workspace-trusted", AgentID: card.AgentID, Version: card.Version, Capability: "capability.read",
+	})
+	if err != nil || resolved.Installation.InstalledReleaseID != release.ReleaseID || resolved.Installation.AgentCardDigest != hex.EncodeToString(cardDigest[:]) {
+		t.Fatalf("trusted resolution = %#v, %v", resolved, err)
+	}
+	suspended := *release
+	suspended.State = catalog.ReleaseSuspended
+	reader.versions["agent-trusted/1.0.0"] = catalog.AgentVersion{Card: card, CardDigest: cardDigest, Status: catalog.PublicationDisabled, Release: &suspended}
+	if _, err := service.AuthorizeInvocation(context.Background(), caller, "workspace-trusted", card.AgentID, "capability.read"); !errors.Is(err, ErrReleaseSuspended) {
+		t.Fatalf("suspended release authorization = %v, want suspended", err)
+	}
+	revoked := *release
+	revoked.State = catalog.ReleaseRevoked
+	reader.versions["agent-trusted/1.0.0"] = catalog.AgentVersion{Card: card, CardDigest: cardDigest, Status: catalog.PublicationDisabled, Release: &revoked}
+	if _, err := service.AuthorizeInvocation(context.Background(), caller, "workspace-trusted", card.AgentID, "capability.read"); !errors.Is(err, ErrReleaseRevoked) {
+		t.Fatalf("revoked release authorization = %v, want revoked", err)
+	}
+	pending := *release
+	pending.State = catalog.ReleasePendingVerification
+	reader.versions["agent-trusted/1.0.0"] = catalog.AgentVersion{Card: card, CardDigest: cardDigest, Status: catalog.PublicationPublished, Release: &pending}
+	if _, err := service.AuthorizeInvocation(context.Background(), caller, "workspace-trusted", card.AgentID, "capability.read"); !errors.Is(err, ErrReleaseUnpublished) {
+		t.Fatalf("pending release authorization = %v, want unpublished", err)
+	}
+}
+
+func TestExistingLegacyInstallationRemainsUnverifiedAfterReleaseCreation(t *testing.T) {
+	card := testWorkspaceCard("agent-legacy", "1.0.0", nil, nil)
+	digest := [32]byte{4}
+	version := catalog.AgentVersion{
+		Card: card, CardDigest: digest, Status: catalog.PublicationPublished, LegacyUnverified: true,
+		Release: &catalog.AgentRelease{
+			ReleaseID: "release-later", AgentID: card.AgentID, AgentCardVersion: card.Version,
+			CardDigest: digest, State: catalog.ReleasePublished,
+		},
+	}
+	reader := &memoryCatalog{versions: map[string]catalog.AgentVersion{"agent-legacy/1.0.0": version}}
+	store := newMemoryStore()
+	store.workspaces["workspace-legacy"] = contracts.Workspace{WorkspaceID: "workspace-legacy", OwnerID: "owner-a"}
+	store.installations["installation-legacy"] = contracts.Installation{
+		InstallationID: "installation-legacy", WorkspaceID: "workspace-legacy", AgentID: card.AgentID,
+		InstalledVersion: card.Version, AcceptedPermissions: []string{}, Status: "enabled",
+	}
+	service := newWorkspaceTestService(t, store, reader)
+
+	authorized, err := service.AuthorizeInvocation(context.Background(), AuthenticatedCaller{ID: "owner-a"}, "workspace-legacy", card.AgentID, "capability.read")
+	if err != nil {
+		t.Fatalf("authorize legacy installation after Release creation: %v", err)
+	}
+	if authorized.AgentReleaseID != "" || authorized.AgentCardDigest != "" {
+		t.Fatalf("legacy installation was silently upgraded: %#v", authorized)
+	}
+}
+
+func TestInstallRejectsHigherUntrustedPublishedVersion(t *testing.T) {
+	trustedCard := testWorkspaceCard("agent-shadow", "1.0.0", nil, nil)
+	trustedDigest := [32]byte{7}
+	trusted := catalog.AgentVersion{
+		Card: trustedCard, CardDigest: trustedDigest, Status: catalog.PublicationPublished,
+		Release: &catalog.AgentRelease{
+			ReleaseID: "release-trusted", AgentID: trustedCard.AgentID,
+			AgentCardVersion: trustedCard.Version, CardDigest: trustedDigest,
+			State: catalog.ReleasePublished,
+		},
+	}
+	untrustedCard := testWorkspaceCard("agent-shadow", "2.0.0", nil, nil)
+	untrusted := catalog.AgentVersion{Card: untrustedCard, Status: catalog.PublicationPublished}
+	reader := &memoryCatalog{candidates: []catalog.AgentVersion{trusted, untrusted}}
+	store := newMemoryStore()
+	service := newWorkspaceTestService(t, store, reader)
+	caller := AuthenticatedCaller{ID: "owner-a"}
+	if _, err := service.CreateWorkspace(context.Background(), caller, contracts.CreateWorkspaceRequest{WorkspaceID: "workspace-shadow"}); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := service.Install(context.Background(), caller, "workspace-shadow", contracts.InstallAgentRequest{
+		AgentID: trustedCard.AgentID, VersionConstraint: ">=1.0.0", AcceptedPermissions: []string{},
+	})
+	if !errors.Is(err, ErrReleaseUnpublished) {
+		t.Fatalf("higher untrusted release install = %v, want unpublished", err)
+	}
+}
+
+func TestInstallRejectsPostMigrationPublishedVersionWithoutRelease(t *testing.T) {
+	card := testWorkspaceCard("agent-untrusted", "1.0.0", nil, nil)
+	reader := &memoryCatalog{candidates: []catalog.AgentVersion{{Card: card, Status: catalog.PublicationPublished}}}
+	store := newMemoryStore()
+	service := newWorkspaceTestService(t, store, reader)
+	caller := AuthenticatedCaller{ID: "owner-a"}
+	if _, err := service.CreateWorkspace(context.Background(), caller, contracts.CreateWorkspaceRequest{WorkspaceID: "workspace-untrusted"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.Install(context.Background(), caller, "workspace-untrusted", contracts.InstallAgentRequest{AgentID: card.AgentID, VersionConstraint: "^1.0.0", AcceptedPermissions: []string{}}); !errors.Is(err, ErrReleaseUnpublished) {
+		t.Fatalf("unmarked version install = %v, want unpublished", err)
+	}
+}
+
+func TestInstallRejectsNonPublishedAndBlockedReleaseStates(t *testing.T) {
+	tests := []struct {
+		name  string
+		state catalog.ReleaseState
+		want  error
+	}{
+		{name: "pending", state: catalog.ReleasePendingVerification, want: ErrReleaseUnpublished},
+		{name: "suspended", state: catalog.ReleaseSuspended, want: ErrReleaseSuspended},
+		{name: "revoked", state: catalog.ReleaseRevoked, want: ErrReleaseRevoked},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			card := testWorkspaceCard("agent-"+test.name, "1.0.0", nil, nil)
+			digest := [32]byte{3}
+			release := &catalog.AgentRelease{
+				ReleaseID: "release-" + test.name, AgentID: card.AgentID,
+				AgentCardVersion: card.Version, CardDigest: digest, State: test.state,
+			}
+			reader := &memoryCatalog{candidates: []catalog.AgentVersion{{
+				Card: card, CardDigest: digest, Status: catalog.PublicationPublished, Release: release,
+			}}}
+			store := newMemoryStore()
+			service := newWorkspaceTestService(t, store, reader)
+			caller := AuthenticatedCaller{ID: "owner-a"}
+			workspaceID := "workspace-" + test.name
+			if _, err := service.CreateWorkspace(context.Background(), caller, contracts.CreateWorkspaceRequest{WorkspaceID: workspaceID}); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := service.Install(context.Background(), caller, workspaceID, contracts.InstallAgentRequest{AgentID: card.AgentID, VersionConstraint: "^1.0.0", AcceptedPermissions: []string{}}); !errors.Is(err, test.want) {
+				t.Fatalf("%s release install = %v, want %v", test.name, err, test.want)
+			}
+			if len(store.installations) != 0 {
+				t.Fatalf("%s release persisted installation: %#v", test.name, store.installations)
+			}
+		})
+	}
+}
+
 func TestAuthorizeInvocationReturnsExactCurrentPinAfterOwnerAndCapabilityPolicy(t *testing.T) {
 	card := testWorkspaceCard("agent-dispatch", "1.4.2", []string{"document.read"}, []string{"document.read"})
-	reader := &memoryCatalog{versions: map[string]catalog.AgentVersion{"agent-dispatch/1.4.2": {Card: card, Status: catalog.PublicationPublished}}}
+	reader := &memoryCatalog{versions: map[string]catalog.AgentVersion{"agent-dispatch/1.4.2": {Card: card, Status: catalog.PublicationPublished, LegacyUnverified: true}}}
 	store := newMemoryStore()
 	store.workspaces["workspace-dispatch"] = contracts.Workspace{WorkspaceID: "workspace-dispatch", OwnerID: "owner-a"}
 	store.installations["installation-dispatch"] = contracts.Installation{InstallationID: "installation-dispatch", WorkspaceID: "workspace-dispatch", AgentID: "agent-dispatch", InstalledVersion: "1.4.2", AcceptedPermissions: []string{"document.read"}, Status: "enabled"}
@@ -433,7 +593,7 @@ func TestAuthorizeInvocationReturnsExactCurrentPinAfterOwnerAndCapabilityPolicy(
 
 func TestResolveInstalledVersionUsesEnabledPinAndCapabilityPolicy(t *testing.T) {
 	card := testWorkspaceCard("runtime-b", "1.4.2", []string{"text.read"}, []string{"text.read"})
-	reader := &memoryCatalog{versions: map[string]catalog.AgentVersion{"runtime-b/1.4.2": {Card: card, Status: catalog.PublicationPublished}}}
+	reader := &memoryCatalog{versions: map[string]catalog.AgentVersion{"runtime-b/1.4.2": {Card: card, Status: catalog.PublicationPublished, LegacyUnverified: true}}}
 	store := newMemoryStore()
 	store.workspaces["workspace-a"] = contracts.Workspace{WorkspaceID: "workspace-a", OwnerID: "owner-a"}
 	store.installations["installation-b"] = contracts.Installation{InstallationID: "installation-b", WorkspaceID: "workspace-a", AgentID: "runtime-b", InstalledVersion: "1.4.2", AcceptedPermissions: []string{"text.read"}, Status: "enabled"}
@@ -456,7 +616,7 @@ func TestResolveInstalledVersionUsesEnabledPinAndCapabilityPolicy(t *testing.T) 
 
 func TestInstallRejectsUnknownPermissionBeforePersistence(t *testing.T) {
 	card := testWorkspaceCard("agent-permission", "1.0.0", []string{"declared"}, nil)
-	reader := &memoryCatalog{candidates: []catalog.AgentVersion{{Card: card, Status: catalog.PublicationPublished}}}
+	reader := &memoryCatalog{candidates: []catalog.AgentVersion{{Card: card, Status: catalog.PublicationPublished, LegacyUnverified: true}}}
 	store := newMemoryStore()
 	service := newWorkspaceTestService(t, store, reader)
 	caller := AuthenticatedCaller{ID: "owner-a"}
@@ -494,8 +654,8 @@ func TestInstallHonorsCatalogPrereleasePolicy(t *testing.T) {
 	stable := testWorkspaceCard("agent-prerelease", "1.0.0", []string{}, []string{})
 	preRelease := testWorkspaceCard("agent-prerelease", "1.1.0-rc.1", []string{}, []string{})
 	reader := &memoryCatalog{candidates: []catalog.AgentVersion{
-		{Card: stable, Status: catalog.PublicationPublished},
-		{Card: preRelease, Status: catalog.PublicationPublished},
+		{Card: stable, Status: catalog.PublicationPublished, LegacyUnverified: true},
+		{Card: preRelease, Status: catalog.PublicationPublished, LegacyUnverified: true},
 	}}
 	store := newMemoryStore()
 	service := newWorkspaceTestService(t, store, reader)
@@ -525,7 +685,7 @@ func TestInstallPinsHighestVersionAndCanonicalPermissions(t *testing.T) {
 	card := testWorkspaceCard("agent-a", "1.0.0", []string{"read", "write"}, []string{"read"})
 	cardBuildA := testWorkspaceCard("agent-a", "1.0.1+a", []string{"read", "write"}, []string{"read"})
 	cardBuildZ := testWorkspaceCard("agent-a", "1.0.1+z", []string{"read", "write"}, []string{"read"})
-	reader := &memoryCatalog{candidates: []catalog.AgentVersion{{Card: card, Status: catalog.PublicationPublished}, {Card: cardBuildA, Status: catalog.PublicationPublished}, {Card: cardBuildZ, Status: catalog.PublicationPublished}}, versions: map[string]catalog.AgentVersion{"agent-a/1.0.1+z": {Card: cardBuildZ, Status: catalog.PublicationPublished}}}
+	reader := &memoryCatalog{candidates: []catalog.AgentVersion{{Card: card, Status: catalog.PublicationPublished, LegacyUnverified: true}, {Card: cardBuildA, Status: catalog.PublicationPublished, LegacyUnverified: true}, {Card: cardBuildZ, Status: catalog.PublicationPublished, LegacyUnverified: true}}, versions: map[string]catalog.AgentVersion{"agent-a/1.0.1+z": {Card: cardBuildZ, Status: catalog.PublicationPublished, LegacyUnverified: true}}}
 	store := newMemoryStore()
 	service := newWorkspaceTestService(t, store, reader)
 	if _, err := service.CreateWorkspace(context.Background(), AuthenticatedCaller{ID: "owner-a"}, contracts.CreateWorkspaceRequest{WorkspaceID: "workspace-a"}); err != nil {
@@ -545,7 +705,7 @@ func TestInstallPinsHighestVersionAndCanonicalPermissions(t *testing.T) {
 
 func TestLifecycleResolutionAndReinstall(t *testing.T) {
 	card := testWorkspaceCard("agent-a", "1.0.0", []string{"read"}, []string{"read"})
-	reader := &memoryCatalog{candidates: []catalog.AgentVersion{{Card: card, Status: catalog.PublicationPublished}}, versions: map[string]catalog.AgentVersion{"agent-a/1.0.0": {Card: card, Status: catalog.PublicationPublished}}}
+	reader := &memoryCatalog{candidates: []catalog.AgentVersion{{Card: card, Status: catalog.PublicationPublished, LegacyUnverified: true}}, versions: map[string]catalog.AgentVersion{"agent-a/1.0.0": {Card: card, Status: catalog.PublicationPublished, LegacyUnverified: true}}}
 	store := newMemoryStore()
 	service := newWorkspaceTestService(t, store, reader)
 	caller := AuthenticatedCaller{ID: "owner-a"}
@@ -580,8 +740,9 @@ func TestLifecycleResolutionAndReinstall(t *testing.T) {
 func TestLifecycleTransitionTablePreservesImmutableFactsAndTimestamps(t *testing.T) {
 	store := newMemoryStore()
 	reader := &memoryCatalog{candidates: []catalog.AgentVersion{{
-		Card:   testWorkspaceCard("agent-lifecycle", "1.0.0", []string{"read", "write"}, nil),
-		Status: catalog.PublicationPublished,
+		Card:             testWorkspaceCard("agent-lifecycle", "1.0.0", []string{"read", "write"}, nil),
+		Status:           catalog.PublicationPublished,
+		LegacyUnverified: true,
 	}}}
 	clockValues := []time.Time{
 		time.Date(2026, 7, 15, 10, 0, 0, 0, time.UTC),
@@ -755,7 +916,7 @@ func (store *failingResolutionStore) GetWorkspace(ctx context.Context, workspace
 func TestResolveFailurePrecedenceUsesWorkspaceAndExactEnabledPin(t *testing.T) {
 	card := testWorkspaceCard("agent-resolve", "1.0.0", []string{"read"}, []string{"read"})
 	reader := &memoryCatalog{versions: map[string]catalog.AgentVersion{
-		"agent-resolve/1.0.0": {Card: card, Status: catalog.PublicationPublished},
+		"agent-resolve/1.0.0": {Card: card, Status: catalog.PublicationPublished, LegacyUnverified: true},
 	}}
 	store := newMemoryStore()
 	service := newWorkspaceTestService(t, store, reader)
@@ -807,7 +968,7 @@ func TestResolveFailurePrecedenceUsesWorkspaceAndExactEnabledPin(t *testing.T) {
 func TestResolveAuthorizesCapabilityAndPreservesInstallationOnCatalogState(t *testing.T) {
 	card := testWorkspaceCard("agent-authorize", "1.0.0", []string{"read"}, []string{"read"})
 	reader := &memoryCatalog{versions: map[string]catalog.AgentVersion{
-		"agent-authorize/1.0.0": {Card: card, Status: catalog.PublicationPublished},
+		"agent-authorize/1.0.0": {Card: card, Status: catalog.PublicationPublished, LegacyUnverified: true},
 	}}
 	store := newMemoryStore()
 	store.workspaces["workspace-authorize"] = contracts.Workspace{WorkspaceID: "workspace-authorize", OwnerID: "owner-a"}
@@ -839,7 +1000,7 @@ func TestResolveAuthorizesCapabilityAndPreservesInstallationOnCatalogState(t *te
 		t.Fatalf("Catalog disablement mutated Installation = %#v, want %#v", stored, installation)
 	}
 
-	reader.versions["agent-authorize/1.0.0"] = catalog.AgentVersion{Card: card, Status: catalog.PublicationPublished}
+	reader.versions["agent-authorize/1.0.0"] = catalog.AgentVersion{Card: card, Status: catalog.PublicationPublished, LegacyUnverified: true}
 	request.Capability = "capability.missing"
 	if response, err := service.Resolve(context.Background(), request); !errors.Is(err, ErrCapabilityNotAllowed) || response.Card.AgentID != "" {
 		t.Fatalf("missing capability response=%#v err=%v", response, err)

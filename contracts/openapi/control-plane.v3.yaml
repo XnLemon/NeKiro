@@ -285,9 +285,12 @@ paths:
       operationId: installAgent
       summary: Install and pin one published Agent version
       description: >-
-        Selects the highest currently published Agent version satisfying the
-        exact submitted SemVer constraint, validates the accepted permission
-        subset against that exact Card, and creates one enabled immutable pin.
+        Selects the highest published version satisfying the exact submitted
+        SemVer constraint, then requires that exact version to have a published
+        trusted Release (or an explicitly marked pre-v4 legacy marker),
+        validates the accepted permission subset against that Card, and creates
+        one enabled immutable pin. It does not silently downgrade when the
+        selected version fails the Release gate.
         A current enabled or disabled Installation for the same Agent conflicts.
       security:
         - bearerAuth: []
@@ -315,7 +318,7 @@ paths:
         "401":
           $ref: "#/components/responses/WorkspaceUnauthenticated"
         "403":
-          $ref: "#/components/responses/WorkspaceForbidden"
+          $ref: "#/components/responses/WorkspaceInstallForbidden"
         "404":
           $ref: "#/components/responses/WorkspaceNotFound"
         "409":
@@ -755,6 +758,16 @@ components:
         application/json:
           schema:
             $ref: ../schemas/platform-error.v3.schema.json
+    WorkspaceInstallForbidden:
+      description: The caller is forbidden or no matching published Release is installable
+      headers:
+        x-nek-trace-id:
+          $ref: "#/components/headers/TraceID"
+      x-platform-error-codes: [FORBIDDEN, AGENT_RELEASE_UNPUBLISHED, AGENT_RELEASE_SUSPENDED, AGENT_RELEASE_REVOKED]
+      content:
+        application/json:
+          schema:
+            $ref: ../schemas/platform-error.v3.schema.json
     WorkspaceNotFound:
       description: The requested Workspace, Installation, or published install candidate was not found
       headers:
@@ -821,7 +834,7 @@ components:
           schema:
             $ref: ../schemas/platform-error.v2.schema.json
     Forbidden:
-      description: Installation or capability is not authorized
+      description: Installation, Agent state, or capability is not authorized
       x-platform-error-codes: [FORBIDDEN, AGENT_DISABLED, CAPABILITY_NOT_ALLOWED]
       content:
         application/json:

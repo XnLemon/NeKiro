@@ -20,6 +20,8 @@
     "workspaceId": { "$ref": "https://schemas.nekiro.dev/common/v1#/$defs/workspaceId" },
     "targetAgentId": { "$ref": "https://schemas.nekiro.dev/common/v1#/$defs/agentId" },
     "agentCardVersion": { "$ref": "https://schemas.nekiro.dev/common/v1#/$defs/semver" },
+    "agentReleaseId": { "$ref": "https://schemas.nekiro.dev/common/v1#/$defs/safeIdentifier" },
+    "agentCardDigest": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
     "capability": { "$ref": "https://schemas.nekiro.dev/common/v1#/$defs/capabilityId" },
     "chunkIndex": { "type": "integer", "minimum": 0 },
     "chunkBytes": { "type": "integer", "minimum": 0 },
@@ -27,6 +29,10 @@
     "error": { "$ref": "https://schemas.nekiro.dev/platform-error/v4#/$defs/correlated" }
   },
   "allOf": [
+    { "oneOf": [
+      { "required": ["agentReleaseId", "agentCardDigest"] },
+      { "not": { "anyOf": [{ "required": ["agentReleaseId"] }, { "required": ["agentCardDigest"] }] } }
+    ] },
     { "if": { "properties": { "type": { "const": "created" } }, "required": ["type"] }, "then": { "properties": { "status": { "const": "pending" } }, "not": { "anyOf": [{ "required": ["chunkIndex"] }, { "required": ["chunkBytes"] }, { "required": ["latencyMs"] }, { "required": ["error"] }] } } },
     { "if": { "properties": { "type": { "const": "routing" } }, "required": ["type"] }, "then": { "properties": { "status": { "const": "routing" } }, "not": { "anyOf": [{ "required": ["chunkIndex"] }, { "required": ["chunkBytes"] }, { "required": ["latencyMs"] }, { "required": ["error"] }] } } },
     { "if": { "properties": { "type": { "const": "started" } }, "required": ["type"] }, "then": { "properties": { "status": { "const": "running" } }, "not": { "anyOf": [{ "required": ["chunkIndex"] }, { "required": ["chunkBytes"] }, { "required": ["latencyMs"] }, { "required": ["error"] }] } } },

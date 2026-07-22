@@ -6,6 +6,7 @@ ARG GOSUMDB=sum.golang.org
 COPY go.mod go.sum ./
 RUN GOPROXY="$GOPROXY" GOSUMDB="$GOSUMDB" go mod download
 COPY contracts ./contracts
+COPY agents/internal/challengeproof ./agents/internal/challengeproof
 COPY agents/runtime-b ./agents/runtime-b
 RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/runtime-b ./agents/runtime-b/cmd/runtime-b
 

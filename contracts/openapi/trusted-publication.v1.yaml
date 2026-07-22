@@ -3,6 +3,91 @@ info:
   title: NeKiro Trusted Publication API
   version: 1.0.0
 paths:
+  /v4/providers/{providerId}/agents/{agentId}/releases:
+    post:
+      operationId: createAgentRelease
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/providerId' }
+        - { $ref: '#/components/parameters/agentId' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateAgentReleaseRequest' }
+      responses:
+        '201': { description: Created, content: { application/json: { schema: { $ref: '#/components/schemas/AgentRelease' } } } }
+        '400': { $ref: '#/components/responses/TrustedPublicationError' }
+        '401': { $ref: '#/components/responses/TrustedPublicationError' }
+        '403': { $ref: '#/components/responses/TrustedPublicationError' }
+        '404': { $ref: '#/components/responses/TrustedPublicationError' }
+        '409': { $ref: '#/components/responses/TrustedPublicationError' }
+        '503': { $ref: '#/components/responses/TrustedPublicationError' }
+        '500': { $ref: '#/components/responses/TrustedPublicationError' }
+  /v4/releases/{releaseId}:
+    get:
+      operationId: getAgentRelease
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/releaseId' }]
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/AgentRelease' } } } }
+        '401': { $ref: '#/components/responses/TrustedPublicationError' }
+        '403': { $ref: '#/components/responses/TrustedPublicationError' }
+        '404': { $ref: '#/components/responses/TrustedPublicationError' }
+        '503': { $ref: '#/components/responses/TrustedPublicationError' }
+        '500': { $ref: '#/components/responses/TrustedPublicationError' }
+  /v4/releases/{releaseId}/verify:
+    post:
+      operationId: verifyAgentRelease
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/releaseId' }]
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/AgentRelease' } } } }
+        '401': { $ref: '#/components/responses/TrustedPublicationError' }
+        '403': { $ref: '#/components/responses/TrustedPublicationError' }
+        '404': { $ref: '#/components/responses/TrustedPublicationError' }
+        '409': { $ref: '#/components/responses/TrustedPublicationError' }
+        '503': { $ref: '#/components/responses/TrustedPublicationError' }
+        '500': { $ref: '#/components/responses/TrustedPublicationError' }
+  /v4/releases/{releaseId}/publish:
+    post:
+      operationId: publishAgentRelease
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/releaseId' }]
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/AgentRelease' } } } }
+        '401': { $ref: '#/components/responses/TrustedPublicationError' }
+        '403': { $ref: '#/components/responses/TrustedPublicationError' }
+        '404': { $ref: '#/components/responses/TrustedPublicationError' }
+        '409': { $ref: '#/components/responses/TrustedPublicationError' }
+        '503': { $ref: '#/components/responses/TrustedPublicationError' }
+        '500': { $ref: '#/components/responses/TrustedPublicationError' }
+  /v4/releases/{releaseId}/suspend:
+    post:
+      operationId: suspendAgentRelease
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/releaseId' }]
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/AgentRelease' } } } }
+        '401': { $ref: '#/components/responses/TrustedPublicationError' }
+        '403': { $ref: '#/components/responses/TrustedPublicationError' }
+        '404': { $ref: '#/components/responses/TrustedPublicationError' }
+        '409': { $ref: '#/components/responses/TrustedPublicationError' }
+        '503': { $ref: '#/components/responses/TrustedPublicationError' }
+        '500': { $ref: '#/components/responses/TrustedPublicationError' }
+  /v4/releases/{releaseId}/revoke:
+    post:
+      operationId: revokeAgentRelease
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/releaseId' }]
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/AgentRelease' } } } }
+        '401': { $ref: '#/components/responses/TrustedPublicationError' }
+        '403': { $ref: '#/components/responses/TrustedPublicationError' }
+        '404': { $ref: '#/components/responses/TrustedPublicationError' }
+        '409': { $ref: '#/components/responses/TrustedPublicationError' }
+        '503': { $ref: '#/components/responses/TrustedPublicationError' }
+        '500': { $ref: '#/components/responses/TrustedPublicationError' }
   /v4/providers/{providerId}/agents/{agentId}/endpoint-bindings:
     post:
       operationId: createEndpointBinding
@@ -76,10 +161,11 @@ components:
   securitySchemes:
     bearerAuth: { type: http, scheme: bearer }
   parameters:
-    providerId: { name: providerId, in: path, required: true, schema: { type: string } }
-    agentId: { name: agentId, in: path, required: true, schema: { type: string } }
-    bindingId: { name: bindingId, in: path, required: true, schema: { type: string } }
-    challengeId: { name: challengeId, in: path, required: true, schema: { type: string } }
+    providerId: { name: providerId, in: path, required: true, schema: { $ref: '../schemas/trusted-publication.v1.schema.json#/$defs/identifier' } }
+    agentId: { name: agentId, in: path, required: true, schema: { $ref: '../schemas/trusted-publication.v1.schema.json#/$defs/identifier' } }
+    bindingId: { name: bindingId, in: path, required: true, schema: { $ref: '../schemas/trusted-publication.v1.schema.json#/$defs/identifier' } }
+    challengeId: { name: challengeId, in: path, required: true, schema: { $ref: '../schemas/trusted-publication.v1.schema.json#/$defs/identifier' } }
+    releaseId: { name: releaseId, in: path, required: true, schema: { $ref: '../schemas/trusted-publication.v1.schema.json#/$defs/identifier' } }
   schemas:
     CreateEndpointBindingRequest:
       type: object
@@ -88,9 +174,17 @@ components:
       properties:
         endpoint: { type: string, format: uri }
         method: { type: string, enum: [http_well_known] }
-        version: { type: string, pattern: '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$' }
+        version: { $ref: '../schemas/trusted-publication.v1.schema.json#/$defs/semver' }
     EndpointBinding: { $ref: '../schemas/trusted-publication.v1.schema.json#/$defs/endpointBinding' }
     VerificationChallenge: { $ref: '../schemas/trusted-publication.v1.schema.json#/$defs/challenge' }
+    AgentRelease: { $ref: '../schemas/trusted-publication.v1.schema.json#/$defs/agentRelease' }
+    CreateAgentReleaseRequest:
+      type: object
+      additionalProperties: false
+      required: [version, endpointBindingId]
+      properties:
+        version: { $ref: '../schemas/trusted-publication.v1.schema.json#/$defs/semver' }
+        endpointBindingId: { $ref: '../schemas/trusted-publication.v1.schema.json#/$defs/identifier' }
     TrustedPublicationError: { $ref: '../schemas/trusted-publication.v1.schema.json#/$defs/error' }
   responses:
     TrustedPublicationError:

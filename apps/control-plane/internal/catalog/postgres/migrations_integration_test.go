@@ -11,7 +11,7 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-func TestCheckSchemaRejectsIncompleteSchemaV2(t *testing.T) {
+func TestCheckSchemaRejectsIncompleteSchemaV4(t *testing.T) {
 	ctx := context.Background()
 	databaseURL := os.Getenv("NEKIRO_TEST_DATABASE_URL")
 	if strings.TrimSpace(databaseURL) == "" {
@@ -79,6 +79,26 @@ func TestCheckSchemaRejectsIncompleteSchemaV2(t *testing.T) {
 			name:    "Trusted publication digest check",
 			degrade: `ALTER TABLE catalog.verification_challenges DROP CONSTRAINT verification_challenges_proof_digest_length`,
 			restore: `ALTER TABLE catalog.verification_challenges ADD CONSTRAINT verification_challenges_proof_digest_length CHECK (octet_length(proof_digest) = 32)`,
+		},
+		{
+			name:    "Legacy marker nullability",
+			degrade: `ALTER TABLE catalog.agent_versions ALTER COLUMN legacy_unverified DROP NOT NULL`,
+			restore: `ALTER TABLE catalog.agent_versions ALTER COLUMN legacy_unverified SET NOT NULL`,
+		},
+		{
+			name:    "Agent Release Card foreign key",
+			degrade: `ALTER TABLE catalog.agent_releases DROP CONSTRAINT agent_releases_card_fk`,
+			restore: `ALTER TABLE catalog.agent_releases ADD CONSTRAINT agent_releases_card_fk FOREIGN KEY (agent_id, agent_card_version) REFERENCES catalog.agent_versions(agent_id, version)`,
+		},
+		{
+			name:    "Agent Release state check",
+			degrade: `ALTER TABLE catalog.agent_releases DROP CONSTRAINT agent_releases_state`,
+			restore: `ALTER TABLE catalog.agent_releases ADD CONSTRAINT agent_releases_state CHECK (state IN ('draft', 'pending_verification', 'verified', 'published', 'suspended', 'revoked'))`,
+		},
+		{
+			name:    "Agent Release immutable trigger",
+			degrade: `DROP TRIGGER agent_releases_bound_immutable ON catalog.agent_releases`,
+			restore: `CREATE TRIGGER agent_releases_bound_immutable BEFORE UPDATE ON catalog.agent_releases FOR EACH ROW EXECUTE FUNCTION catalog.reject_agent_release_bound_mutation()`,
 		},
 	}
 	for _, test := range tests {

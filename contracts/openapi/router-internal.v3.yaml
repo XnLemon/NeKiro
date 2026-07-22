@@ -124,6 +124,12 @@ components:
       type: object
       additionalProperties: false
       required: [invocationId, rootTaskId, traceId, caller, workspaceId, targetAgentId, agentCardVersion, capability, input, stream]
+      oneOf:
+        - required: [agentReleaseId, agentCardDigest]
+        - not:
+            anyOf:
+              - required: [agentReleaseId]
+              - required: [agentCardDigest]
       properties:
         invocationId: { $ref: ../schemas/common.v1.schema.json#/$defs/invocationId }
         rootTaskId: { $ref: ../schemas/common.v1.schema.json#/$defs/taskId }
@@ -132,6 +138,8 @@ components:
         workspaceId: { $ref: ../schemas/common.v1.schema.json#/$defs/workspaceId }
         targetAgentId: { $ref: ../schemas/common.v1.schema.json#/$defs/agentId }
         agentCardVersion: { $ref: ../schemas/common.v1.schema.json#/$defs/semver }
+        agentReleaseId: { $ref: ../schemas/common.v1.schema.json#/$defs/safeIdentifier }
+        agentCardDigest: { type: string, pattern: '^[0-9a-f]{64}$' }
         capability: { $ref: ../schemas/common.v1.schema.json#/$defs/capabilityId }
         input: { $ref: ../schemas/common.v1.schema.json#/$defs/jsonObject }
         stream: { type: boolean }
@@ -139,6 +147,12 @@ components:
       type: object
       additionalProperties: false
       required: [invocationId, rootTaskId, traceId, caller, workspaceId, targetAgentId, agentCardVersion, capability, status, createdAt, updatedAt]
+      oneOf:
+        - required: [agentReleaseId, agentCardDigest]
+        - not:
+            anyOf:
+              - required: [agentReleaseId]
+              - required: [agentCardDigest]
       properties:
         invocationId: { $ref: ../schemas/common.v1.schema.json#/$defs/invocationId }
         rootTaskId: { $ref: ../schemas/common.v1.schema.json#/$defs/taskId }
@@ -148,6 +162,8 @@ components:
         workspaceId: { $ref: ../schemas/common.v1.schema.json#/$defs/workspaceId }
         targetAgentId: { $ref: ../schemas/common.v1.schema.json#/$defs/agentId }
         agentCardVersion: { $ref: ../schemas/common.v1.schema.json#/$defs/semver }
+        agentReleaseId: { $ref: ../schemas/common.v1.schema.json#/$defs/safeIdentifier }
+        agentCardDigest: { type: string, pattern: '^[0-9a-f]{64}$' }
         capability: { $ref: ../schemas/common.v1.schema.json#/$defs/capabilityId }
         status: { enum: [pending, routing, running, succeeded, failed, canceled, timed_out] }
         latencyMs: { type: integer, minimum: 0 }
@@ -182,7 +198,7 @@ components:
   responses:
     BadRequest: { description: Pre-acceptance invalid service request, x-platform-error-codes: [VALIDATION_ERROR], content: { application/json: { schema: { $ref: "#/components/schemas/PreCorrelationPlatformError" } } } }
     Unauthenticated: { description: Pre-acceptance missing/wrong service credential, x-platform-error-codes: [UNAUTHENTICATED], content: { application/json: { schema: { $ref: "#/components/schemas/PreCorrelationPlatformError" } } } }
-    Forbidden: { description: Pre-acceptance service request not authorized, x-platform-error-codes: [FORBIDDEN, CAPABILITY_NOT_ALLOWED], content: { application/json: { schema: { $ref: "#/components/schemas/PreCorrelationPlatformError" } } } }
+    Forbidden: { description: May occur before/after acceptance; correlated shape is mandatory after acceptance, x-platform-error-codes: [FORBIDDEN, AGENT_RELEASE_UNPUBLISHED, AGENT_RELEASE_SUSPENDED, AGENT_RELEASE_REVOKED, CAPABILITY_NOT_ALLOWED], content: { application/json: { schema: { $ref: "#/components/schemas/PhasePlatformError" } } } }
     NotFound: { description: Pre-correlation metadata resource not found, x-platform-error-codes: [NOT_FOUND], content: { application/json: { schema: { $ref: "#/components/schemas/PreCorrelationPlatformError" } } } }
     NotAcceptable: { description: Pre-acceptance result mode mismatch, x-platform-error-codes: [NOT_ACCEPTABLE], content: { application/json: { schema: { $ref: "#/components/schemas/PreCorrelationPlatformError" } } } }
     Conflict: { description: May occur before/after acceptance; correlated shape is mandatory after acceptance, x-platform-error-codes: [CONFLICT, CANCELED], content: { application/json: { schema: { $ref: "#/components/schemas/PhasePlatformError" } } } }

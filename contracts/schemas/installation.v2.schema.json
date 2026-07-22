@@ -22,6 +22,7 @@
     "agentId": { "$ref": "https://schemas.nekiro.dev/common/v1#/$defs/agentId" },
     "versionConstraint": { "$ref": "https://schemas.nekiro.dev/common/v1#/$defs/semverRange" },
     "installedVersion": { "$ref": "https://schemas.nekiro.dev/common/v1#/$defs/semver" },
+    "installedReleaseId": { "$ref": "https://schemas.nekiro.dev/common/v1#/$defs/safeIdentifier" },
     "acceptedPermissions": {
       "type": "array",
       "uniqueItems": true,

@@ -105,16 +105,18 @@ SELECT EXISTS (
 	if err = tx.QueryRow(ctx, `
 INSERT INTO workspace.installations (
   installation_id, workspace_id, agent_id, version_constraint, installed_version,
-  accepted_permissions, status, installed_at, updated_at, uninstalled_at
-) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+  accepted_permissions, status, installed_at, updated_at, uninstalled_at,
+  installed_release_id
+) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
 RETURNING installation_id, workspace_id, agent_id, version_constraint, installed_version,
-          accepted_permissions, status, installed_at, updated_at, uninstalled_at`,
+          accepted_permissions, status, installed_at, updated_at, uninstalled_at,
+          COALESCE(installed_release_id, '')`,
 		value.InstallationID, value.WorkspaceID, value.AgentID, value.VersionConstraint,
 		value.InstalledVersion, value.AcceptedPermissions, value.Status, value.InstalledAt,
-		value.UpdatedAt, value.UninstalledAt).Scan(
+		value.UpdatedAt, value.UninstalledAt, nullableReleaseID(value.InstalledReleaseID)).Scan(
 		&result.InstallationID, &result.WorkspaceID, &result.AgentID, &result.VersionConstraint,
 		&result.InstalledVersion, &result.AcceptedPermissions, &result.Status, &result.InstalledAt,
-		&result.UpdatedAt, &result.UninstalledAt); err != nil {
+		&result.UpdatedAt, &result.UninstalledAt, &result.InstalledReleaseID); err != nil {
 		if isUniqueViolation(err) {
 			return contracts.Installation{}, workspace.ErrConflict
 		}
@@ -138,11 +140,12 @@ func (store *Store) getInstallation(ctx context.Context, where string, args ...a
 	var value contracts.Installation
 	err := store.pool.QueryRow(ctx, `
 SELECT installation_id, workspace_id, agent_id, version_constraint, installed_version,
-       accepted_permissions, status, installed_at, updated_at, uninstalled_at
+       accepted_permissions, status, installed_at, updated_at, uninstalled_at,
+       COALESCE(installed_release_id, '')
 FROM workspace.installations `+where, args...).Scan(
 		&value.InstallationID, &value.WorkspaceID, &value.AgentID, &value.VersionConstraint,
 		&value.InstalledVersion, &value.AcceptedPermissions, &value.Status, &value.InstalledAt,
-		&value.UpdatedAt, &value.UninstalledAt,
+		&value.UpdatedAt, &value.UninstalledAt, &value.InstalledReleaseID,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return contracts.Installation{}, workspace.ErrNotFound
@@ -161,7 +164,8 @@ func (store *Store) ListInstallations(ctx context.Context, workspaceID string, l
 	}
 	rows, err := store.pool.Query(ctx, `
 SELECT installation_id, workspace_id, agent_id, version_constraint, installed_version,
-       accepted_permissions, status, installed_at, updated_at, uninstalled_at
+       accepted_permissions, status, installed_at, updated_at, uninstalled_at,
+       COALESCE(installed_release_id, '')
 FROM workspace.installations
 WHERE workspace_id = $1
   AND ($2::timestamptz IS NULL OR installed_at > $2 OR (installed_at = $2 AND installation_id > $3))
@@ -197,7 +201,8 @@ func (store *Store) ChangeInstallationStatus(ctx context.Context, workspaceID, i
 	defer rollback(ctx, tx, &returnErr, "Installation transition")
 	before, err := scanInstallation(tx.QueryRow(ctx, `
 SELECT installation_id, workspace_id, agent_id, version_constraint, installed_version,
-       accepted_permissions, status, installed_at, updated_at, uninstalled_at
+       accepted_permissions, status, installed_at, updated_at, uninstalled_at,
+       COALESCE(installed_release_id, '')
 FROM workspace.installations
 WHERE workspace_id = $1 AND installation_id = $2 FOR UPDATE`, workspaceID, installationID))
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -223,11 +228,12 @@ WHERE workspace_id = $1 AND installation_id = $2 FOR UPDATE`, workspaceID, insta
 UPDATE workspace.installations SET status = $3, updated_at = $4
 WHERE workspace_id = $1 AND installation_id = $2
 RETURNING installation_id, workspace_id, agent_id, version_constraint, installed_version,
-          accepted_permissions, status, installed_at, updated_at, uninstalled_at`,
+          accepted_permissions, status, installed_at, updated_at, uninstalled_at,
+          COALESCE(installed_release_id, '')`,
 		workspaceID, installationID, status, committedAt).Scan(
 		&after.InstallationID, &after.WorkspaceID, &after.AgentID, &after.VersionConstraint,
 		&after.InstalledVersion, &after.AcceptedPermissions, &after.Status, &after.InstalledAt,
-		&after.UpdatedAt, &after.UninstalledAt); err != nil {
+		&after.UpdatedAt, &after.UninstalledAt, &after.InstalledReleaseID); err != nil {
 		return contracts.Installation{}, dependencyError("update Installation status", err)
 	}
 	if err = tx.Commit(ctx); err != nil {
@@ -244,7 +250,8 @@ func (store *Store) UninstallInstallation(ctx context.Context, workspaceID, inst
 	defer rollback(ctx, tx, &returnErr, "Installation uninstall")
 	before, err := scanInstallation(tx.QueryRow(ctx, `
 SELECT installation_id, workspace_id, agent_id, version_constraint, installed_version,
-       accepted_permissions, status, installed_at, updated_at, uninstalled_at
+       accepted_permissions, status, installed_at, updated_at, uninstalled_at,
+       COALESCE(installed_release_id, '')
 FROM workspace.installations
 WHERE workspace_id = $1 AND installation_id = $2 FOR UPDATE`, workspaceID, installationID))
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -268,11 +275,12 @@ WHERE workspace_id = $1 AND installation_id = $2 FOR UPDATE`, workspaceID, insta
 UPDATE workspace.installations SET status = 'uninstalled', updated_at = $3, uninstalled_at = $3
 WHERE workspace_id = $1 AND installation_id = $2
 RETURNING installation_id, workspace_id, agent_id, version_constraint, installed_version,
-          accepted_permissions, status, installed_at, updated_at, uninstalled_at`,
+          accepted_permissions, status, installed_at, updated_at, uninstalled_at,
+          COALESCE(installed_release_id, '')`,
 		workspaceID, installationID, committedAt).Scan(
 		&after.InstallationID, &after.WorkspaceID, &after.AgentID, &after.VersionConstraint,
 		&after.InstalledVersion, &after.AcceptedPermissions, &after.Status, &after.InstalledAt,
-		&after.UpdatedAt, &after.UninstalledAt); err != nil {
+		&after.UpdatedAt, &after.UninstalledAt, &after.InstalledReleaseID); err != nil {
 		return contracts.Installation{}, dependencyError("uninstall Installation", err)
 	}
 	if err = tx.Commit(ctx); err != nil {
@@ -294,8 +302,15 @@ func scanInstallation(row interface{ Scan(...any) error }) (contracts.Installati
 	var value contracts.Installation
 	err := row.Scan(&value.InstallationID, &value.WorkspaceID, &value.AgentID, &value.VersionConstraint,
 		&value.InstalledVersion, &value.AcceptedPermissions, &value.Status, &value.InstalledAt,
-		&value.UpdatedAt, &value.UninstalledAt)
+		&value.UpdatedAt, &value.UninstalledAt, &value.InstalledReleaseID)
 	return value, err
+}
+
+func nullableReleaseID(value string) any {
+	if value == "" {
+		return nil
+	}
+	return value
 }
 
 func (store *Store) Check(ctx context.Context) error { return CheckSchema(ctx, store.pool) }

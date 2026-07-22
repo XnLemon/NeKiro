@@ -34,3 +34,8 @@ Installation response.
 `versionConstraint`, including the constraint's normal pre-release rules. A
 structurally valid Installation with an incompatible exact pin is not
 conformant.
+
+`installedReleaseId` is an additive optional field for trusted installations.
+When present it MUST be the exact immutable Agent Release identity selected by
+the Catalog. Historical legacy sample installations may omit it and are not
+trust evidence.

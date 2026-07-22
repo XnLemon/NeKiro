@@ -18,10 +18,25 @@
 
 ## Slice B — Immutable release lifecycle (#49)
 
-- [ ] T009 Add immutable release identity, digest, endpoint binding, and state
-      transitions.
-- [ ] T010 Gate Workspace resolution on verified published releases.
-- [ ] T011 Add release migration and lifecycle contract tests.
+- [x] T009 [US3] Add `AgentRelease` contracts, Registry release service/ports,
+      immutable bound facts, and explicit state transitions in
+      `contracts/trusted_publication.go`, `apps/control-plane/internal/catalog/release.go`,
+      and `apps/control-plane/internal/catalog/release_test.go`.
+- [x] T010 [US4] Gate trusted Workspace installation and internal resolution on
+      an exact verified/published release, persist `installedReleaseId`, and
+      persist explicit legacy markers so newly registered unverified versions
+      cannot use the compatibility path; preserve the documented pre-v4 legacy compatibility in
+      `apps/control-plane/internal/workspace/service.go`,
+      `apps/control-plane/internal/workspace/model.go`,
+      `apps/control-plane/internal/workspace/postgres/store.go`, and
+      `contracts/contracts.go`.
+- [x] T011 [US3] [US4] Add catalog/workspace migration 004/002, readiness
+      checks, OpenAPI/JSON Schema mappings, exact Release ID/Card digest
+      propagation into Router/Ledger metadata, and lifecycle integration/
+      contract tests in `apps/control-plane/migrations/004_agent_release.sql`,
+      `apps/control-plane/migrations/004_workspace_installation_release.sql`,
+      `apps/control-plane/internal/catalog/postgres/`,
+      `apps/control-plane/internal/workspace/postgres/`, and `contracts/`.
 
 ## Slice C — Router-to-Agent trust (#50)
 
@@ -38,7 +53,8 @@
 
 - [ ] T017 Add clean Compose E2E for Register -> Verify -> Publish -> Install
       -> Invoke -> Record and all negative paths.
-- [ ] T018 Add operator/provider runbook and convergence evidence.
+- [ ] T018 Add operator/provider failure-category/next-action presentation,
+      recovery runbook, and convergence evidence.
 
 ## Dependency order
 
@@ -58,3 +74,19 @@ T016 -> T017 -> T018
   tables.
 - T006 owns Gateway routes only; it consumes Catalog ports.
 - T007/T008 may run after the service contract stabilizes.
+
+## Implementation and verification record
+
+- T009-T011 are implemented on `codex/trusted-agent-release` with immutable
+  Release state transitions, exact Card/Release provenance, explicit legacy
+  markers, stable Workspace gate errors, and active contract/schema mappings.
+- Verification completed: `go test ./...`, `go vet ./...`,
+  `golangci-lint run ./...`, `gofmt`, and `git diff --check`.
+- PostgreSQL integration coverage includes migration readiness, immutable
+  Release transitions, concurrent publication, verified-only suspend/revoke,
+  and explicit pre-v4 fixture seeding. Full database-backed integration runs
+  require `NEKIRO_TEST_DATABASE_URL` and are not executed when it is absent.
+- The existing clean Invoke-to-Record acceptance now provisions one-time proof
+  files in the Sample Agent containers and exercises the trusted
+  Register -> Verify -> Publish -> Install path. T017 remains open for the
+  complete trusted-publication negative-path acceptance matrix.

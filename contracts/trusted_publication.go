@@ -1,6 +1,9 @@
 package contracts
 
-import "fmt"
+import (
+	"fmt"
+	"time"
+)
 
 type TrustedPublicationErrorCode string
 
@@ -53,4 +56,38 @@ func NewTrustedPublicationError(code TrustedPublicationErrorCode, traceID TraceI
 		return TrustedPublicationError{}, fmt.Errorf("unknown trusted publication error code %q", code)
 	}
 	return TrustedPublicationError{Code: code, Message: message, TraceID: traceID}, nil
+}
+
+const (
+	ReleaseStateDraft               = "draft"
+	ReleaseStatePendingVerification = "pending_verification"
+	ReleaseStateVerified            = "verified"
+	ReleaseStatePublished           = "published"
+	ReleaseStateSuspended           = "suspended"
+	ReleaseStateRevoked             = "revoked"
+)
+
+type CreateAgentReleaseRequest struct {
+	Version           string `json:"version"`
+	EndpointBindingID string `json:"endpointBindingId"`
+}
+
+type AgentReleaseResponse struct {
+	ReleaseID                  string     `json:"releaseId"`
+	ProviderID                 string     `json:"providerId"`
+	AgentID                    string     `json:"agentId"`
+	AgentCardVersion           string     `json:"agentCardVersion"`
+	CardDigest                 string     `json:"cardDigest"`
+	EndpointBindingID          string     `json:"endpointBindingId"`
+	EndpointOrigin             string     `json:"endpointOrigin"`
+	EndpointPath               string     `json:"endpointPath"`
+	VerificationMethod         string     `json:"verificationMethod"`
+	VerificationEvidenceDigest *string    `json:"verificationEvidenceDigest,omitempty"`
+	State                      string     `json:"state"`
+	CreatedAt                  time.Time  `json:"createdAt"`
+	UpdatedAt                  time.Time  `json:"updatedAt"`
+	VerifiedAt                 *time.Time `json:"verifiedAt,omitempty"`
+	PublishedAt                *time.Time `json:"publishedAt,omitempty"`
+	SuspendedAt                *time.Time `json:"suspendedAt,omitempty"`
+	RevokedAt                  *time.Time `json:"revokedAt,omitempty"`
 }

@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"os"
 
+	"github.com/Nene7ko/NeKiro/agents/internal/challengeproof"
 	runtimea "github.com/Nene7ko/NeKiro/agents/runtime-a"
 )
 
@@ -17,7 +18,11 @@ func main() {
 	if err != nil {
 		log.Fatal("runtime-a initialize: ", err)
 	}
-	if err := http.ListenAndServe(config.ListenAddress, runtimea.NewHTTPHandler(handler)); err != nil {
+	application, err := challengeproof.NewHandler(runtimea.NewHTTPHandler(handler), os.LookupEnv)
+	if err != nil {
+		log.Fatal("runtime-a challenge proof: ", err)
+	}
+	if err := http.ListenAndServe(config.ListenAddress, application); err != nil {
 		log.Fatal("runtime-a serve: ", err)
 	}
 }

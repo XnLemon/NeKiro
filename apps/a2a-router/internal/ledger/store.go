@@ -3,6 +3,7 @@ package ledger
 import (
 	"context"
 	"database/sql"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"time"
@@ -263,7 +264,8 @@ func (store *Store) validateCandidate(event contracts.InvocationEventV03) (time.
 const projectionSelect = `
 SELECT invocation_id, root_task_id, parent_invocation_id, trace_id,
        caller_type, caller_id, workspace_id, target_agent_id,
-       agent_card_version, capability, status, latency_ms, error_code,
+       agent_card_version, agent_release_id, agent_card_digest, capability,
+       status, latency_ms, error_code,
        created_at, updated_at
 FROM ledger.invocations `
 
@@ -272,15 +274,19 @@ func lockProjection(ctx context.Context, tx pgx.Tx, invocationID string) (contra
 }
 
 func insertProjection(ctx context.Context, tx pgx.Tx, event contracts.InvocationEventV03, occurredAt time.Time) error {
-	_, err := tx.Exec(ctx, `
+	digest, err := digestBytes(event.AgentCardDigest)
+	if err != nil {
+		return err
+	}
+	_, err = tx.Exec(ctx, `
 INSERT INTO ledger.invocations (
   invocation_id, root_task_id, parent_invocation_id, trace_id, caller_type,
-  caller_id, workspace_id, target_agent_id, agent_card_version, capability,
-  status, created_at, updated_at
-) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$12)`,
+  caller_id, workspace_id, target_agent_id, agent_card_version,
+  agent_release_id, agent_card_digest, capability, status, created_at, updated_at
+) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$14)`,
 		event.InvocationID, event.RootTaskID, nullableText(event.ParentInvocationID), event.TraceID,
 		event.Caller.Type, event.Caller.ID, event.WorkspaceID, event.TargetAgentID,
-		event.AgentCardVersion, event.Capability, event.Status, occurredAt)
+		event.AgentCardVersion, nullableText(event.AgentReleaseID), digest, event.Capability, event.Status, occurredAt)
 	return err
 }
 
@@ -289,18 +295,22 @@ func insertEvent(ctx context.Context, tx pgx.Tx, event contracts.InvocationEvent
 	if event.Error != nil {
 		errorCode = event.Error.Code
 	}
-	_, err := tx.Exec(ctx, `
+	digest, err := digestBytes(event.AgentCardDigest)
+	if err != nil {
+		return err
+	}
+	_, err = tx.Exec(ctx, `
 INSERT INTO ledger.invocation_events (
   event_id, invocation_id, sequence, occurred_at, event_type, status,
   root_task_id, parent_invocation_id, trace_id, caller_type, caller_id,
-  workspace_id, target_agent_id, agent_card_version, capability,
-  chunk_index, chunk_bytes, latency_ms, error_code
-) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)`,
+  workspace_id, target_agent_id, agent_card_version, agent_release_id,
+  agent_card_digest, capability, chunk_index, chunk_bytes, latency_ms, error_code
+) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)`,
 		event.EventID, event.InvocationID, event.Sequence, occurredAt, event.Type, event.Status,
 		event.RootTaskID, nullableText(event.ParentInvocationID), event.TraceID,
 		event.Caller.Type, event.Caller.ID, event.WorkspaceID, event.TargetAgentID,
-		event.AgentCardVersion, event.Capability, event.ChunkIndex, event.ChunkBytes,
-		event.LatencyMS, errorCode)
+		event.AgentCardVersion, nullableText(event.AgentReleaseID), digest, event.Capability,
+		event.ChunkIndex, event.ChunkBytes, event.LatencyMS, errorCode)
 	return err
 }
 
@@ -323,8 +333,8 @@ func readEvents(ctx context.Context, tx pgx.Tx, invocationID string) ([]contract
 	rows, err := tx.Query(ctx, `
 SELECT event_id, invocation_id, sequence, occurred_at, event_type, status,
        root_task_id, parent_invocation_id, trace_id, caller_type, caller_id,
-       workspace_id, target_agent_id, agent_card_version, capability,
-       chunk_index, chunk_bytes, latency_ms, error_code
+       workspace_id, target_agent_id, agent_card_version, agent_release_id,
+       agent_card_digest, capability, chunk_index, chunk_bytes, latency_ms, error_code
 FROM ledger.invocation_events
 WHERE invocation_id = $1 ORDER BY sequence ASC`, invocationID)
 	if err != nil {
@@ -350,11 +360,13 @@ type scanner interface{ Scan(...any) error }
 func scanProjection(row scanner) (contracts.InvocationRecordV4, error) {
 	var value contracts.InvocationRecordV4
 	var parent, errorCode sql.NullString
+	var releaseID sql.NullString
+	var cardDigest []byte
 	var latency sql.NullInt64
 	err := row.Scan(
 		&value.InvocationID, &value.RootTaskID, &parent, &value.TraceID,
 		&value.Caller.Type, &value.Caller.ID, &value.WorkspaceID, &value.TargetAgentID,
-		&value.AgentCardVersion, &value.Capability, &value.Status, &latency, &errorCode,
+		&value.AgentCardVersion, &releaseID, &cardDigest, &value.Capability, &value.Status, &latency, &errorCode,
 		&value.CreatedAt, &value.UpdatedAt,
 	)
 	if err != nil {
@@ -369,6 +381,9 @@ func scanProjection(row scanner) (contracts.InvocationRecordV4, error) {
 	if errorCode.Valid {
 		value.ErrorCode = contracts.PlatformErrorCode(errorCode.String)
 	}
+	if err := assignReleaseProvenance(&value.AgentReleaseID, &value.AgentCardDigest, releaseID, cardDigest); err != nil {
+		return value, err
+	}
 	return value, nil
 }
 
@@ -376,11 +391,13 @@ func scanEvent(row scanner) (contracts.InvocationEventV03, error) {
 	var event contracts.InvocationEventV03
 	var occurredAt time.Time
 	var parent, errorCode sql.NullString
+	var releaseID sql.NullString
+	var cardDigest []byte
 	var chunkIndex, chunkBytes, latency sql.NullInt64
 	err := row.Scan(
 		&event.EventID, &event.InvocationID, &event.Sequence, &occurredAt, &event.Type, &event.Status,
 		&event.RootTaskID, &parent, &event.TraceID, &event.Caller.Type, &event.Caller.ID,
-		&event.WorkspaceID, &event.TargetAgentID, &event.AgentCardVersion, &event.Capability,
+		&event.WorkspaceID, &event.TargetAgentID, &event.AgentCardVersion, &releaseID, &cardDigest, &event.Capability,
 		&chunkIndex, &chunkBytes, &latency, &errorCode,
 	)
 	if err != nil {
@@ -409,7 +426,36 @@ func scanEvent(row scanner) (contracts.InvocationEventV03, error) {
 		}
 		event.Error = &platformError
 	}
+	if err := assignReleaseProvenance(&event.AgentReleaseID, &event.AgentCardDigest, releaseID, cardDigest); err != nil {
+		return event, err
+	}
 	return event, nil
+}
+
+func assignReleaseProvenance(releaseID *string, cardDigest *string, storedID sql.NullString, storedDigest []byte) error {
+	if storedID.Valid != (len(storedDigest) > 0) {
+		return errors.New("stored Invocation release provenance is incomplete")
+	}
+	if !storedID.Valid {
+		return nil
+	}
+	if len(storedDigest) != 32 {
+		return errors.New("stored Invocation Card digest has invalid length")
+	}
+	*releaseID = storedID.String
+	*cardDigest = hex.EncodeToString(storedDigest)
+	return nil
+}
+
+func digestBytes(value string) ([]byte, error) {
+	if value == "" {
+		return nil, nil
+	}
+	decoded, err := hex.DecodeString(value)
+	if err != nil || len(decoded) != 32 {
+		return nil, errors.New("invocation card digest is invalid")
+	}
+	return decoded, nil
 }
 
 func nullableText(value string) any {

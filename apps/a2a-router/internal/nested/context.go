@@ -74,7 +74,7 @@ func DeriveChildContext(parent contracts.InvocationDetailResponseV4, authenticat
 // BuildChildDispatchRequest constructs the trusted DispatchInvocationRequestV3
 // for the child Invocation from the derived context and the untrusted nested
 // request fields. The parent Invocation ID is propagated for Ledger lineage.
-func BuildChildDispatchRequest(child ChildContext, targetAgentID, capability string, input []byte, stream bool, agentCardVersion string) contracts.DispatchInvocationRequestV3 {
+func BuildChildDispatchRequest(child ChildContext, targetAgentID, capability string, input []byte, stream bool, agentCardVersion, agentReleaseID, agentCardDigest string) contracts.DispatchInvocationRequestV3 {
 	return contracts.DispatchInvocationRequestV3{
 		InvocationID:       child.ChildInvocationID,
 		RootTaskID:         child.RootTaskID,
@@ -84,6 +84,8 @@ func BuildChildDispatchRequest(child ChildContext, targetAgentID, capability str
 		WorkspaceID:        child.WorkspaceID,
 		TargetAgentID:      targetAgentID,
 		AgentCardVersion:   agentCardVersion,
+		AgentReleaseID:     agentReleaseID,
+		AgentCardDigest:    agentCardDigest,
 		Capability:         capability,
 		Input:              input,
 		Stream:             stream,

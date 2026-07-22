@@ -41,7 +41,8 @@ type idsStub struct{ err error }
 func (stub idsStub) NewRoot() (string, string, error) { return "inv-root", "task-root", stub.err }
 
 func TestDispatchAuthorizesBeforeCreatingExactRootRouterRequest(t *testing.T) {
-	authorizer := &authorizerStub{result: workspace.AuthorizedInvocation{AgentCardVersion: "1.2.3"}}
+	digest := strings.Repeat("a", 64)
+	authorizer := &authorizerStub{result: workspace.AuthorizedInvocation{AgentCardVersion: "1.2.3", AgentReleaseID: "release-root", AgentCardDigest: digest}}
 	router := &routerStub{result: &RouterResponse{StatusCode: 200, ContentType: "application/json", Body: io.NopCloser(strings.NewReader(`{}`))}}
 	service, err := NewService(authorizer, router, idsStub{})
 	if err != nil {
@@ -52,7 +53,7 @@ func TestDispatchAuthorizesBeforeCreatingExactRootRouterRequest(t *testing.T) {
 		t.Fatalf("dispatch result=%v err=%v", response, err)
 	}
 	request := router.request
-	if authorizer.calls != 1 || router.calls != 1 || request.InvocationID != "inv-root" || request.RootTaskID != "task-root" || request.TraceID != "trace-root" || request.Caller != (contracts.Caller{Type: "user", ID: "owner-a"}) || request.WorkspaceID != "workspace-a" || request.TargetAgentID != "agent-a" || request.AgentCardVersion != "1.2.3" || request.Capability != "capability.read" || string(request.Input) != `{"query":"x"}` || request.Stream || router.mode != contracts.InvocationResultModeJSON {
+	if authorizer.calls != 1 || router.calls != 1 || request.InvocationID != "inv-root" || request.RootTaskID != "task-root" || request.TraceID != "trace-root" || request.Caller != (contracts.Caller{Type: "user", ID: "owner-a"}) || request.WorkspaceID != "workspace-a" || request.TargetAgentID != "agent-a" || request.AgentCardVersion != "1.2.3" || request.AgentReleaseID != "release-root" || request.AgentCardDigest != digest || request.Capability != "capability.read" || string(request.Input) != `{"query":"x"}` || request.Stream || router.mode != contracts.InvocationResultModeJSON {
 		t.Fatalf("unexpected dispatch: auth=%d router=%d request=%#v mode=%q", authorizer.calls, router.calls, request, router.mode)
 	}
 }

@@ -684,6 +684,9 @@ func TestResolveHandlerPreservesTypedFailureCorrelation(t *testing.T) {
 		{name: "installation missing", err: workspace.ErrAgentNotInstalled, status: http.StatusNotFound, code: contracts.ErrorCodeAgentNotInstalled, message: "The Agent is not installed in this Workspace."},
 		{name: "installation disabled", err: workspace.ErrInstallationDisabled, status: http.StatusForbidden, code: contracts.ErrorCodeInstallationDisabled, message: "The Agent installation is disabled."},
 		{name: "agent disabled", err: workspace.ErrAgentDisabled, status: http.StatusForbidden, code: contracts.ErrorCodeAgentDisabled, message: "The Agent version is disabled."},
+		{name: "release unpublished", err: workspace.ErrReleaseUnpublished, status: http.StatusForbidden, code: contracts.ErrorCodeAgentReleaseUnpublished, message: "The Agent release is not published."},
+		{name: "release suspended", err: workspace.ErrReleaseSuspended, status: http.StatusForbidden, code: contracts.ErrorCodeAgentReleaseSuspended, message: "The Agent release is suspended."},
+		{name: "release revoked", err: workspace.ErrReleaseRevoked, status: http.StatusForbidden, code: contracts.ErrorCodeAgentReleaseRevoked, message: "The Agent release is revoked."},
 		{name: "capability denied", err: workspace.ErrCapabilityNotAllowed, status: http.StatusForbidden, code: contracts.ErrorCodeCapabilityNotAllowed, message: "The requested capability is not allowed."},
 		{name: "dependency", err: workspace.ErrDependency, status: http.StatusServiceUnavailable, code: contracts.ErrorCodeDependency, message: "A required platform dependency failed."},
 	}
