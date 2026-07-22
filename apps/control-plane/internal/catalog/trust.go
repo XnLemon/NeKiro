@@ -458,7 +458,7 @@ func (service *TrustService) authorizeProvider(ctx context.Context, caller catal
 	return nil
 }
 
-func fetchVerificationProof(ctx context.Context, client *http.Client, endpoint Endpoint, challengeID string, destinationIPs []net.IP) (string, error) {
+func fetchVerificationProof(ctx context.Context, client *http.Client, endpoint Endpoint, challengeID string, destinationIPs []net.IP) (proof string, returnErr error) {
 	if len(destinationIPs) == 0 {
 		return "", ErrEndpointUnavailable
 	}
@@ -475,7 +475,12 @@ func fetchVerificationProof(ctx context.Context, client *http.Client, endpoint E
 	if err != nil {
 		return "", fmt.Errorf("request ownership challenge: %w: %v", ErrEndpointUnavailable, err)
 	}
-	defer response.Body.Close()
+	defer func() {
+		if closeErr := response.Body.Close(); closeErr != nil && returnErr == nil {
+			proof = ""
+			returnErr = fmt.Errorf("close ownership challenge response: %w: %v", ErrEndpointUnavailable, closeErr)
+		}
+	}()
 	if response.StatusCode != http.StatusOK {
 		if response.StatusCode >= http.StatusMultipleChoices && response.StatusCode < http.StatusBadRequest {
 			return "", ErrRedirectNotAllowed
