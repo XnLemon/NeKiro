@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/Nene7ko/NeKiro/apps/a2a-router/internal/auth"
+	"github.com/Nene7ko/NeKiro/apps/a2a-router/internal/credential"
 	"github.com/Nene7ko/NeKiro/apps/a2a-router/internal/nested"
 	"github.com/Nene7ko/NeKiro/contracts"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -35,6 +36,7 @@ type Config struct {
 	SSEEventLimitBytes             int64
 	ResolutionDeadline             time.Duration
 	AgentDeadline                  time.Duration
+	AgentCredential                credential.Config
 }
 
 type jsonFrame struct {
@@ -124,7 +126,11 @@ func Load() (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
-	return Config{ListenAddress: listen, RouterPrincipals: principals, AgentPrincipals: agentPrincipals, DatabaseURL: databaseURL, ControlPlaneResolveURL: resolveURL, ControlPlaneVersionURL: versionURL, ControlPlaneServiceToken: token, InternalRequestLimitBytes: requestLimit, AgentRequestLimitBytes: agentRequestLimit, ControlPlaneResponseLimitBytes: responseLimit, AgentResponseLimitBytes: agentResponseLimit, A2AEventLimitBytes: a2aEventLimit, SSEEventLimitBytes: sseEventLimit, ResolutionDeadline: time.Duration(deadlineMS) * time.Millisecond, AgentDeadline: time.Duration(agentDeadlineMS) * time.Millisecond}, nil
+	agentCredential, err := credential.LoadConfig(os.LookupEnv)
+	if err != nil {
+		return Config{}, err
+	}
+	return Config{ListenAddress: listen, RouterPrincipals: principals, AgentPrincipals: agentPrincipals, DatabaseURL: databaseURL, ControlPlaneResolveURL: resolveURL, ControlPlaneVersionURL: versionURL, ControlPlaneServiceToken: token, InternalRequestLimitBytes: requestLimit, AgentRequestLimitBytes: agentRequestLimit, ControlPlaneResponseLimitBytes: responseLimit, AgentResponseLimitBytes: agentResponseLimit, A2AEventLimitBytes: a2aEventLimit, SSEEventLimitBytes: sseEventLimit, ResolutionDeadline: time.Duration(deadlineMS) * time.Millisecond, AgentDeadline: time.Duration(agentDeadlineMS) * time.Millisecond, AgentCredential: agentCredential}, nil
 }
 
 // LoadDatabaseURL validates the database boundary shared by the serving and

@@ -7,7 +7,8 @@ import (
 
 const (
 	NorthboundInvocationAPIVersion        = "4"
-	RouterInternalRuntimeAPIVersion       = "3"
+	RouterInternalMetadataAPIVersion      = "3"
+	RouterInternalRuntimeAPIVersion       = "4"
 	AgentRouterAPIVersion                 = "1"
 	ControlPlaneInternalV3APIVersion      = "3"
 	RuntimePlatformErrorSchemaVersion     = "4"
@@ -34,11 +35,11 @@ type NestedInvocationRequestV1 struct {
 	Stream             bool            `json:"stream"`
 }
 
-type DispatchInvocationRequestV3 struct {
+type DispatchInvocationRequestV4 struct {
 	InvocationID string `json:"invocationId"`
 	RootTaskID   string `json:"rootTaskId"`
 	// ParentInvocationID is trusted in-process lineage for DispatchChild. It
-	// is deliberately excluded from the Router Internal v3 root HTTP contract.
+	// is deliberately excluded from the Router Internal v4 root HTTP contract.
 	ParentInvocationID string          `json:"-"`
 	TraceID            TraceID         `json:"traceId"`
 	Caller             Caller          `json:"caller"`

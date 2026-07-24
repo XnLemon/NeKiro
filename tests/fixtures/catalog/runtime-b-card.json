@@ -32,7 +32,7 @@
       "requiredPermissions": ["text.read"]
     }
   ],
-  "authentication": {"type": "none"},
+  "authentication": {"type": "http_bearer"},
   "permissions": [
     {"id": "text.read", "description": "Read supplied text."}
   ],

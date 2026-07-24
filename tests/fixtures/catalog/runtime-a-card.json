@@ -24,7 +24,7 @@
       "requiredPermissions": []
     }
   ],
-  "authentication": {"type": "none"},
+  "authentication": {"type": "http_bearer"},
   "permissions": [],
   "limits": {
     "timeoutMs": 30000,

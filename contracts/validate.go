@@ -24,7 +24,7 @@ const (
 	a2aProfileSchemaID      = "https://schemas.nekiro.dev/a2a-profile/v0.2"
 )
 
-//go:embed schemas/*.json openapi/*.yaml a2a-profile/*.json a2a-profile/v0.3.0/*.json a2a-profile/v0.3.0/conformance/*.json a2a-profile/v0.3.0/conformance/*.sse agent-card/v0.2/semantic-rules.md agent-card/v0.2/conformance/*.json invocation/v1/semantic-rules.md invocation/v1/conformance/*.json invocation-runtime/v1/semantic-rules.md invocation-runtime/v1/conformance/*.json installation/v2/semantic-rules.md
+//go:embed schemas/*.json openapi/*.yaml a2a-profile/*.json a2a-profile/v0.3.0/*.json a2a-profile/v0.3.0/conformance/*.json a2a-profile/v0.3.0/conformance/*.sse agent-card/v0.2/semantic-rules.md agent-card/v0.2/conformance/*.json invocation/v1/semantic-rules.md invocation/v1/conformance/*.json invocation-runtime/v1/semantic-rules.md invocation-runtime/v1/conformance/*.json installation/v2/semantic-rules.md router-agent-credential/v1/semantic-rules.md router-agent-credential/v1/conformance/*.json
 var contractFiles embed.FS
 
 type Validator struct {

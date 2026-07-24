@@ -31,9 +31,11 @@ The repository has an active language-neutral contract set and its tested Go
 mappings: Agent Card `0.2`, Workspace `v1`, Installation `v2`, Control Plane
 Northbound `v3` plus the Invocation `v4` companion, Control Plane Internal API
 `v2` exact Card resolution plus `v3` nested installed-version resolution,
-Router Internal API `v3`, Agent Router API `v1`, Invocation Event `0.3`,
+Router Internal dispatch API `v4` (metadata reads `v3`), Agent Router API `v1`, Invocation Event `0.3`,
 Platform Error `v2` / `v3` / `v4` by owning surface, Invocation Result `v1`,
 Result Stream Event `v2`, and A2A Profile Schema `0.2` for protocol `0.3.0`.
+Router Invocation Credential `v1` is the active companion contract for the
+Router-to-Agent HTTP hop.
 Historical contract generations remain migration evidence; the runtime does
 not add speculative dual-read behavior for them.
 
@@ -51,14 +53,20 @@ performs controlled exact resolution, invokes the deterministic Runtime B A2A
 sample, and records metadata-only append-only Ledger events with
 Workspace-scoped Invocation/Trace reads.
 
+Every managed outbound Agent request now uses a fresh Router-signed Ed25519
+credential bound to the exact Workspace, Agent version, release/digest,
+capability, Invocation, Task, parent lineage, Trace, and endpoint origin.
+Both sample Runtimes verify the credential and reject direct execution before
+runtime logic; stream cancellation receives a separate one-time `jti`.
+
 Frontend Console work remains paused and `apps/console` is not yet present. The
 thin Go Agent SDK, Router-owned nested adapter, isolated Runtime A, cross-Runtime
-nested invocation, process/Compose wiring, and the complete clean-environment
-backend E2E acceptance are implemented. CI run `29810057739` passed the static,
-contract, PostgreSQL, Runtime A, Compose, and Invoke-to-Record acceptance gates.
-The repository therefore proves the backend/headless Phase 1 loop, but not yet
-the user-facing Console or the later production governance and deployment
-integration stages.
+nested invocation, and process/Compose wiring are implemented. CI run
+`30060752722` passed root build/test/race/vet/lint, Runtime A test/vet/race,
+PostgreSQL integration, Compose configuration, Frontend, Codecov, and the real
+authenticated Invoke-to-Record acceptance. The repository therefore proves
+the backend/headless Phase 1 loop, but not yet the user-facing Console or the
+later production governance and deployment integration stages.
 
 The first-stage architecture keeps these boundaries:
 
@@ -97,7 +105,8 @@ Copy-Item .env.example .env
 
 Set every required value in `.env`: PostgreSQL bootstrap values, the explicit
 Compose database URL, public/internal development principals, service tokens,
-Control Plane and Router host ports, and request/event/deadline limits. No
+the Router Ed25519 signing identity and Agent verification key, Control Plane
+and Router host ports, and request/event/deadline limits. No
 required credential, identity, database, address, limit, or port has a runtime
 fallback.
 

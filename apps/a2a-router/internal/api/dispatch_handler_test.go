@@ -3,6 +3,8 @@ package api
 import (
 	"bytes"
 	"context"
+	"crypto/ed25519"
+	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"iter"
@@ -14,10 +16,12 @@ import (
 
 	runtimeb "github.com/Nene7ko/NeKiro/agents/runtime-b"
 	"github.com/Nene7ko/NeKiro/apps/a2a-router/internal/auth"
+	"github.com/Nene7ko/NeKiro/apps/a2a-router/internal/credential"
 	"github.com/Nene7ko/NeKiro/apps/a2a-router/internal/resolution"
 	streammodel "github.com/Nene7ko/NeKiro/apps/a2a-router/internal/stream"
 	a2atransport "github.com/Nene7ko/NeKiro/apps/a2a-router/internal/transport/a2a"
 	"github.com/Nene7ko/NeKiro/contracts"
+	"github.com/a2aproject/a2a-go/a2asrv"
 )
 
 type authStub struct {
@@ -53,7 +57,7 @@ func (stub *resolverStub) Resolve(ctx context.Context, request contracts.Resolve
 }
 
 type transportStub struct {
-	dispatch  contracts.DispatchInvocationRequestV3
+	dispatch  contracts.DispatchInvocationRequestV4
 	resolved  contracts.ResolveAgentResponse
 	result    json.RawMessage
 	calls     int
@@ -62,7 +66,7 @@ type transportStub struct {
 }
 
 func TestValidateDispatchRejectsRootParentLineage(t *testing.T) {
-	request := contracts.DispatchInvocationRequestV3{
+	request := contracts.DispatchInvocationRequestV4{
 		InvocationID: "inv-root", RootTaskID: "task-root", ParentInvocationID: "inv-parent",
 		TraceID: "trc_root_1", Caller: contracts.Caller{Type: "user", ID: "user-1"},
 		WorkspaceID: "workspace-1", TargetAgentID: "agent-1", AgentCardVersion: "1.0.0",
@@ -73,13 +77,23 @@ func TestValidateDispatchRejectsRootParentLineage(t *testing.T) {
 	}
 }
 
+func TestDispatchV3RouteIsRetired(t *testing.T) {
+	resolver := &resolverStub{}
+	handler := newDispatchTestHandler(t, authStub{caller: auth.Caller{ID: "control-plane"}}, resolver, 1024)
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/internal/v3/invocations", strings.NewReader(validDispatchBody(false))))
+	if response.Code != http.StatusNotFound || resolver.calls != 0 {
+		t.Fatalf("status=%d resolver calls=%d", response.Code, resolver.calls)
+	}
+}
+
 type streamingTransportStub struct {
 	transportStub
 	events []streammodel.Event
 	err    error
 }
 
-func (stub *streamingTransportStub) SendStreaming(_ context.Context, _ contracts.DispatchInvocationRequestV3, _ contracts.ResolveAgentResponse) iter.Seq2[streammodel.Event, error] {
+func (stub *streamingTransportStub) SendStreaming(_ context.Context, _ contracts.DispatchInvocationRequestV4, _ contracts.ResolveAgentResponse) iter.Seq2[streammodel.Event, error] {
 	return func(yield func(streammodel.Event, error) bool) {
 		for _, event := range stub.events {
 			if !yield(event, nil) {
@@ -92,11 +106,11 @@ func (stub *streamingTransportStub) SendStreaming(_ context.Context, _ contracts
 	}
 }
 
-func (stub *streamingTransportStub) ValidateStreamingTarget(_ contracts.DispatchInvocationRequestV3, _ contracts.ResolveAgentResponse) error {
+func (stub *streamingTransportStub) ValidateStreamingTarget(_ contracts.DispatchInvocationRequestV4, _ contracts.ResolveAgentResponse) error {
 	return stub.targetErr
 }
 
-func (stub *streamingTransportStub) ValidateStreamingInput(_ contracts.DispatchInvocationRequestV3, _ contracts.ResolveAgentResponse) error {
+func (stub *streamingTransportStub) ValidateStreamingInput(_ contracts.DispatchInvocationRequestV4, _ contracts.ResolveAgentResponse) error {
 	return nil
 }
 
@@ -111,7 +125,7 @@ type deadlineTransportStub struct {
 	deadlineAt time.Time
 }
 
-func (stub *deadlineTransportStub) SendNonStreaming(ctx context.Context, dispatch contracts.DispatchInvocationRequestV3, resolved contracts.ResolveAgentResponse) (json.RawMessage, error) {
+func (stub *deadlineTransportStub) SendNonStreaming(ctx context.Context, dispatch contracts.DispatchInvocationRequestV4, resolved contracts.ResolveAgentResponse) (json.RawMessage, error) {
 	stub.calls++
 	stub.dispatch = dispatch
 	stub.resolved = resolved
@@ -120,7 +134,7 @@ func (stub *deadlineTransportStub) SendNonStreaming(ctx context.Context, dispatc
 	return nil, ctx.Err()
 }
 
-func (stub *inputPreflightTransportStub) ValidateNonStreamingInput(contracts.DispatchInvocationRequestV3, contracts.ResolveAgentResponse) error {
+func (stub *inputPreflightTransportStub) ValidateNonStreamingInput(contracts.DispatchInvocationRequestV4, contracts.ResolveAgentResponse) error {
 	stub.preflightCalls++
 	return stub.preflightErr
 }
@@ -136,18 +150,18 @@ func (err codedTransportError) PlatformErrorCode() contracts.PlatformErrorCode {
 	return err.code
 }
 
-func (stub *transportStub) SendNonStreaming(_ context.Context, dispatch contracts.DispatchInvocationRequestV3, resolved contracts.ResolveAgentResponse) (json.RawMessage, error) {
+func (stub *transportStub) SendNonStreaming(_ context.Context, dispatch contracts.DispatchInvocationRequestV4, resolved contracts.ResolveAgentResponse) (json.RawMessage, error) {
 	stub.calls++
 	stub.dispatch = dispatch
 	stub.resolved = resolved
 	return stub.result, stub.err
 }
 
-func (stub *transportStub) ValidateNonStreamingTarget(contracts.DispatchInvocationRequestV3, contracts.ResolveAgentResponse) error {
+func (stub *transportStub) ValidateNonStreamingTarget(contracts.DispatchInvocationRequestV4, contracts.ResolveAgentResponse) error {
 	return stub.targetErr
 }
 
-func (stub *transportStub) ValidateNonStreamingInput(contracts.DispatchInvocationRequestV3, contracts.ResolveAgentResponse) error {
+func (stub *transportStub) ValidateNonStreamingInput(contracts.DispatchInvocationRequestV4, contracts.ResolveAgentResponse) error {
 	return nil
 }
 
@@ -370,7 +384,7 @@ func TestDispatchChildRejectsResolvedReleaseProvenanceMismatchBeforeLedger(t *te
 	if err != nil {
 		t.Fatal(err)
 	}
-	dispatch := contracts.DispatchInvocationRequestV3{
+	dispatch := contracts.DispatchInvocationRequestV4{
 		InvocationID: "inv-child", RootTaskID: "task-root", ParentInvocationID: "inv-parent", TraceID: "trace-child",
 		Caller: contracts.Caller{Type: "agent", ID: "agent-parent"}, WorkspaceID: "workspace-a",
 		TargetAgentID: "agent-a", AgentCardVersion: "1.0.0", AgentReleaseID: "release-request",
@@ -481,7 +495,7 @@ func TestDispatchWithLedgerCancellationAfterAcceptanceCommitsTerminal(t *testing
 	transport := &transportStub{result: json.RawMessage(`{"kind":"message"}`)}
 	ledger := &cancelingLedgerRecorder{cancel: cancel}
 	handler := newDispatchLedgerTestHandler(t, authStub{caller: auth.Caller{ID: "control-plane"}}, resolver, transport, ledger, 4096)
-	request := httptest.NewRequest(http.MethodPost, "/internal/v3/invocations", strings.NewReader(validDispatchBody(false))).WithContext(requestContext)
+	request := httptest.NewRequest(http.MethodPost, "/internal/v4/invocations", strings.NewReader(validDispatchBody(false))).WithContext(requestContext)
 	request.Header.Set("Content-Type", "application/json")
 	request.Header.Set("Accept", "application/json")
 	response := httptest.NewRecorder()
@@ -503,7 +517,7 @@ func TestDispatchWithLedgerTimeoutAfterAcceptanceCommitsTerminal(t *testing.T) {
 	transport := &transportStub{result: json.RawMessage(`{"kind":"message"}`)}
 	ledger := &cancelingLedgerRecorder{delay: 25 * time.Millisecond}
 	handler := newDispatchLedgerTestHandler(t, authStub{caller: auth.Caller{ID: "control-plane"}}, resolver, transport, ledger, 4096)
-	request := httptest.NewRequest(http.MethodPost, "/internal/v3/invocations", strings.NewReader(validDispatchBody(false))).WithContext(requestContext)
+	request := httptest.NewRequest(http.MethodPost, "/internal/v4/invocations", strings.NewReader(validDispatchBody(false))).WithContext(requestContext)
 	request.Header.Set("Content-Type", "application/json")
 	request.Header.Set("Accept", "application/json")
 	response := httptest.NewRecorder()
@@ -610,19 +624,23 @@ func TestDispatchStreamingUsesStreamingTargetValidation(t *testing.T) {
 }
 
 func TestDispatchStreamingRuntimeBEndToEnd(t *testing.T) {
-	server := httptest.NewServer(runtimeb.NewHTTPHandler(runtimeb.NewHandler()))
+	server := httptest.NewServer(a2asrv.NewJSONRPCHandler(runtimeb.NewHandler()))
 	t.Cleanup(server.Close)
-	transport, err := a2atransport.NewClient(server.Client(), 4096, 4096, 4096, 4096)
+	issuer, err := credential.NewIssuer(credential.Config{Issuer: "https://a2a-router.nekiro.test", KeyID: "router-key-1", PrivateKey: ed25519.NewKeyFromSeed(make([]byte, ed25519.SeedSize)), TTL: 30 * time.Second}, time.Now, rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	transport, err := a2atransport.NewClient(server.Client(), issuer, 4096, 4096, 4096, 4096)
 	if err != nil {
 		t.Fatal(err)
 	}
 	resolver := &resolverStub{response: contracts.ResolveAgentResponse{Card: contracts.AgentCard{
 		AgentID: "agent-a", Version: "1.0.0",
 		Protocol:       contracts.AgentProtocol{Type: "a2a", Version: contracts.A2AProtocolVersion, Transport: "JSONRPC", Endpoint: server.URL},
-		Authentication: contracts.AgentAuthentication{Type: "none"},
+		Authentication: contracts.AgentAuthentication{Type: "http_bearer"},
 		Skills:         []contracts.AgentSkill{{ID: "capability-a"}},
 		Limits:         contracts.AgentLimits{TimeoutMS: 1000, MaxInputBytes: "4096", MaxOutputBytes: "4096", Streaming: true},
-	}}}
+	}, Installation: contracts.ResolvedInstallation{InstallationID: "installation-a", WorkspaceID: "workspace-a", AgentID: "agent-a", InstalledVersion: "1.0.0", InstalledReleaseID: "release-a", AgentCardDigest: strings.Repeat("a", 64), Status: "enabled"}}}
 	ledger := &ledgerRecorder{}
 	handler, err := NewDispatchHandlerWithTransportAndLedgerAndStreaming(authStub{caller: auth.Caller{ID: "control-plane"}}, resolver, transport, ledger, 4096, 4096, time.Second)
 	if err != nil {
@@ -630,7 +648,7 @@ func TestDispatchStreamingRuntimeBEndToEnd(t *testing.T) {
 	}
 	mux := http.NewServeMux()
 	handler.RegisterRoutes(mux)
-	body := `{"invocationId":"inv-a","rootTaskId":"task-a","traceId":"trace-a","caller":{"type":"user","id":"owner-a"},"workspaceId":"workspace-a","targetAgentId":"agent-a","agentCardVersion":"1.0.0","capability":"capability-a","input":{"fixture":"stream-success","value":"e2e"},"stream":true}`
+	body := `{"invocationId":"inv-a","rootTaskId":"task-a","traceId":"trace-a","caller":{"type":"user","id":"owner-a"},"workspaceId":"workspace-a","targetAgentId":"agent-a","agentCardVersion":"1.0.0","agentReleaseId":"release-a","agentCardDigest":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","capability":"capability-a","input":{"fixture":"stream-success","value":"e2e"},"stream":true}`
 	response := invokeDispatch(mux, "application/json", "text/event-stream", body)
 	if response.Code != http.StatusOK || response.Header().Get("Content-Type") != "text/event-stream" || !strings.Contains(response.Body.String(), `"type":"completed"`) {
 		t.Fatalf("status=%d headers=%#v body=%s", response.Code, response.Header(), response.Body.String())
@@ -868,7 +886,7 @@ func TestDispatchStreamingWriterFailureCommitsNonSuccessLedgerTerminal(t *testin
 	}
 	mux := http.NewServeMux()
 	handler.RegisterRoutes(mux)
-	request := httptest.NewRequest(http.MethodPost, "/internal/v3/invocations", strings.NewReader(validDispatchBody(true)))
+	request := httptest.NewRequest(http.MethodPost, "/internal/v4/invocations", strings.NewReader(validDispatchBody(true)))
 	request.Header.Set("Content-Type", "application/json")
 	request.Header.Set("Accept", "text/event-stream")
 	writer := &failingStreamWriter{header: make(http.Header)}
@@ -1047,7 +1065,7 @@ func assertLedgerLifecycle(t *testing.T, events []contracts.InvocationEventV03, 
 }
 
 func invokeDispatch(handler http.Handler, contentType, accept, body string) *httptest.ResponseRecorder {
-	request := httptest.NewRequest(http.MethodPost, "/internal/v3/invocations", strings.NewReader(body))
+	request := httptest.NewRequest(http.MethodPost, "/internal/v4/invocations", strings.NewReader(body))
 	request.Header.Set("Content-Type", contentType)
 	request.Header.Set("Accept", accept)
 	response := httptest.NewRecorder()

@@ -1,0 +1,116 @@
+openapi: 3.1.0
+info:
+  title: NeKiro Router Internal Metadata API
+  version: 3.0.0
+  description: >-
+    Router-owned Workspace-scoped Invocation and Trace metadata reads called
+    only by the authenticated Control Plane. Dispatch is owned separately by
+    Router Internal Dispatch API v4.
+servers:
+  - url: https://a2a-router.internal.nekiro.dev
+    description: Explicit internal destination; no localhost fallback
+paths:
+  /internal/v3/workspaces/{workspaceId}/invocations/{invocationId}:
+    get:
+      operationId: getRouterInvocation
+      security: [{ serviceBearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceId"
+        - $ref: "#/components/parameters/InvocationId"
+      responses:
+        "200":
+          description: Workspace-scoped Invocation projection and ordered Event 0.3 facts
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/InvocationDetailResponseV4" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "503": { $ref: "#/components/responses/Unavailable" }
+  /internal/v3/workspaces/{workspaceId}/traces/{traceId}:
+    get:
+      operationId: getRouterTrace
+      security: [{ serviceBearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceId"
+        - in: path
+          name: traceId
+          required: true
+          schema: { $ref: ../schemas/common.v1.schema.json#/$defs/traceId }
+      responses:
+        "200":
+          description: Workspace-scoped ordered Invocation lineage projections for a trace
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TraceResponseV4" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "503": { $ref: "#/components/responses/Unavailable" }
+components:
+  securitySchemes:
+    serviceBearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: opaque-service-credential
+      description: Explicit Control Plane service identity; Agent credentials are rejected before owned behavior.
+  parameters:
+    InvocationId:
+      in: path
+      name: invocationId
+      required: true
+      schema: { $ref: ../schemas/common.v1.schema.json#/$defs/invocationId }
+    WorkspaceId:
+      in: path
+      name: workspaceId
+      required: true
+      schema: { $ref: ../schemas/common.v1.schema.json#/$defs/workspaceId }
+  schemas:
+    InvocationRecordV4:
+      type: object
+      additionalProperties: false
+      required: [invocationId, rootTaskId, traceId, caller, workspaceId, targetAgentId, agentCardVersion, capability, status, createdAt, updatedAt]
+      oneOf:
+        - required: [agentReleaseId, agentCardDigest]
+        - not:
+            anyOf:
+              - required: [agentReleaseId]
+              - required: [agentCardDigest]
+      properties:
+        invocationId: { $ref: ../schemas/common.v1.schema.json#/$defs/invocationId }
+        rootTaskId: { $ref: ../schemas/common.v1.schema.json#/$defs/taskId }
+        parentInvocationId: { $ref: ../schemas/common.v1.schema.json#/$defs/invocationId }
+        traceId: { $ref: ../schemas/common.v1.schema.json#/$defs/traceId }
+        caller: { $ref: ../schemas/common.v1.schema.json#/$defs/caller }
+        workspaceId: { $ref: ../schemas/common.v1.schema.json#/$defs/workspaceId }
+        targetAgentId: { $ref: ../schemas/common.v1.schema.json#/$defs/agentId }
+        agentCardVersion: { $ref: ../schemas/common.v1.schema.json#/$defs/semver }
+        agentReleaseId: { $ref: ../schemas/common.v1.schema.json#/$defs/safeIdentifier }
+        agentCardDigest: { type: string, pattern: '^[0-9a-f]{64}$' }
+        capability: { $ref: ../schemas/common.v1.schema.json#/$defs/capabilityId }
+        status: { enum: [pending, routing, running, succeeded, failed, canceled, timed_out] }
+        latencyMs: { type: integer, minimum: 0 }
+        errorCode: { $ref: ../schemas/platform-error.v4.schema.json#/$defs/errorCode }
+        createdAt: { $ref: ../schemas/common.v1.schema.json#/$defs/dateTime }
+        updatedAt: { $ref: ../schemas/common.v1.schema.json#/$defs/dateTime }
+    InvocationDetailResponseV4:
+      type: object
+      additionalProperties: false
+      required: [invocation, events]
+      properties:
+        invocation: { $ref: "#/components/schemas/InvocationRecordV4" }
+        events: { type: array, items: { $ref: ../schemas/invocation-event.v0.3.schema.json } }
+    TraceResponseV4:
+      type: object
+      additionalProperties: false
+      required: [traceId, invocations]
+      properties:
+        traceId: { $ref: ../schemas/common.v1.schema.json#/$defs/traceId }
+        invocations: { type: array, items: { $ref: "#/components/schemas/InvocationRecordV4" } }
+    PreCorrelationPlatformError:
+      $ref: ../schemas/platform-error.v4.schema.json#/$defs/preCorrelation
+  responses:
+    Unauthenticated: { description: Missing/wrong service credential, x-platform-error-codes: [UNAUTHENTICATED], content: { application/json: { schema: { $ref: "#/components/schemas/PreCorrelationPlatformError" } } } }
+    Forbidden: { description: Workspace scope is not allowed, x-platform-error-codes: [FORBIDDEN], content: { application/json: { schema: { $ref: "#/components/schemas/PreCorrelationPlatformError" } } } }
+    NotFound: { description: Metadata resource not found, x-platform-error-codes: [NOT_FOUND], content: { application/json: { schema: { $ref: "#/components/schemas/PreCorrelationPlatformError" } } } }
+    Unavailable: { description: Ledger read dependency is unavailable, x-platform-error-codes: [DEPENDENCY_ERROR], content: { application/json: { schema: { $ref: "#/components/schemas/PreCorrelationPlatformError" } } } }

@@ -1,0 +1,16 @@
+{
+  "iss": "https://a2a-router.nekiro.dev",
+  "aud": ["https://agent.example"],
+  "exp": 1784700060,
+  "iat": 1784700030,
+  "jti": "rtj_0123456789abcdef0123456789abcdef",
+  "workspaceId": "workspace-a",
+  "agentId": "agent-a",
+  "agentVersion": "1.2.3",
+  "releaseId": "release-a",
+  "cardDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "capability": "agent.execute",
+  "invocationId": "inv_0123456789abcdef0123456789abcdef",
+  "rootTaskId": "task-a",
+  "traceId": "trace-a"
+}

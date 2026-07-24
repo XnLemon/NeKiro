@@ -6,14 +6,18 @@ import (
 
 func validEnvironment() map[string]string {
 	return map[string]string{
-		ListenAddressEnvironment: "127.0.0.1:4103",
-		AgentIDEnvironment:       "agent-runtime-a",
-		RouterEnvironment:        "http://127.0.0.1:4101",
-		RouterTokenEnvironment:   "opaque-token",
-		TargetAgentEnvironment:   "agent-runtime-b",
-		CapabilityEnvironment:    "fixture",
-		ResponseLimitEnvironment: "1048576",
-		EventLimitEnvironment:    "1048576",
+		ListenAddressEnvironment:                   "127.0.0.1:4103",
+		AgentIDEnvironment:                         "agent-runtime-a",
+		RouterEnvironment:                          "http://127.0.0.1:4101",
+		RouterTokenEnvironment:                     "opaque-token",
+		TargetAgentEnvironment:                     "agent-runtime-b",
+		CapabilityEnvironment:                      "fixture",
+		ResponseLimitEnvironment:                   "1048576",
+		EventLimitEnvironment:                      "1048576",
+		"NEKIRO_AGENT_ROUTER_ISSUER":               "https://a2a-router.nekiro.test",
+		"NEKIRO_AGENT_ROUTER_AUDIENCE":             "http://runtime-a:8091",
+		"NEKIRO_AGENT_ROUTER_KEY_ID":               "router-key-1",
+		"NEKIRO_AGENT_ROUTER_PUBLIC_KEY_BASE64URL": "A6EHv_POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbg",
 	}
 }
 

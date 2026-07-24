@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/ed25519"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/Nene7ko/NeKiro/apps/a2a-router/internal/auth"
 	"github.com/Nene7ko/NeKiro/apps/a2a-router/internal/config"
+	"github.com/Nene7ko/NeKiro/apps/a2a-router/internal/credential"
 	"github.com/Nene7ko/NeKiro/apps/a2a-router/internal/nested"
 	"github.com/Nene7ko/NeKiro/contracts"
 )
@@ -71,6 +73,7 @@ func TestNewHandlerAssemblesReadinessWithoutDependencyProbe(t *testing.T) {
 		SSEEventLimitBytes:             4096,
 		ResolutionDeadline:             time.Second,
 		AgentDeadline:                  time.Second,
+		AgentCredential:                credential.Config{Issuer: "https://a2a-router.nekiro.test", KeyID: "router-key-1", PrivateKey: ed25519.NewKeyFromSeed(make([]byte, ed25519.SeedSize)), TTL: 30 * time.Second},
 	}, failingDoer{}, &http.Client{}, ledgerAppenderStub{})
 	if err != nil {
 		t.Fatal(err)

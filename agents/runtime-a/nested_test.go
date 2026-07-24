@@ -3,18 +3,24 @@ package runtimea
 import (
 	"bytes"
 	"context"
+	"crypto/ed25519"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
+	"github.com/Nene7ko/NeKiro/contracts"
 	agentsdk "github.com/Nene7ko/NeKiro/sdks/agent-sdk"
 	"github.com/a2aproject/a2a-go/a2a"
 	"github.com/a2aproject/a2a-go/a2aclient"
+	"github.com/golang-jwt/jwt/v5"
 )
 
 func httptestNewServer(t *testing.T, handler http.Handler) *httptest.Server {
@@ -32,13 +38,53 @@ func newClient(t *testing.T, server *httptest.Server, headers map[string]string)
 	}
 	client, err := a2aclient.NewFromEndpoints(t.Context(), []a2a.AgentInterface{{
 		URL: server.URL, Transport: a2a.TransportProtocolJSONRPC,
-	}}, a2aclient.WithJSONRPCTransport(server.Client()), a2aclient.WithInterceptors(a2aclient.NewStaticCallMetaInjector(meta)))
+	}}, a2aclient.WithJSONRPCTransport(server.Client()), a2aclient.WithInterceptors(a2aclient.NewStaticCallMetaInjector(meta), runtimeAAuthInterceptor{}))
 	if err != nil {
 		t.Fatalf("create A2A client: %v", err)
 	}
 	t.Cleanup(func() { _ = client.Destroy() })
 	return client
 }
+
+var runtimeAAuthSequence atomic.Uint64
+
+type runtimeAAuthInterceptor struct{}
+
+func (runtimeAAuthInterceptor) Before(ctx context.Context, request *a2aclient.Request) (context.Context, error) {
+	value := func(name string) string {
+		values := request.Meta.Get(name)
+		if len(values) == 1 {
+			return values[0]
+		}
+		return ""
+	}
+	now := time.Now().Unix()
+	claims := jwt.MapClaims{
+		"iss": "https://a2a-router.nekiro.test", "aud": []string{"http://runtime-a:8091"}, "exp": now + 30, "iat": now, "jti": fmt.Sprintf("rtj_runtime_a_%d", runtimeAAuthSequence.Add(1)),
+		"workspaceId": value("x-nek-workspace-id"), "agentId": "agent-runtime-a", "agentVersion": "1.0.0", "releaseId": "release-a", "cardDigest": strings.Repeat("a", 64),
+		"capability": "fixture", "invocationId": value("x-nek-invocation-id"), "rootTaskId": value("x-nek-root-task-id"), "traceId": value("x-nek-trace-id"),
+	}
+	token := jwt.NewWithClaims(jwt.SigningMethodEdDSA, claims)
+	token.Header["typ"] = contracts.RouterAgentCredentialType
+	token.Header["kid"] = "router-key-1"
+	seed := make([]byte, ed25519.SeedSize)
+	for index := range seed {
+		seed[index] = byte(index)
+	}
+	serialized, err := token.SignedString(ed25519.NewKeyFromSeed(seed))
+	if err != nil {
+		return ctx, err
+	}
+	request.Meta.Append("Authorization", "Bearer "+serialized)
+	request.Meta.Append("x-nek-agent-card-version", "1.0.0")
+	request.Meta.Append("x-nek-agent-release-id", "release-a")
+	request.Meta.Append("x-nek-agent-card-digest", strings.Repeat("a", 64))
+	request.Meta.Append("x-nek-capability", "fixture")
+	request.Meta.Append("x-nek-target-agent-id", "agent-runtime-a")
+	return ctx, nil
+}
+
+func (runtimeAAuthInterceptor) After(context.Context, *a2aclient.Response) error { return nil }
 
 type recordingInvoker struct {
 	mu     sync.Mutex

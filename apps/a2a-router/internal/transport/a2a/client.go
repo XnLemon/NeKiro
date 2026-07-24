@@ -11,19 +11,24 @@ import (
 )
 
 const (
-	HeaderTraceID            = "x-nek-trace-id"
-	HeaderInvocationID       = "x-nek-invocation-id"
-	HeaderRootTaskID         = "x-nek-root-task-id"
-	HeaderParentInvocationID = "x-nek-parent-invocation-id"
-	HeaderWorkspaceID        = "x-nek-workspace-id"
+	HeaderTraceID            = contracts.RouterAgentTraceHeader
+	HeaderInvocationID       = contracts.RouterAgentInvocationHeader
+	HeaderRootTaskID         = contracts.RouterAgentRootTaskHeader
+	HeaderParentInvocationID = contracts.RouterAgentParentInvocationHeader
+	HeaderWorkspaceID        = contracts.RouterAgentWorkspaceHeader
 )
 
 type Client struct {
 	httpClient         *http.Client
+	credentialIssuer   CredentialIssuer
 	inputLimitBytes    int64
 	responseLimitBytes int64
 	a2aEventLimitBytes int64
 	sseEventLimitBytes int64
+}
+
+type CredentialIssuer interface {
+	Issue(contracts.RouterInvocationCredentialContextV1) (string, error)
 }
 
 type ContextHeaders struct {
@@ -34,9 +39,12 @@ type ContextHeaders struct {
 	WorkspaceID        string
 }
 
-func NewClient(httpClient *http.Client, inputLimitBytes, responseLimitBytes, a2aEventLimitBytes, sseEventLimitBytes int64) (*Client, error) {
+func NewClient(httpClient *http.Client, credentialIssuer CredentialIssuer, inputLimitBytes, responseLimitBytes, a2aEventLimitBytes, sseEventLimitBytes int64) (*Client, error) {
 	if httpClient == nil {
 		return nil, errors.New("A2A transport HTTP client is required")
+	}
+	if credentialIssuer == nil {
+		return nil, errors.New("a2a transport credential issuer is required")
 	}
 	if inputLimitBytes < contracts.RuntimeByteLimitMinimum || inputLimitBytes > contracts.RuntimeByteLimitMaximum {
 		return nil, errors.New("A2A Agent input limit is invalid")
@@ -54,7 +62,7 @@ func NewClient(httpClient *http.Client, inputLimitBytes, responseLimitBytes, a2a
 	client.CheckRedirect = func(*http.Request, []*http.Request) error {
 		return http.ErrUseLastResponse
 	}
-	return &Client{httpClient: &client, inputLimitBytes: inputLimitBytes, responseLimitBytes: responseLimitBytes, a2aEventLimitBytes: a2aEventLimitBytes, sseEventLimitBytes: sseEventLimitBytes}, nil
+	return &Client{httpClient: &client, credentialIssuer: credentialIssuer, inputLimitBytes: inputLimitBytes, responseLimitBytes: responseLimitBytes, a2aEventLimitBytes: a2aEventLimitBytes, sseEventLimitBytes: sseEventLimitBytes}, nil
 }
 
 func (client *Client) SendMessage(ctx context.Context, target Target, headers ContextHeaders, params *a2ago.MessageSendParams) (a2ago.SendMessageResult, error) {
@@ -81,16 +89,40 @@ func (client *Client) SendMessage(ctx context.Context, target Target, headers Co
 	if err != nil {
 		return nil, classify(contracts.ErrorCodeA2AProtocol, err)
 	}
-	a2aClient.AddCallInterceptor(a2aclient.NewStaticCallMetaInjector(a2aclient.CallMeta{
-		HeaderTraceID:            []string{string(headers.TraceID)},
-		HeaderInvocationID:       []string{headers.InvocationID},
-		HeaderRootTaskID:         []string{headers.RootTaskID},
-		HeaderParentInvocationID: []string{headers.ParentInvocationID},
-		HeaderWorkspaceID:        []string{headers.WorkspaceID},
-	}))
+	a2aClient.AddCallInterceptor(newCredentialInterceptor(client.credentialIssuer, credentialContext(target, headers)))
 	result, err := a2aClient.SendMessage(ctx, params)
 	if err != nil {
 		return nil, classifyTransportError(err)
 	}
 	return result, nil
+}
+
+type credentialInterceptor struct {
+	a2aclient.PassthroughInterceptor
+	issuer  CredentialIssuer
+	context contracts.RouterInvocationCredentialContextV1
+}
+
+func newCredentialInterceptor(issuer CredentialIssuer, context contracts.RouterInvocationCredentialContextV1) a2aclient.CallInterceptor {
+	return &credentialInterceptor{issuer: issuer, context: context}
+}
+
+func (interceptor *credentialInterceptor) Before(ctx context.Context, request *a2aclient.Request) (context.Context, error) {
+	token, err := interceptor.issuer.Issue(interceptor.context)
+	if err != nil {
+		return ctx, classify(contracts.ErrorCodeInternal, err)
+	}
+	request.Meta.Append(contracts.RouterAgentAuthorizationHeader, "Bearer "+token)
+	for name, value := range contracts.RouterAgentContextHeadersV1(interceptor.context) {
+		request.Meta.Append(name, value)
+	}
+	return ctx, nil
+}
+
+func credentialContext(target Target, headers ContextHeaders) contracts.RouterInvocationCredentialContextV1 {
+	return contracts.RouterInvocationCredentialContextV1{
+		Audience: target.Audience, WorkspaceID: headers.WorkspaceID, AgentID: target.AgentID, AgentVersion: target.Version,
+		ReleaseID: target.ReleaseID, CardDigest: target.CardDigest, Capability: target.Capability, InvocationID: headers.InvocationID,
+		RootTaskID: headers.RootTaskID, ParentInvocationID: headers.ParentInvocationID, TraceID: headers.TraceID,
+	}
 }

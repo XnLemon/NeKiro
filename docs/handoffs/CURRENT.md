@@ -1,25 +1,26 @@
-# Current Handoff: Invoke-to-Record Backend
+# Current Handoff: Router-to-Agent Authentication
 
-**Updated**: 2026-07-21 (Asia/Shanghai)
+**Updated**: 2026-07-24 (Asia/Shanghai)
 
-**State**: The backend Invoke-to-Record slice is implemented on
-`codex/021-invoke-record-acceptance` at `d9c1ed9`. PR #44 was merged upstream,
-Issue #30 was closed, and the parent Issue #19 was closed after the clean
-Compose/PostgreSQL acceptance passed.
+**State**: Spec 024 / Issue #50 is implemented and independently reviewed on
+`codex/router-agent-auth`. PR #55 CI run `30060752722` is green; merge remains
+before this handoff is considered merged upstream.
 
 ## Repository State
 
 - Upstream: `https://github.com/NeKiro-project/NeKiro.git`
 - Fork: `https://github.com/XnLemon/NeKiro.git`
-- Current branch: `codex/021-invoke-record-acceptance`
-- Active backend acceptance artifacts: `specs/021-invoke-record-acceptance/`
+- Current branch: `codex/router-agent-auth`
+- Active authentication artifacts: `specs/024-router-agent-authentication/`
+- Backend acceptance artifacts: `specs/021-invoke-record-acceptance/`
 - Parent invocation artifacts: `specs/010-invocation-routing-ledger/`
 - Required Git identity: `Nene7ko_ <1604009816@qq.com>`
 
 ## Delivered Scope
 
 - Catalog, Discovery, Workspace, Installation, and exact-version authorization.
-- Gateway v4 Invocation Dispatch through Router Internal v3.
+- Gateway v4 Invocation Dispatch through Router Internal dispatch v4; Router
+  Internal v3 remains the metadata-read contract.
 - Independent A2A Router with JSON/SSE delivery and strict endpoint resolution.
 - Router-owned append-only metadata-only Invocation Ledger and scoped reads.
 - Runtime B direct A2A sample.
@@ -27,16 +28,19 @@ Compose/PostgreSQL acceptance passed.
 - Isolated Runtime A caller using `trpc-agent-go` only inside its own module.
 - Runtime A -> Router -> Runtime B parent-child lineage.
 - Compose/PostgreSQL deployment and real Invoke-to-Record E2E acceptance.
+- Router Invocation Credential v1 with Ed25519 signing, exact claim/header
+  binding, strict 401/403 responses, and Agent-local one-time `jti` replay
+  rejection.
+- Authenticated JSON, SSE, nested, failure, and cancel transport paths; direct
+  Agent execution is rejected before Runtime logic.
 
 ## Verification
 
-GitHub Actions run `29810057739` passed `go-quality`,
-`runtime-samples-quality`, `workspace-integration`, `compose-config`,
-`frontend`, and `backend-acceptance`. The acceptance covers JSON, SSE, nested
-lineage, restart durability, Workspace isolation, failure semantics, secrecy,
-and 100-concurrent outcomes. Local Docker unavailability is recorded in
-`specs/021-invoke-record-acceptance/quickstart.md`; it is not treated as a local
-pass.
+Local unit, contract, Runtime sample, vet, Compose-config, focused secrecy, and
+E2E compile gates passed. PR #55 CI run `30060752722` also passed root
+build/test/race/vet/lint, Runtime A test/vet/race, PostgreSQL integration,
+Compose configuration, Frontend, Codecov, and the real authenticated
+Invoke-to-Record acceptance.
 
 ## Remaining Scope
 

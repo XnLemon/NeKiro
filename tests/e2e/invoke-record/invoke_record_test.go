@@ -6,7 +6,9 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/ed25519"
 	"database/sql"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -16,6 +18,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"sync"
@@ -28,16 +31,20 @@ import (
 
 const acceptanceWorkspace = "workspace-acceptance"
 
+var routerCredentialPattern = regexp.MustCompile(`(^|[^A-Za-z0-9_-])([A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)($|[^A-Za-z0-9_-])`)
+var ed25519SignaturePattern = regexp.MustCompile(`(^|[^A-Za-z0-9_-])([A-Za-z0-9_-]{86})($|[^A-Za-z0-9_-])`)
+
 type acceptanceEnv struct {
-	controlPlane string
-	routerURL    string
-	routerToken  string
-	ownerToken   string
-	userToken    string
-	otherToken   string
-	databaseURL  string
-	composeFile  string
-	forbidden    []string
+	controlPlane        string
+	routerURL           string
+	routerToken         string
+	ownerToken          string
+	userToken           string
+	otherToken          string
+	databaseURL         string
+	composeFile         string
+	credentialForbidden []string
+	forbidden           []string
 }
 
 type httpResult struct {
@@ -48,22 +55,22 @@ type httpResult struct {
 
 func TestInvokeToRecordAcceptance(t *testing.T) {
 	env := loadAcceptanceEnv(t)
-	env.forbidden = []string{
-		"direct-json-value", "direct-sse-value", "nested-value", "concurrent-",
-		"policy-content-secret", "protocol-content-secret", "agent-content-secret",
-		"route-content-secret", "timeout-content-secret", "cancel-content-secret",
-		"interrupted-content-secret", "dependency-content-secret", "dependency-raw-secret",
+	env.credentialForbidden = []string{
 		"acceptance-owner-token", "acceptance-user-token", "acceptance-other-token",
 		"router-internal-token", "control-plane-internal-token", "runtime-a-router-token",
 		"acceptance-only-password",
+		"rtj_", "nekiro-router+jwt",
 	}
-	env.forbidden = append(env.forbidden, env.ownerToken, env.userToken, env.otherToken, env.routerToken)
+	env.credentialForbidden = append(env.credentialForbidden, env.ownerToken, env.userToken, env.otherToken, env.routerToken)
 	for _, name := range []string{
 		"NEKIRO_ROUTER_INTERNAL_BEARER_TOKEN",
 		"NEKIRO_CONTROL_PLANE_SERVICE_TOKEN",
 		"RUNTIME_A_ROUTER_TOKEN",
+		"NEKIRO_ROUTER_AGENT_CREDENTIAL_KEY_ID",
+		"NEKIRO_ROUTER_AGENT_CREDENTIAL_PRIVATE_KEY_BASE64URL",
+		"NEKIRO_AGENT_ROUTER_PUBLIC_KEY_BASE64URL",
 	} {
-		env.forbidden = append(env.forbidden, requiredEnv(t, name))
+		env.credentialForbidden = append(env.credentialForbidden, requiredEnv(t, name))
 	}
 	databaseURL, err := url.Parse(env.databaseURL)
 	if err != nil {
@@ -76,11 +83,18 @@ func TestInvokeToRecordAcceptance(t *testing.T) {
 	if !ok || password == "" {
 		t.Fatal("E2E database URL must contain a non-empty password for secrecy scan")
 	}
-	env.forbidden = append(env.forbidden, password)
+	env.credentialForbidden = append(env.credentialForbidden, password)
+	env.forbidden = append([]string{
+		"direct-json-value", "direct-sse-value", "nested-value", "concurrent-",
+		"policy-content-secret", "protocol-content-secret", "agent-content-secret",
+		"route-content-secret", "timeout-content-secret", "cancel-content-secret",
+		"interrupted-content-secret", "dependency-content-secret", "dependency-raw-secret",
+	}, env.credentialForbidden...)
 	client := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }, Timeout: 45 * time.Second}
 	if result := doRequest(t, client, env.controlPlane+"/readyz", http.MethodGet, "", "", nil); result.status != http.StatusNoContent {
 		t.Fatalf("Control Plane readiness status=%d body=%s", result.status, result.body)
 	}
+	assertDirectAgentRequestIsRejected(t, env.composeFile)
 
 	runtimeA := acceptanceCard("runtime-a", "Runtime A", "http://runtime-a:8091", "runtime.cross", nil, false)
 	runtimeB := acceptanceCard("runtime-b", "Runtime B", "http://runtime-b:8092", "runtime.echo", []string{"text.read"}, true)
@@ -99,6 +113,7 @@ func TestInvokeToRecordAcceptance(t *testing.T) {
 	if discovery.status != http.StatusOK || !bytes.Contains(discovery.body, []byte(`"agentId":"runtime-b"`)) {
 		t.Fatalf("discovery status=%d body=%s", discovery.status, discovery.body)
 	}
+	assertNoForbiddenBody(t, discovery.body, env.forbidden, "Discovery Card response")
 	createWorkspace(t, client, env, acceptanceWorkspace, env.ownerToken)
 	install(t, client, env, acceptanceWorkspace, "runtime-a", []string{})
 	install(t, client, env, acceptanceWorkspace, "runtime-b", []string{"text.read"})
@@ -203,7 +218,7 @@ func acceptanceCardWithTimeout(agentID, name, endpoint, capability string, permi
 		Description: "Deterministic acceptance Agent", Owner: contracts.AgentOwner{ID: "acceptance-owner", DisplayName: "Acceptance Owner"}, Version: "1.0.0",
 		Protocol:       contracts.AgentProtocol{Type: "a2a", Version: contracts.A2AProtocolVersion, Transport: "JSONRPC", Endpoint: endpoint},
 		Skills:         []contracts.AgentSkill{{ID: capability, Name: capability, Description: "Acceptance capability", InputSchema: contracts.JSONSchema{"type": "object"}, OutputSchema: contracts.JSONSchema{"type": "object"}, RequiredPermissions: permissions}},
-		Authentication: contracts.AgentAuthentication{Type: "none"}, Limits: contracts.AgentLimits{TimeoutMS: timeoutMS, MaxInputBytes: json.Number("1048576"), MaxOutputBytes: json.Number("1048576"), Streaming: streaming},
+		Authentication: contracts.AgentAuthentication{Type: "http_bearer"}, Limits: contracts.AgentLimits{TimeoutMS: timeoutMS, MaxInputBytes: json.Number("1048576"), MaxOutputBytes: json.Number("1048576"), Streaming: streaming},
 	}
 	card.Permissions = make([]contracts.PermissionDeclaration, 0, len(permissions))
 	for _, permission := range permissions {
@@ -216,12 +231,23 @@ func acceptanceCardWithTimeout(agentID, name, endpoint, capability string, permi
 	return encoded
 }
 
+func assertDirectAgentRequestIsRejected(t *testing.T, composeFile string) {
+	t.Helper()
+	payload := `{"jsonrpc":"2.0","id":"direct-unauthenticated","method":"message/send","params":{"message":{"kind":"message","messageId":"direct-unauthenticated","role":"user","parts":[{"kind":"data","data":{"fixture":"success","value":"must-not-execute"}}]}}}`
+	command := exec.CommandContext(t.Context(), "docker", "compose", "--file", composeFile, "exec", "-T", "runtime-b", "wget", "--server-response", "--output-document=-", "--post-data="+payload, "http://127.0.0.1:8092/")
+	output, err := command.CombinedOutput()
+	if err == nil || !bytes.Contains(output, []byte("401 Unauthorized")) {
+		t.Fatalf("direct unauthenticated Agent request was not rejected exactly: err=%v output=%s", err, output)
+	}
+}
+
 func registerAndPublish(t *testing.T, client *http.Client, env acceptanceEnv, card []byte) {
 	t.Helper()
 	registered := doRequest(t, client, env.controlPlane+"/v3/agents", http.MethodPost, env.ownerToken, "application/json", map[string]any{"card": json.RawMessage(card)})
 	if registered.status != http.StatusCreated {
 		t.Fatalf("register status=%d body=%s", registered.status, registered.body)
 	}
+	assertNoForbiddenBody(t, registered.body, env.forbidden, "registered Card response")
 	var value contracts.AgentCard
 	if err := json.Unmarshal(card, &value); err != nil {
 		t.Fatal(err)
@@ -231,6 +257,7 @@ func registerAndPublish(t *testing.T, client *http.Client, env acceptanceEnv, ca
 	if bindingResult.status != http.StatusCreated {
 		t.Fatalf("create binding %s status=%d body=%s", value.AgentID, bindingResult.status, bindingResult.body)
 	}
+	assertNoForbiddenBody(t, bindingResult.body, env.forbidden, "endpoint binding response")
 	var binding contracts.EndpointBindingResponse
 	if err := json.Unmarshal(bindingResult.body, &binding); err != nil || binding.BindingID == "" || binding.VerificationStatus != "pending" {
 		t.Fatalf("decode pending binding %s: value=%#v error=%v", value.AgentID, binding, err)
@@ -239,6 +266,7 @@ func registerAndPublish(t *testing.T, client *http.Client, env acceptanceEnv, ca
 	if challengeResult.status != http.StatusCreated {
 		t.Fatalf("create challenge %s status=%d", value.AgentID, challengeResult.status)
 	}
+	assertNoForbiddenBody(t, challengeResult.body, env.forbidden, "verification challenge response")
 	var challenge contracts.VerificationChallengeResponse
 	if err := json.Unmarshal(challengeResult.body, &challenge); err != nil || challenge.ChallengeID == "" || challenge.Proof == "" {
 		t.Fatalf("decode challenge %s error=%v", value.AgentID, err)
@@ -252,6 +280,7 @@ func registerAndPublish(t *testing.T, client *http.Client, env acceptanceEnv, ca
 	if completed.status != http.StatusOK {
 		t.Fatalf("complete challenge %s status=%d body=%s", value.AgentID, completed.status, completed.body)
 	}
+	assertNoForbiddenBody(t, completed.body, env.forbidden, "verified binding response")
 	var verified contracts.EndpointBindingResponse
 	if err := json.Unmarshal(completed.body, &verified); err != nil || verified.VerificationStatus != "verified" || verified.VerificationEvidenceDigest == nil {
 		t.Fatalf("decode verified binding %s: value=%#v error=%v", value.AgentID, verified, err)
@@ -260,6 +289,7 @@ func registerAndPublish(t *testing.T, client *http.Client, env acceptanceEnv, ca
 	if releaseResult.status != http.StatusCreated {
 		t.Fatalf("create release %s status=%d body=%s", value.AgentID, releaseResult.status, releaseResult.body)
 	}
+	assertNoForbiddenBody(t, releaseResult.body, env.forbidden, "agent release response")
 	var release contracts.AgentReleaseResponse
 	if err := json.Unmarshal(releaseResult.body, &release); err != nil || release.ReleaseID == "" || release.State != contracts.ReleaseStateVerified || release.VerificationEvidenceDigest == nil {
 		t.Fatalf("decode verified release %s: value=%#v error=%v", value.AgentID, release, err)
@@ -268,6 +298,7 @@ func registerAndPublish(t *testing.T, client *http.Client, env acceptanceEnv, ca
 	if publishedResult.status != http.StatusOK {
 		t.Fatalf("publish release %s status=%d body=%s", value.AgentID, publishedResult.status, publishedResult.body)
 	}
+	assertNoForbiddenBody(t, publishedResult.body, env.forbidden, "published Card response")
 	var published contracts.AgentReleaseResponse
 	if err := json.Unmarshal(publishedResult.body, &published); err != nil || published.State != contracts.ReleaseStatePublished || published.PublishedAt == nil {
 		t.Fatalf("decode published release %s: value=%#v error=%v", value.AgentID, published, err)
@@ -334,6 +365,7 @@ func invokeJSON(t *testing.T, client *http.Client, env acceptanceEnv, agentID, c
 	if result.status != http.StatusOK {
 		t.Fatalf("JSON invoke %s status=%d body=%s", agentID, result.status, result.body)
 	}
+	assertNoForbiddenBody(t, result.body, env.credentialForbidden, "JSON invocation response")
 	var invocation contracts.InvocationResult
 	if err := json.Unmarshal(result.body, &invocation); err != nil {
 		t.Fatalf("decode JSON invocation: %v body=%s", err, result.body)
@@ -384,8 +416,10 @@ func invokeSSE(t *testing.T, client *http.Client, env acceptanceEnv, agentID, ca
 		if blankErr != nil || blank != "\n" {
 			t.Fatalf("invalid SSE delimiter=%q err=%v", blank, blankErr)
 		}
+		eventBody := []byte(strings.TrimSuffix(strings.TrimPrefix(line, "data: "), "\n"))
+		assertNoForbiddenBody(t, eventBody, env.credentialForbidden, "SSE invocation response")
 		var event contracts.InvocationResultStreamEventV2
-		if err := json.Unmarshal([]byte(strings.TrimSuffix(strings.TrimPrefix(line, "data: "), "\n")), &event); err != nil {
+		if err := json.Unmarshal(eventBody, &event); err != nil {
 			t.Fatalf("decode SSE event: %v", err)
 		}
 		if terminalSeen {
@@ -508,7 +542,61 @@ func forbiddenBodyError(body []byte, forbidden []string, surface string) error {
 			return fmt.Errorf("forbidden literal %q appeared in %s", literal, surface)
 		}
 	}
+	return routerCredentialLeakError(body, surface)
+}
+
+func routerCredentialLeakError(body []byte, surface string) error {
+	for _, match := range routerCredentialPattern.FindAllSubmatch(body, -1) {
+		segments := bytes.Split(match[2], []byte("."))
+		headerJSON, headerErr := base64.RawURLEncoding.Strict().DecodeString(string(segments[0]))
+		claimsJSON, claimsErr := base64.RawURLEncoding.Strict().DecodeString(string(segments[1]))
+		if headerErr != nil || claimsErr != nil {
+			continue
+		}
+		var header struct {
+			Algorithm string `json:"alg"`
+			Type      string `json:"typ"`
+		}
+		var claims struct {
+			JWTID string `json:"jti"`
+		}
+		if json.Unmarshal(headerJSON, &header) == nil && header.Algorithm == contracts.RouterAgentCredentialAlgorithm && header.Type == contracts.RouterAgentCredentialType {
+			return fmt.Errorf("encoded Router credential appeared in %s", surface)
+		}
+		if json.Unmarshal(claimsJSON, &claims) == nil && strings.HasPrefix(claims.JWTID, "rtj_") {
+			return fmt.Errorf("encoded Router credential token ID appeared in %s", surface)
+		}
+	}
+	for _, match := range ed25519SignaturePattern.FindAllSubmatch(body, -1) {
+		decoded, err := base64.RawURLEncoding.Strict().DecodeString(string(match[2]))
+		if err == nil && len(decoded) == ed25519.SignatureSize {
+			return fmt.Errorf("ed25519 signature encoding appeared in %s", surface)
+		}
+	}
 	return nil
+}
+
+func TestRouterCredentialLeakDetectorRejectsEncodedJWTMaterial(t *testing.T) {
+	header := base64.RawURLEncoding.EncodeToString([]byte(`{"alg":"EdDSA","typ":"nekiro-router+jwt","kid":"acceptance-key"}`))
+	claims := base64.RawURLEncoding.EncodeToString([]byte(`{"jti":"rtj_acceptance_dynamic"}`))
+	signature := base64.RawURLEncoding.EncodeToString(make([]byte, ed25519.SignatureSize))
+	credential := []byte("Bearer " + header + "." + claims + "." + signature)
+	if err := routerCredentialLeakError(credential, "detector fixture"); err == nil {
+		t.Fatal("encoded Router credential was not detected")
+	}
+	if err := routerCredentialLeakError([]byte("signature="+signature), "detector fixture"); err == nil {
+		t.Fatal("standalone Ed25519 signature encoding was not detected")
+	}
+	if err := forbiddenBodyError([]byte("jti=rtj_plaintext"), []string{"rtj_"}, "detector fixture"); err == nil {
+		t.Fatal("plaintext Router token ID was not detected")
+	}
+	if err := routerCredentialLeakError([]byte(`{"status":"succeeded"}`), "clean fixture"); err != nil {
+		t.Fatal(err)
+	}
+	benign := base64.RawURLEncoding.EncodeToString(make([]byte, 32))
+	if err := routerCredentialLeakError([]byte("digest="+benign), "clean fixture"); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func assertFailureMatrix(t *testing.T, client *http.Client, env acceptanceEnv) {
@@ -558,11 +646,7 @@ func assertStreamTerminal(t *testing.T, events []contracts.InvocationResultStrea
 	if terminalCount != 1 {
 		t.Fatalf("stream terminal count=%d want=1 events=%#v", terminalCount, events)
 	}
-	for _, literal := range forbidden {
-		if bytes.Contains(terminalBody(terminal), []byte(literal)) {
-			t.Fatalf("forbidden literal %q appeared in stream terminal", literal)
-		}
-	}
+	assertNoForbiddenBody(t, terminalBody(terminal), forbidden, "SSE terminal response")
 	return terminal.InvocationID
 }
 
@@ -580,13 +664,13 @@ func assertDependencyFailure(t *testing.T, client *http.Client, env acceptanceEn
 	if output, err := stop.CombinedOutput(); err != nil {
 		t.Fatalf("stop Control Plane for dependency fixture: %v output=%s", err, output)
 	}
-	request := contracts.DispatchInvocationRequestV3{
+	request := contracts.DispatchInvocationRequestV4{
 		InvocationID: "dependency-check-invocation", RootTaskID: "dependency-check-task", TraceID: "trc_dependency_check_1",
 		Caller: contracts.Caller{Type: "user", ID: "acceptance-owner"}, WorkspaceID: acceptanceWorkspace,
 		TargetAgentID: "runtime-b", AgentCardVersion: "1.0.0", Capability: "runtime.echo",
 		Input: json.RawMessage(`{"fixture":"success","value":"dependency-raw-secret"}`), Stream: false,
 	}
-	result, requestErr := doRequestRaw(t.Context(), client, env.routerURL+"/internal/v3/invocations", http.MethodPost, env.routerToken, "application/json", request)
+	result, requestErr := doRequestRaw(t.Context(), client, env.routerURL+"/internal/v4/invocations", http.MethodPost, env.routerToken, "application/json", request)
 	start := exec.CommandContext(t.Context(), "docker", "compose", "--file", env.composeFile, "start", "control-plane")
 	if output, err := start.CombinedOutput(); err != nil {
 		t.Fatalf("restart Control Plane after dependency fixture: %v output=%s", err, output)
@@ -629,7 +713,9 @@ func invokeCanceledSSE(t *testing.T, client *http.Client, env acceptanceEnv, age
 		t.Fatalf("cancel stream delimiter=%q err=%v", blank, err)
 	}
 	var accepted contracts.InvocationResultStreamEventV2
-	if err := json.Unmarshal([]byte(strings.TrimSuffix(strings.TrimPrefix(line, "data: "), "\n")), &accepted); err != nil || accepted.Type != contracts.ResultStreamEventAccepted {
+	eventBody := []byte(strings.TrimSuffix(strings.TrimPrefix(line, "data: "), "\n"))
+	assertNoForbiddenBody(t, eventBody, env.forbidden, "SSE cancellation response")
+	if err := json.Unmarshal(eventBody, &accepted); err != nil || accepted.Type != contracts.ResultStreamEventAccepted {
 		response.Body.Close()
 		t.Fatalf("cancel stream accepted=%#v err=%v", accepted, err)
 	}
@@ -838,11 +924,7 @@ func assertStorageAndLogsAreMetadataOnly(t *testing.T, env acceptanceEnv) {
 			t.Fatal(err)
 		}
 		serialized := strings.Join(fields[:], "|")
-		for _, literal := range env.forbidden {
-			if strings.Contains(serialized, literal) {
-				t.Fatalf("forbidden literal %q in Ledger row %q", literal, serialized)
-			}
-		}
+		assertNoForbiddenBody(t, []byte(serialized), env.forbidden, "Ledger row")
 	}
 	if err := rows.Err(); err != nil {
 		t.Fatal(err)
@@ -862,25 +944,108 @@ func assertStorageAndLogsAreMetadataOnly(t *testing.T, env acceptanceEnv) {
 			t.Fatal(err)
 		}
 		serialized := strings.Join(fields[:], "|")
-		for _, literal := range env.forbidden {
-			if strings.Contains(serialized, literal) {
-				t.Fatalf("forbidden literal %q in Ledger projection %q", literal, serialized)
-			}
-		}
+		assertNoForbiddenBody(t, []byte(serialized), env.forbidden, "Ledger projection")
 	}
 	if err := projectionRows.Err(); err != nil {
 		t.Fatal(err)
 	}
+	cardRows, err := database.QueryContext(ctx, `SELECT agent_id, version, COALESCE(card_name, ''), COALESCE(card_description, ''), card::text FROM catalog.agent_versions`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for cardRows.Next() {
+		var fields [5]string
+		args := make([]any, len(fields))
+		for index := range fields {
+			args[index] = &fields[index]
+		}
+		if err := cardRows.Scan(args...); err != nil {
+			t.Fatal(err)
+		}
+		assertNoForbiddenBody(t, []byte(strings.Join(fields[:], "|")), env.forbidden, "persisted Agent Card")
+	}
+	if err := cardRows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	cardRows.Close()
+	bindingRows, err := database.QueryContext(ctx, `SELECT binding_id, provider_id, agent_id, agent_card_version, endpoint, endpoint_origin, endpoint_path, verification_method, verification_status FROM catalog.endpoint_bindings`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for bindingRows.Next() {
+		var fields [9]string
+		args := make([]any, len(fields))
+		for index := range fields {
+			args[index] = &fields[index]
+		}
+		if err := bindingRows.Scan(args...); err != nil {
+			t.Fatal(err)
+		}
+		assertNoForbiddenBody(t, []byte(strings.Join(fields[:], "|")), env.forbidden, "persisted endpoint binding")
+	}
+	if err := bindingRows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	bindingRows.Close()
+	releaseRows, err := database.QueryContext(ctx, `SELECT release_id, provider_id, agent_id, agent_card_version, endpoint_origin, endpoint_path, verification_method, state FROM catalog.agent_releases`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for releaseRows.Next() {
+		var fields [8]string
+		args := make([]any, len(fields))
+		for index := range fields {
+			args[index] = &fields[index]
+		}
+		if err := releaseRows.Scan(args...); err != nil {
+			t.Fatal(err)
+		}
+		assertNoForbiddenBody(t, []byte(strings.Join(fields[:], "|")), env.forbidden, "persisted Agent Release")
+	}
+	if err := releaseRows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	releaseRows.Close()
+	workspaceRows, err := database.QueryContext(ctx, `SELECT workspace_id, owner_id FROM workspace.workspaces`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for workspaceRows.Next() {
+		var workspaceID, ownerID string
+		if err := workspaceRows.Scan(&workspaceID, &ownerID); err != nil {
+			t.Fatal(err)
+		}
+		assertNoForbiddenBody(t, []byte(strings.Join([]string{workspaceID, ownerID}, "|")), env.forbidden, "persisted Workspace")
+	}
+	if err := workspaceRows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	workspaceRows.Close()
+	installationRows, err := database.QueryContext(ctx, `SELECT installation_id, workspace_id, agent_id, version_constraint, installed_version, COALESCE(installed_release_id, ''), array_to_string(accepted_permissions, '|'), status FROM workspace.installations`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for installationRows.Next() {
+		var fields [8]string
+		args := make([]any, len(fields))
+		for index := range fields {
+			args[index] = &fields[index]
+		}
+		if err := installationRows.Scan(args...); err != nil {
+			t.Fatal(err)
+		}
+		assertNoForbiddenBody(t, []byte(strings.Join(fields[:], "|")), env.forbidden, "persisted Installation")
+	}
+	if err := installationRows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	installationRows.Close()
 	logs := exec.CommandContext(ctx, "docker", "compose", "--file", env.composeFile, "logs", "--no-color")
 	output, err := logs.Output()
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, literal := range env.forbidden {
-		if bytes.Contains(output, []byte(literal)) {
-			t.Fatalf("forbidden literal %q appeared in process logs", literal)
-		}
-	}
+	assertNoForbiddenBody(t, output, env.forbidden, "process logs")
 }
 
 func restartRouter(t *testing.T, composeFile string) {

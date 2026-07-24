@@ -7,6 +7,7 @@ import (
 
 	"github.com/Nene7ko/NeKiro/agents/internal/challengeproof"
 	runtimeb "github.com/Nene7ko/NeKiro/agents/runtime-b"
+	"github.com/Nene7ko/NeKiro/sdks/agent-sdk/routerauth"
 )
 
 func main() {
@@ -14,7 +15,15 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	application, err := challengeproof.NewHandler(runtimeb.NewHTTPHandler(runtimeb.NewHandler()), os.LookupEnv)
+	authenticationConfig, err := routerauth.LoadConfig(os.LookupEnv)
+	if err != nil {
+		log.Fatal("runtime-b authentication config: ", err)
+	}
+	execution, err := runtimeb.NewHTTPHandlerWithAuth(runtimeb.NewHandler(), authenticationConfig)
+	if err != nil {
+		log.Fatal("runtime-b authentication: ", err)
+	}
+	application, err := challengeproof.NewHandler(execution, os.LookupEnv)
 	if err != nil {
 		log.Fatal("runtime-b challenge proof: ", err)
 	}

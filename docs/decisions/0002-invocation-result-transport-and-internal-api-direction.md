@@ -64,7 +64,8 @@ Internal operations are split by service owner and destination:
 | --- | --- | --- | --- |
 | `control-plane-internal.v2.yaml` | Control Plane | A2A Router | Exact authorized Agent resolution with pre/post-correlation errors |
 | `control-plane-internal.v3.yaml` | Control Plane | A2A Router | Deterministic enabled-Installation version resolution for nested calls |
-| `router-internal.v3.yaml` | A2A Router | Control Plane | Active dispatch/result delivery and Workspace-scoped Invocation/Trace reads |
+| `router-internal.v4.yaml` | A2A Router | Control Plane | Active managed-auth dispatch and result delivery |
+| `router-metadata.v3.yaml` | A2A Router | Control Plane | Active Workspace-scoped Invocation/Trace reads |
 
 The Router resolves through the Control Plane contract and never reads Registry
 or Workspace storage directly. The Control Plane dispatches only through the
@@ -73,9 +74,9 @@ contract defines a localhost fallback.
 
 ### Version and failure semantics
 
-Northbound v3, Router Internal v3, Control Plane Internal v2/v3, Invocation Event v0.3, Platform Error v2/v3,
+Northbound v3/v4, Router Internal Dispatch v4, Router Metadata v3, Control Plane Internal v2/v3, Invocation Event v0.3, Platform Error v2/v3,
 and Invocation Result v1 are active contracts. Historical Northbound v1/v2,
-Router Internal v1/v2, and Invocation Event v0.1 files remain unchanged as
+Router Internal v1/v2/v3, and Invocation Event v0.1 files remain unchanged as
 migration evidence.
 
 Platform Error v2 fixes one public message per code, requires trace

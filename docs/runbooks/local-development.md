@@ -34,7 +34,7 @@ Every current variable is required:
 | `NEKIRO_INTERNAL_AUTH_MODE` | Explicit internal service authentication mode; currently `development-static` |
 | `NEKIRO_INTERNAL_DEV_AUTH_PRINCIPALS_JSON` | Separate strict principal array for Router/internal callers |
 | `CONTROL_PLANE_PORT` | Available host loopback port for the Control Plane |
-| `NEKIRO_ROUTER_INTERNAL_URL` | Fixed Router v3 dispatch URL used by the Control Plane; Compose sets the service origin |
+| `NEKIRO_ROUTER_INTERNAL_URL` | Fixed Router v4 dispatch URL used by the Control Plane; Compose sets the service origin |
 | `NEKIRO_ROUTER_INTERNAL_BEARER_TOKEN` | Raw local token the Control Plane presents to the Router; keep it out of logs and commits |
 | `NEKIRO_GATEWAY_INVOCATION_REQUEST_MAX_BYTES` | Maximum northbound invocation request body size |
 | `NEKIRO_GATEWAY_SSE_EVENT_MAX_BYTES` | Maximum northbound SSE event/frame size |
@@ -50,6 +50,13 @@ Every current variable is required:
 | `NEKIRO_ROUTER_A2A_EVENT_LIMIT_BYTES` | Maximum A2A event size reserved for the streaming profile |
 | `NEKIRO_ROUTER_SSE_EVENT_LIMIT_BYTES` | Maximum serialized SSE event/frame size; independent from the A2A event limit |
 | `NEKIRO_ROUTER_RESOLUTION_DEADLINE_MS` | Resolution deadline in milliseconds |
+| `NEKIRO_ROUTER_AGENT_CREDENTIAL_ISSUER` | Canonical HTTPS Router signing issuer |
+| `NEKIRO_ROUTER_AGENT_CREDENTIAL_KEY_ID` | Exact safe identifier placed in JWT `kid` |
+| `NEKIRO_ROUTER_AGENT_CREDENTIAL_PRIVATE_KEY_BASE64URL` | 64 raw Ed25519 private-key bytes encoded as unpadded Base64url |
+| `NEKIRO_ROUTER_AGENT_CREDENTIAL_TTL_SECONDS` | Required integer lifetime from 1 through 300 seconds |
+| `NEKIRO_AGENT_ROUTER_ISSUER` | Exact Router issuer trusted by each Agent adapter |
+| `NEKIRO_AGENT_ROUTER_KEY_ID` | Exact Router key ID trusted by each Agent adapter |
+| `NEKIRO_AGENT_ROUTER_PUBLIC_KEY_BASE64URL` | 32 raw Ed25519 public-key bytes encoded as unpadded Base64url |
 
 Choose non-empty values locally. Do not commit `.env`, reuse these credentials
 for production, or place production credentials in this Compose deployment.
@@ -58,6 +65,13 @@ credential, database, host, principal, token, or port defaults. URL-encode
 credential characters in `NEKIRO_COMPOSE_DATABASE_URL`. Generate each local
 bearer token outside `.env`, place only its SHA-256 digest in the principal
 JSON, and retain the raw token only in the invoking shell.
+
+Generate one Ed25519 key pair with an audited key-management tool. Export the
+canonical 64-byte private value and 32-byte public value as unpadded Base64url;
+PEM text, padded Base64, whitespace repair, default keys, and multi-key lookup
+are not accepted. Keep the private value only on the Router. Compose sets each
+sample Agent's audience to its exact service origin (`http://runtime-a:8091`
+or `http://runtime-b:8092`).
 
 Validate the configuration without rendering secrets to the terminal:
 
@@ -97,7 +111,7 @@ $env:NEKIRO_AUTH_MODE = 'development-static'
 $env:NEKIRO_DEV_AUTH_PRINCIPALS_JSON = '<strict principal JSON from .env>'
 $env:NEKIRO_INTERNAL_AUTH_MODE = 'development-static'
 $env:NEKIRO_INTERNAL_DEV_AUTH_PRINCIPALS_JSON = '<separate strict internal principal JSON from .env>'
-$env:NEKIRO_ROUTER_INTERNAL_URL = 'http://127.0.0.1:18081/internal/v3/invocations'
+$env:NEKIRO_ROUTER_INTERNAL_URL = 'http://127.0.0.1:18081/internal/v4/invocations'
 $env:NEKIRO_ROUTER_INTERNAL_BEARER_TOKEN = '<raw token matching the configured Router principal digest>'
 $env:NEKIRO_GATEWAY_INVOCATION_REQUEST_MAX_BYTES = '1048576'
 $env:NEKIRO_GATEWAY_SSE_EVENT_MAX_BYTES = '1048576'
@@ -150,15 +164,28 @@ $env:NEKIRO_ROUTER_AGENT_RESPONSE_LIMIT_BYTES = '1048576'
 $env:NEKIRO_ROUTER_A2A_EVENT_LIMIT_BYTES = '1048576'
 $env:NEKIRO_ROUTER_SSE_EVENT_LIMIT_BYTES = '1048576'
 $env:NEKIRO_ROUTER_RESOLUTION_DEADLINE_MS = '5000'
+$env:NEKIRO_ROUTER_AGENT_CREDENTIAL_ISSUER = 'https://a2a-router.nekiro.example'
+$env:NEKIRO_ROUTER_AGENT_CREDENTIAL_KEY_ID = '<safe-key-id>'
+$env:NEKIRO_ROUTER_AGENT_CREDENTIAL_PRIVATE_KEY_BASE64URL = '<64-byte-private-key>'
+$env:NEKIRO_ROUTER_AGENT_CREDENTIAL_TTL_SECONDS = '30'
 go run ./apps/a2a-router/cmd/a2a-router serve
 ```
 
 `serve` checks Ledger schema readiness and dependency configuration but never
 creates or upgrades schema. The Router exposes `/readyz` and accepts internal
-dispatches at `/internal/v3/invocations`. Its non-streaming input and output
+dispatches at `/internal/v4/invocations`. Its non-streaming input and output
 limits are the minimum of the configured limit and the exact Agent Card limit.
 Missing or invalid values fail startup; there is no no-op Ledger, fallback
 endpoint, or default credential.
+
+Each Agent process separately requires `NEKIRO_AGENT_ROUTER_ISSUER`,
+`NEKIRO_AGENT_ROUTER_AUDIENCE`, `NEKIRO_AGENT_ROUTER_KEY_ID`, and
+`NEKIRO_AGENT_ROUTER_PUBLIC_KEY_BASE64URL`. Readiness and ownership challenge
+proof remain public process routes. A2A execution, streaming, cancellation,
+and the Runtime B unavailable fixture reject a missing/invalid credential with
+the fixed no-store 401 response; a valid credential with the wrong audience or
+bound context receives the fixed no-store 403 response. Credentials, keys, and
+`jti` values must never be logged or persisted in Ledger.
 
 ## Integration acceptance
 

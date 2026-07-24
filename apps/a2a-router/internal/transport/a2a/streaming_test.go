@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -203,20 +204,21 @@ func TestClientStreamingMakesOneCancelAttemptAfterDeadline(t *testing.T) {
 		<-request.Context().Done()
 	}))
 	t.Cleanup(server.Close)
-	client, err := newTestClient(server.Client())
+	issuer := &recordingCredentialIssuer{}
+	client, err := NewClient(server.Client(), issuer, 4096, 4096, 4096, 4096)
 	if err != nil {
 		t.Fatal(err)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()
-	dispatch := contracts.DispatchInvocationRequestV3{
+	dispatch := contracts.DispatchInvocationRequestV4{
 		InvocationID: "inv-a", RootTaskID: "task-a", TraceID: "trace-a",
 		Caller: contracts.Caller{Type: "user", ID: "owner-a"}, WorkspaceID: "workspace-a",
 		TargetAgentID: "agent-a", AgentCardVersion: "1.0.0", Capability: "capability-a",
 		Input: json.RawMessage(`{"fixture":"stream-success","value":"stream"}`), Stream: true,
 	}
 	seenEvent := false
-	for event, streamErr := range client.SendStreaming(ctx, dispatch, contracts.ResolveAgentResponse{Card: targetCard(server.URL, "none", "capability-a")}) {
+	for event, streamErr := range client.SendStreaming(ctx, dispatch, resolvedTarget(targetCard(server.URL, "none", "capability-a"))) {
 		if streamErr != nil {
 			break
 		}
@@ -233,4 +235,28 @@ func TestClientStreamingMakesOneCancelAttemptAfterDeadline(t *testing.T) {
 	if cancelCount.Load() != 1 {
 		t.Fatalf("cancel attempts=%d, want 1", cancelCount.Load())
 	}
+	if tokens := issuer.tokensSnapshot(); len(tokens) != 2 || tokens[0] == tokens[1] {
+		t.Fatalf("stream/cancel credentials = %v, want two fresh values", tokens)
+	}
+}
+
+type recordingCredentialIssuer struct {
+	mu     sync.Mutex
+	count  int
+	tokens []string
+}
+
+func (issuer *recordingCredentialIssuer) Issue(contracts.RouterInvocationCredentialContextV1) (string, error) {
+	issuer.mu.Lock()
+	defer issuer.mu.Unlock()
+	issuer.count++
+	token := fmt.Sprintf("test-credential-%d", issuer.count)
+	issuer.tokens = append(issuer.tokens, token)
+	return token, nil
+}
+
+func (issuer *recordingCredentialIssuer) tokensSnapshot() []string {
+	issuer.mu.Lock()
+	defer issuer.mu.Unlock()
+	return append([]string(nil), issuer.tokens...)
 }

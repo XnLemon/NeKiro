@@ -231,7 +231,7 @@ func minInt64(left, right int64) int {
 	return int(right)
 }
 
-func (client *Client) SendStreaming(ctx context.Context, dispatch contracts.DispatchInvocationRequestV3, resolved contracts.ResolveAgentResponse) iter.Seq2[streammodel.Event, error] {
+func (client *Client) SendStreaming(ctx context.Context, dispatch contracts.DispatchInvocationRequestV4, resolved contracts.ResolveAgentResponse) iter.Seq2[streammodel.Event, error] {
 	return func(yield func(streammodel.Event, error) bool) {
 		target, err := NewTarget(resolved, dispatch.Capability)
 		if err != nil {
@@ -272,13 +272,9 @@ func (client *Client) SendStreaming(ctx context.Context, dispatch contracts.Disp
 			yield(streammodel.Event{}, classify(contracts.ErrorCodeA2AProtocol, err))
 			return
 		}
-		a2aClient.AddCallInterceptor(a2aclient.NewStaticCallMetaInjector(a2aclient.CallMeta{
-			HeaderTraceID:            []string{string(dispatch.TraceID)},
-			HeaderInvocationID:       []string{dispatch.InvocationID},
-			HeaderRootTaskID:         []string{dispatch.RootTaskID},
-			HeaderParentInvocationID: []string{dispatch.ParentInvocationID},
-			HeaderWorkspaceID:        []string{dispatch.WorkspaceID},
-		}))
+		contextHeaders := ContextHeaders{TraceID: dispatch.TraceID, InvocationID: dispatch.InvocationID, RootTaskID: dispatch.RootTaskID, ParentInvocationID: dispatch.ParentInvocationID, WorkspaceID: dispatch.WorkspaceID}
+		invocationContext := credentialContext(target, contextHeaders)
+		a2aClient.AddCallInterceptor(newCredentialInterceptor(client.credentialIssuer, invocationContext))
 		cancelHTTPClient := *client.httpClient
 		cancelBase := cancelHTTPClient.Transport
 		if cancelBase == nil {
@@ -290,13 +286,7 @@ func (client *Client) SendStreaming(ctx context.Context, dispatch contracts.Disp
 			yield(streammodel.Event{}, classify(contracts.ErrorCodeA2AProtocol, cancelClientErr))
 			return
 		}
-		cancelClient.AddCallInterceptor(a2aclient.NewStaticCallMetaInjector(a2aclient.CallMeta{
-			HeaderTraceID:            []string{string(dispatch.TraceID)},
-			HeaderInvocationID:       []string{dispatch.InvocationID},
-			HeaderRootTaskID:         []string{dispatch.RootTaskID},
-			HeaderParentInvocationID: []string{dispatch.ParentInvocationID},
-			HeaderWorkspaceID:        []string{dispatch.WorkspaceID},
-		}))
+		cancelClient.AddCallInterceptor(newCredentialInterceptor(client.credentialIssuer, invocationContext))
 
 		var taskID, contextID string
 		artifactLast := make(map[string]bool)

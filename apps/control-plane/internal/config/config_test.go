@@ -184,17 +184,18 @@ func TestLoadInvocationRuntimeRequiresExactNoDefaultConfiguration(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if loaded.RouterInternalURL != "http://router.test:8081/internal/v3/invocations" || loaded.RouterBearerToken != "router-secret" || loaded.InternalRequestLimitBytes != 1048576 || loaded.PublicRequestLimitBytes != 1048576 || loaded.SSEEventLimitBytes != 65536 || loaded.MetadataResponseLimitBytes != 1048576 || loaded.DeadlineMS != 30000 {
+	if loaded.RouterInternalURL != "http://router.test:8081/internal/v4/invocations" || loaded.RouterBearerToken != "router-secret" || loaded.InternalRequestLimitBytes != 1048576 || loaded.PublicRequestLimitBytes != 1048576 || loaded.SSEEventLimitBytes != 65536 || loaded.MetadataResponseLimitBytes != 1048576 || loaded.DeadlineMS != 30000 {
 		t.Fatalf("loaded invocation config = %#v", loaded)
 	}
 }
 
 func TestLoadInvocationRuntimeRejectsInvalidDestinationSecretAndNumbers(t *testing.T) {
 	tests := []struct{ name, variable, value string }{
-		{"relative URL", "NEKIRO_ROUTER_INTERNAL_URL", "/internal/v3/invocations"},
+		{"relative URL", "NEKIRO_ROUTER_INTERNAL_URL", "/internal/v4/invocations"},
 		{"wrong path", "NEKIRO_ROUTER_INTERNAL_URL", "http://router.test:8081/internal/v2/invocations"},
-		{"URL credentials", "NEKIRO_ROUTER_INTERNAL_URL", "http://user:secret@router.test:8081/internal/v3/invocations"},
-		{"URL query", "NEKIRO_ROUTER_INTERNAL_URL", "http://router.test:8081/internal/v3/invocations?target=other"},
+		{"retired v3 path", "NEKIRO_ROUTER_INTERNAL_URL", "http://router.test:8081/internal/v3/invocations"},
+		{"URL credentials", "NEKIRO_ROUTER_INTERNAL_URL", "http://user:secret@router.test:8081/internal/v4/invocations"},
+		{"URL query", "NEKIRO_ROUTER_INTERNAL_URL", "http://router.test:8081/internal/v4/invocations?target=other"},
 		{"blank token", "NEKIRO_ROUTER_INTERNAL_BEARER_TOKEN", ""},
 		{"token whitespace", "NEKIRO_ROUTER_INTERNAL_BEARER_TOKEN", "secret token"},
 		{"zero internal body", "NEKIRO_CONTROL_PLANE_INTERNAL_REQUEST_MAX_BYTES", "0"},
@@ -234,7 +235,7 @@ func TestLoadInvocationRuntimeRejectsEveryMissingVariable(t *testing.T) {
 
 func setValidInvocationRuntime(t *testing.T) {
 	t.Helper()
-	t.Setenv("NEKIRO_ROUTER_INTERNAL_URL", "http://router.test:8081/internal/v3/invocations")
+	t.Setenv("NEKIRO_ROUTER_INTERNAL_URL", "http://router.test:8081/internal/v4/invocations")
 	t.Setenv("NEKIRO_ROUTER_INTERNAL_BEARER_TOKEN", "router-secret")
 	t.Setenv("NEKIRO_CONTROL_PLANE_INTERNAL_REQUEST_MAX_BYTES", "1048576")
 	t.Setenv("NEKIRO_GATEWAY_INVOCATION_REQUEST_MAX_BYTES", "1048576")

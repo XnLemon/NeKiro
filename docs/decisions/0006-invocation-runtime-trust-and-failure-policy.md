@@ -135,7 +135,7 @@ executable source for this matrix.
 
 ### Workspace-scoped metadata reads
 
-Northbound v4 and Router Internal v3 Invocation/Trace reads require
+Northbound v4 and Router Metadata v3 Invocation/Trace reads require
 `workspaceId` in the path. Invocation reads return a projection plus ordered
 Event 0.3 facts. Trace reads return `traceId` plus ordered Invocation
 projections preserving parent-child lineage. The supplied Workspace is the
@@ -165,7 +165,8 @@ the lineage.
   Gateway destination. Catalog, Workspace, and Installation remain exclusively
   described and served by `control-plane.v3.yaml`; this is not a full Control
   Plane v4 replacement.
-- Router Internal v3 replaces v2 for first Dispatch/metadata runtime consumers.
+- Router Internal Dispatch v4 replaces the historical v3 dispatch semantic;
+  Router Metadata v3 retains the Workspace-scoped read surface.
 - Agent Router v1 is new.
 - Platform Error v4, Invocation Event 0.3, and Result Stream Event v2 are
   required because new exact errors are embedded in those facts/frames.

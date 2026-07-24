@@ -14,6 +14,9 @@ type Target struct {
 	Version        string
 	Capability     string
 	Endpoint       string
+	Audience       string
+	ReleaseID      string
+	CardDigest     string
 	Protocol       string
 	Transport      string
 	AuthType       string
@@ -44,8 +47,15 @@ func NewTarget(resolved contracts.ResolveAgentResponse, capability string) (Targ
 	if endpoint.Scheme != "http" && endpoint.Scheme != "https" {
 		return Target{}, classify(contracts.ErrorCodeA2AProtocol, errors.New("resolved Agent endpoint scheme is unsupported"))
 	}
-	if card.Authentication.Type != "none" {
+	if card.Authentication.Type != "http_bearer" {
 		return Target{}, classify(contracts.ErrorCodeAgentAuthUnsupported, errors.New("resolved Agent authentication is unsupported"))
+	}
+	audience, err := contracts.CanonicalRouterAgentAudience(card.Protocol.Endpoint)
+	if err != nil {
+		return Target{}, classify(contracts.ErrorCodeA2AProtocol, errors.New("resolved Agent audience is invalid"))
+	}
+	if err := contracts.ValidateInvocationReleaseProvenance(resolved.Installation.InstalledReleaseID, resolved.Installation.AgentCardDigest); err != nil {
+		return Target{}, classify(contracts.ErrorCodeA2AProtocol, errors.New("resolved Agent release provenance is invalid"))
 	}
 	if !declaresCapability(card, capability) {
 		return Target{}, classify(contracts.ErrorCodeA2AProtocol, errors.New("resolved Agent capability is missing"))
@@ -60,7 +70,7 @@ func NewTarget(resolved contracts.ResolveAgentResponse, capability string) (Targ
 	}
 	return Target{
 		AgentID: card.AgentID, Version: card.Version, Capability: capability,
-		Endpoint: card.Protocol.Endpoint, Protocol: card.Protocol.Type,
+		Endpoint: card.Protocol.Endpoint, Audience: audience, ReleaseID: resolved.Installation.InstalledReleaseID, CardDigest: resolved.Installation.AgentCardDigest, Protocol: card.Protocol.Type,
 		Transport: card.Protocol.Transport, AuthType: card.Authentication.Type,
 		MaxInputBytes: maxInputBytes, MaxOutputBytes: maxOutputBytes,
 		TimeoutMS: card.Limits.TimeoutMS, Streaming: card.Limits.Streaming,

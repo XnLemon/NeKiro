@@ -1,0 +1,123 @@
+openapi: 3.1.0
+info:
+  title: NeKiro Router Internal Dispatch API
+  version: 4.0.0
+  description: >-
+    Router-owned dispatch boundary called only by authenticated Control Plane
+    Invocation Dispatch. Router Internal metadata reads remain on v3. The v4
+    route requires a published Agent Card with managed HTTP Bearer
+    authentication and Router Invocation Credential v1; the retired v3
+    dispatch route is not served.
+servers:
+  - url: https://a2a-router.internal.nekiro.dev
+    description: Explicit internal destination; no localhost or direct-Agent fallback
+paths:
+  /internal/v4/invocations:
+    post:
+      operationId: dispatchInvocation
+      summary: Accept an authorized root Invocation and deliver its live result
+      description: >-
+        Service authentication, strict shape/media/size validation, and initial
+        Ledger failure produce no Ledger fact or Agent request. Successful
+        created-event commit is acceptance. Router then appends routing and
+        re-resolves the exact Card through Control Plane Internal v2. Only
+        `http_bearer` is supported through Router Invocation Credential v1;
+        every other Card 0.2 type terminalizes from routing as
+        AGENT_AUTH_UNSUPPORTED with no Agent request. Clean success is sent
+        only after its terminal Ledger commit. A post-side-effect Ledger
+        failure is correlated DEPENDENCY_ERROR while durable history remains at
+        its last non-terminal fact; no terminal event or retry is fabricated.
+      security:
+        - serviceBearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/ResultAccept"
+      x-nekiro-media-negotiation: invocation-result-v1
+      requestBody:
+        required: true
+        x-nekiro-max-body-bytes-source: required-router-internal-request-limit
+        x-nekiro-limit-default: false
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/DispatchInvocationRequest" }
+      responses:
+        "200":
+          description: JSON result or live SSE result according to request mode
+          content:
+            application/json:
+              schema: { $ref: ../schemas/invocation-result.v1.schema.json }
+            text/event-stream:
+              schema: { type: string }
+              x-sse-data-schema: { $ref: ../schemas/invocation-result-stream-event.v2.schema.json }
+              x-nekiro-sse-framing: single-data-line-blank-line-flush
+              x-nekiro-max-event-bytes-source: required-router-sse-event-limit
+              x-nekiro-limit-default: false
+          x-nekiro-max-agent-response-bytes-source: required-router-agent-response-limit
+          x-nekiro-max-a2a-event-bytes-source: required-router-a2a-event-limit
+          x-nekiro-limit-default: false
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "406": { $ref: "#/components/responses/NotAcceptable" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "413": { $ref: "#/components/responses/PayloadTooLarge" }
+        "502": { $ref: "#/components/responses/AgentFailure" }
+        "503": { $ref: "#/components/responses/Unavailable" }
+        "504": { $ref: "#/components/responses/Timeout" }
+components:
+  securitySchemes:
+    serviceBearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: opaque-service-credential
+      description: Explicit Control Plane service identity; Agent credentials are rejected before owned behavior.
+  parameters:
+    ResultAccept:
+      in: header
+      name: Accept
+      required: true
+      schema: { type: string, minLength: 1 }
+  schemas:
+    DispatchInvocationRequest:
+      type: object
+      additionalProperties: false
+      required: [invocationId, rootTaskId, traceId, caller, workspaceId, targetAgentId, agentCardVersion, capability, input, stream]
+      oneOf:
+        - required: [agentReleaseId, agentCardDigest]
+        - not:
+            anyOf:
+              - required: [agentReleaseId]
+              - required: [agentCardDigest]
+      properties:
+        invocationId: { $ref: ../schemas/common.v1.schema.json#/$defs/invocationId }
+        rootTaskId: { $ref: ../schemas/common.v1.schema.json#/$defs/taskId }
+        traceId: { $ref: ../schemas/common.v1.schema.json#/$defs/traceId }
+        caller: { $ref: ../schemas/common.v1.schema.json#/$defs/caller }
+        workspaceId: { $ref: ../schemas/common.v1.schema.json#/$defs/workspaceId }
+        targetAgentId: { $ref: ../schemas/common.v1.schema.json#/$defs/agentId }
+        agentCardVersion: { $ref: ../schemas/common.v1.schema.json#/$defs/semver }
+        agentReleaseId: { $ref: ../schemas/common.v1.schema.json#/$defs/safeIdentifier }
+        agentCardDigest: { type: string, pattern: '^[0-9a-f]{64}$' }
+        capability: { $ref: ../schemas/common.v1.schema.json#/$defs/capabilityId }
+        input: { $ref: ../schemas/common.v1.schema.json#/$defs/jsonObject }
+        stream: { type: boolean }
+    PreCorrelationPlatformError:
+      $ref: ../schemas/platform-error.v4.schema.json#/$defs/preCorrelation
+    CorrelatedPlatformError:
+      $ref: ../schemas/platform-error.v4.schema.json#/$defs/correlated
+    PhasePlatformError:
+      x-nekiro-phase-boundary: successful-created-commit
+      x-nekiro-pre-acceptance-schema: PreCorrelationPlatformError
+      x-nekiro-post-acceptance-schema: CorrelatedPlatformError
+      oneOf:
+        - $ref: "#/components/schemas/PreCorrelationPlatformError"
+        - $ref: "#/components/schemas/CorrelatedPlatformError"
+  responses:
+    BadRequest: { description: Pre-acceptance invalid service request, x-platform-error-codes: [VALIDATION_ERROR], content: { application/json: { schema: { $ref: "#/components/schemas/PreCorrelationPlatformError" } } } }
+    Unauthenticated: { description: Pre-acceptance missing/wrong service credential, x-platform-error-codes: [UNAUTHENTICATED], content: { application/json: { schema: { $ref: "#/components/schemas/PreCorrelationPlatformError" } } } }
+    Forbidden: { description: May occur before/after acceptance; correlated shape is mandatory after acceptance, x-platform-error-codes: [FORBIDDEN, AGENT_RELEASE_UNPUBLISHED, AGENT_RELEASE_SUSPENDED, AGENT_RELEASE_REVOKED, CAPABILITY_NOT_ALLOWED], content: { application/json: { schema: { $ref: "#/components/schemas/PhasePlatformError" } } } }
+    NotAcceptable: { description: Pre-acceptance result mode mismatch, x-platform-error-codes: [NOT_ACCEPTABLE], content: { application/json: { schema: { $ref: "#/components/schemas/PreCorrelationPlatformError" } } } }
+    Conflict: { description: May occur before/after acceptance; correlated shape is mandatory after acceptance, x-platform-error-codes: [CONFLICT, CANCELED], content: { application/json: { schema: { $ref: "#/components/schemas/PhasePlatformError" } } } }
+    PayloadTooLarge: { description: Pre-acceptance internal request overflow, x-platform-error-codes: [PAYLOAD_TOO_LARGE], content: { application/json: { schema: { $ref: "#/components/schemas/PreCorrelationPlatformError" } } } }
+    AgentFailure: { description: Post-acceptance exact Agent/protocol/auth/response-size failure, x-platform-error-codes: [AGENT_AUTH_UNSUPPORTED, AGENT_RESPONSE_TOO_LARGE, AGENT_EXECUTION_FAILED, A2A_PROTOCOL_ERROR], content: { application/json: { schema: { $ref: "#/components/schemas/CorrelatedPlatformError" } } } }
+    Unavailable: { description: May occur before/after acceptance; correlated shape is mandatory after acceptance, x-platform-error-codes: [ROUTE_NOT_FOUND, AGENT_UNAVAILABLE, DEPENDENCY_ERROR], content: { application/json: { schema: { $ref: "#/components/schemas/PhasePlatformError" } } } }
+    Timeout: { description: May occur before/after acceptance; correlated shape is mandatory after acceptance, x-platform-error-codes: [TIMEOUT], content: { application/json: { schema: { $ref: "#/components/schemas/PhasePlatformError" } } } }

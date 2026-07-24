@@ -1,0 +1,17 @@
+{
+  "iss": "https://a2a-router.nekiro.dev",
+  "aud": ["http://runtime-b:8092"],
+  "exp": 1784700060,
+  "iat": 1784700030,
+  "jti": "rtj_1123456789abcdef0123456789abcdef",
+  "workspaceId": "workspace-a",
+  "agentId": "runtime-b",
+  "agentVersion": "1.0.0",
+  "releaseId": "release-b",
+  "cardDigest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "capability": "runtime.echo",
+  "invocationId": "inv_1123456789abcdef0123456789abcdef",
+  "rootTaskId": "task-a",
+  "parentInvocationId": "inv_0123456789abcdef0123456789abcdef",
+  "traceId": "trace-a"
+}

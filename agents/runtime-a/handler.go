@@ -7,8 +7,10 @@ import (
 	"fmt"
 	"iter"
 	"net/http"
+	"time"
 
 	agentsdk "github.com/Nene7ko/NeKiro/sdks/agent-sdk"
+	"github.com/Nene7ko/NeKiro/sdks/agent-sdk/routerauth"
 	"github.com/a2aproject/a2a-go/a2a"
 	"github.com/a2aproject/a2a-go/a2asrv"
 )
@@ -52,15 +54,22 @@ func newHandlerWithInvoker(config Config, invoker nestedInvoker) (*Handler, erro
 
 // NewHTTPHandler exposes only the active JSON-RPC A2A boundary.
 func NewHTTPHandler(handler *Handler) http.Handler {
+	if handler == nil {
+		panic("runtime-a handler is required")
+	}
+	authentication, err := routerauth.NewMiddleware(handler.config.RouterAuth, time.Now)
+	if err != nil {
+		panic(err)
+	}
 	jsonRPCHandler := a2asrv.NewJSONRPCHandler(handler)
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /readyz", func(writer http.ResponseWriter, _ *http.Request) {
 		writer.WriteHeader(http.StatusOK)
 	})
-	mux.HandleFunc("/", func(writer http.ResponseWriter, request *http.Request) {
+	mux.Handle("/", authentication.Handler(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		writer.Header().Set("Content-Type", "application/json")
 		jsonRPCHandler.ServeHTTP(writer, request)
-	})
+	})))
 	return mux
 }
 

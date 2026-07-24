@@ -24,7 +24,7 @@ func TestCORSAllowsConfiguredPublicOriginAndPreflightWithoutAuth(t *testing.T) {
 }
 
 func TestCORSDoesNotGrantUnknownOrInternalOrigin(t *testing.T) {
-	for _, path := range []string{"/v4/agents", "/internal/v3/invocations", "/healthz"} {
+	for _, path := range []string{"/v4/agents", "/internal/v4/invocations", "/healthz"} {
 		t.Run(path, func(t *testing.T) {
 			handler := CORS([]string{"http://localhost:3000"}, http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 				writer.WriteHeader(http.StatusNoContent)

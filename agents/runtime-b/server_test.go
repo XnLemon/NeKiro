@@ -3,18 +3,24 @@ package runtimeb
 import (
 	"bytes"
 	"context"
+	"crypto/ed25519"
+	"encoding/base64"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/Nene7ko/NeKiro/contracts"
+	"github.com/Nene7ko/NeKiro/sdks/agent-sdk/routerauth"
 	"github.com/a2aproject/a2a-go/a2a"
 	"github.com/a2aproject/a2a-go/a2aclient"
 	"github.com/a2aproject/a2a-go/a2asrv"
+	"github.com/golang-jwt/jwt/v5"
 )
 
 func TestListenAddressFromEnvironment(t *testing.T) {
@@ -58,7 +64,7 @@ func TestRuntimeBReadinessDoesNotCreateTaskState(t *testing.T) {
 	handler := NewHandler()
 	request := httptest.NewRequest(http.MethodGet, "/readyz", nil)
 	response := httptest.NewRecorder()
-	NewHTTPHandler(handler).ServeHTTP(response, request)
+	httpHandler(t, handler).ServeHTTP(response, request)
 	if response.Code != http.StatusOK || len(handler.tasks) != 0 {
 		t.Fatalf("readiness status=%d tasks=%d", response.Code, len(handler.tasks))
 	}
@@ -66,8 +72,9 @@ func TestRuntimeBReadinessDoesNotCreateTaskState(t *testing.T) {
 
 func TestRuntimeBUnavailableFixtureReturnsServiceUnavailable(t *testing.T) {
 	request := httptest.NewRequest(http.MethodPost, "/unavailable", nil)
+	setTestCredential(request)
 	response := httptest.NewRecorder()
-	NewHTTPHandler(NewHandler()).ServeHTTP(response, request)
+	httpHandler(t, NewHandler()).ServeHTTP(response, request)
 	if response.Code != http.StatusServiceUnavailable {
 		t.Fatalf("unavailable fixture status=%d body=%q", response.Code, response.Body.String())
 	}
@@ -75,7 +82,7 @@ func TestRuntimeBUnavailableFixtureReturnsServiceUnavailable(t *testing.T) {
 
 func TestOfficialA2AClientAllActiveOperations(t *testing.T) {
 	handler := NewHandler()
-	server := httptest.NewServer(NewHTTPHandler(handler))
+	server := httptest.NewServer(httpHandler(t, handler))
 	t.Cleanup(server.Close)
 	client := newA2AClient(t, server, nil)
 
@@ -185,7 +192,7 @@ func TestOfficialServerReceivesAllProfileContextHeaders(t *testing.T) {
 }
 
 func TestOfficialServerUsesStrictOneLineSSEFrames(t *testing.T) {
-	server := httptest.NewServer(NewHTTPHandler(NewHandler()))
+	server := httptest.NewServer(httpHandler(t, NewHandler()))
 	t.Cleanup(server.Close)
 	payload := `{"jsonrpc":"2.0","id":"raw-stream","method":"message/stream","params":{"message":{"kind":"message","messageId":"raw-stream-message","role":"user","parts":[{"kind":"data","data":{"fixture":"stream-success","value":"raw"}}]}}}`
 	request, err := http.NewRequestWithContext(t.Context(), http.MethodPost, server.URL, strings.NewReader(payload))
@@ -194,6 +201,7 @@ func TestOfficialServerUsesStrictOneLineSSEFrames(t *testing.T) {
 	}
 	request.Header.Set("Content-Type", "application/json")
 	request.Header.Set("Accept", "text/event-stream")
+	setTestCredential(request)
 	response, err := server.Client().Do(request)
 	if err != nil {
 		t.Fatalf("stream request: %v", err)
@@ -240,8 +248,12 @@ func (h *contextRecordingHandler) OnSendMessage(ctx context.Context, params *a2a
 func newA2AClient(t *testing.T, server *httptest.Server, interceptors []a2aclient.CallInterceptor) *a2aclient.Client {
 	t.Helper()
 	options := []a2aclient.FactoryOption{a2aclient.WithJSONRPCTransport(server.Client())}
-	if len(interceptors) > 0 {
-		options = append(options, a2aclient.WithInterceptors(interceptors...))
+	allInterceptors := interceptors
+	if interceptors == nil {
+		allInterceptors = []a2aclient.CallInterceptor{testCredentialInterceptor{}}
+	}
+	if len(allInterceptors) > 0 {
+		options = append(options, a2aclient.WithInterceptors(allInterceptors...))
 	}
 	client, err := a2aclient.NewFromEndpoints(t.Context(), []a2a.AgentInterface{
 		{URL: server.URL, Transport: a2a.TransportProtocolJSONRPC},
@@ -255,4 +267,65 @@ func newA2AClient(t *testing.T, server *httptest.Server, interceptors []a2aclien
 		}
 	})
 	return client
+}
+
+func httpHandler(t *testing.T, handler *Handler) http.Handler {
+	t.Helper()
+	publicKey, err := base64.RawURLEncoding.DecodeString("O2onvM62pC1io6jQKm8Nc2UyFXcd4kOmOsBIoYtZ2ik")
+	if err != nil {
+		t.Fatal(err)
+	}
+	authentication, err := NewHTTPHandlerWithAuth(handler, routerauth.Config{Issuer: "https://a2a-router.nekiro.test", Audience: "http://runtime-b:8092", KeyID: "router-key-1", PublicKey: publicKey})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return authentication
+}
+
+type testCredentialInterceptor struct{}
+
+func (testCredentialInterceptor) Before(ctx context.Context, request *a2aclient.Request) (context.Context, error) {
+	setTestMeta(request.Meta)
+	return ctx, nil
+}
+
+func (testCredentialInterceptor) After(context.Context, *a2aclient.Response) error { return nil }
+
+var testCredentialSequence atomic.Uint64
+
+func setTestMeta(meta a2aclient.CallMeta) {
+	sequence := testCredentialSequence.Add(1)
+	now := time.Now().Unix()
+	claims := jwt.MapClaims{
+		"iss": "https://a2a-router.nekiro.test", "aud": []string{"http://runtime-b:8092"}, "exp": now + 30, "iat": now, "jti": fmt.Sprintf("rtj_runtime_b_%d", sequence),
+		"workspaceId": "workspace-a", "agentId": "runtime-b", "agentVersion": "1.0.0", "releaseId": "release-b", "cardDigest": strings.Repeat("b", 64),
+		"capability": "runtime.echo", "invocationId": "inv_runtime_b", "rootTaskId": "task-runtime-b", "traceId": "trace-runtime-b",
+	}
+	token := jwt.NewWithClaims(jwt.SigningMethodEdDSA, claims)
+	token.Header["typ"] = "nekiro-router+jwt"
+	token.Header["kid"] = "router-key-1"
+	serialized, err := token.SignedString(ed25519.NewKeyFromSeed(make([]byte, ed25519.SeedSize)))
+	if err != nil {
+		panic(err)
+	}
+	meta.Append("Authorization", "Bearer "+serialized)
+	meta.Append("x-nek-workspace-id", "workspace-a")
+	meta.Append("x-nek-target-agent-id", "runtime-b")
+	meta.Append("x-nek-agent-card-version", "1.0.0")
+	meta.Append("x-nek-agent-release-id", "release-b")
+	meta.Append("x-nek-agent-card-digest", strings.Repeat("b", 64))
+	meta.Append("x-nek-capability", "runtime.echo")
+	meta.Append("x-nek-invocation-id", "inv_runtime_b")
+	meta.Append("x-nek-root-task-id", "task-runtime-b")
+	meta.Append("x-nek-trace-id", "trace-runtime-b")
+}
+
+func setTestCredential(request *http.Request) {
+	meta := make(a2aclient.CallMeta)
+	setTestMeta(meta)
+	for name, values := range meta {
+		for _, value := range values {
+			request.Header.Add(name, value)
+		}
+	}
 }

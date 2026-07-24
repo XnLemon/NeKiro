@@ -14,9 +14,9 @@ import (
 )
 
 func TestRouterClientUsesOnlyFrozenInternalV3Direction(t *testing.T) {
-	var received contracts.DispatchInvocationRequestV3
+	var received contracts.DispatchInvocationRequestV4
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		if request.URL.Path != "/internal/v3/invocations" || request.Method != http.MethodPost || request.Header.Get("Authorization") != "Bearer service-secret" || request.Header.Get("Content-Type") != "application/json" || request.Header.Get("Accept") != "text/event-stream" {
+		if request.URL.Path != "/internal/v4/invocations" || request.Method != http.MethodPost || request.Header.Get("Authorization") != "Bearer service-secret" || request.Header.Get("Content-Type") != "application/json" || request.Header.Get("Accept") != "text/event-stream" {
 			t.Errorf("unexpected Router request: %s %s %#v", request.Method, request.URL.Path, request.Header)
 		}
 		if err := json.NewDecoder(request.Body).Decode(&received); err != nil {
@@ -27,12 +27,12 @@ func TestRouterClientUsesOnlyFrozenInternalV3Direction(t *testing.T) {
 		_, _ = io.WriteString(writer, "data: {}\n\n")
 	}))
 	defer server.Close()
-	client, err := NewRouterClient(server.Client(), server.URL+"/internal/v3/invocations", "service-secret")
+	client, err := NewRouterClient(server.Client(), server.URL+"/internal/v4/invocations", "service-secret")
 	if err != nil {
 		t.Fatal(err)
 	}
 	digest := strings.Repeat("a", 64)
-	request := contracts.DispatchInvocationRequestV3{InvocationID: "inv-a", RootTaskID: "task-a", TraceID: "trace-a", Caller: contracts.Caller{Type: "user", ID: "owner-a"}, WorkspaceID: "workspace-a", TargetAgentID: "agent-a", AgentCardVersion: "1.0.0", AgentReleaseID: "release-a", AgentCardDigest: digest, Capability: "capability-a", Input: []byte(`{}`), Stream: true}
+	request := contracts.DispatchInvocationRequestV4{InvocationID: "inv-a", RootTaskID: "task-a", TraceID: "trace-a", Caller: contracts.Caller{Type: "user", ID: "owner-a"}, WorkspaceID: "workspace-a", TargetAgentID: "agent-a", AgentCardVersion: "1.0.0", AgentReleaseID: "release-a", AgentCardDigest: digest, Capability: "capability-a", Input: []byte(`{}`), Stream: true}
 	response, err := client.Dispatch(context.Background(), request, contracts.InvocationResultModeSSE)
 	if err != nil {
 		t.Fatal(err)
@@ -50,7 +50,7 @@ func TestRouterClientRejectsWrongResultMediaWithoutFallback(t *testing.T) {
 	}))
 	defer server.Close()
 	client, _ := NewRouterClient(server.Client(), server.URL, "service-secret")
-	if _, err := client.Dispatch(context.Background(), contracts.DispatchInvocationRequestV3{}, contracts.InvocationResultModeSSE); err == nil {
+	if _, err := client.Dispatch(context.Background(), contracts.DispatchInvocationRequestV4{}, contracts.InvocationResultModeSSE); err == nil {
 		t.Fatal("wrong Router result media was accepted")
 	}
 }
@@ -73,7 +73,7 @@ func TestRouterClientReadsExactV3MetadataPathsOnSameOrigin(t *testing.T) {
 		http.NotFound(writer, request)
 	}))
 	defer server.Close()
-	client, err := NewRouterClient(server.Client(), server.URL+"/internal/v3/invocations", "service-secret")
+	client, err := NewRouterClient(server.Client(), server.URL+"/internal/v4/invocations", "service-secret")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -98,7 +98,7 @@ func TestRouterClientReadsExactV3MetadataPathsOnSameOrigin(t *testing.T) {
 func TestRouterClientRejectsInvalidMetadataIdentifiersWithoutRequest(t *testing.T) {
 	client, err := NewRouterClient(roundTripFunc(func(*http.Request) (*http.Response, error) {
 		return nil, errors.New("request must not be made")
-	}), "https://router.example/internal/v3/invocations", "service-secret")
+	}), "https://router.example/internal/v4/invocations", "service-secret")
 	if err != nil {
 		t.Fatal(err)
 	}

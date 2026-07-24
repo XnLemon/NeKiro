@@ -2,15 +2,18 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
 	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/Nene7ko/NeKiro/apps/a2a-router/internal/api"
 	"github.com/Nene7ko/NeKiro/apps/a2a-router/internal/auth"
 	"github.com/Nene7ko/NeKiro/apps/a2a-router/internal/config"
+	"github.com/Nene7ko/NeKiro/apps/a2a-router/internal/credential"
 	"github.com/Nene7ko/NeKiro/apps/a2a-router/internal/ledger"
 	"github.com/Nene7ko/NeKiro/apps/a2a-router/internal/nested"
 	"github.com/Nene7ko/NeKiro/apps/a2a-router/internal/resolution"
@@ -107,7 +110,11 @@ func newHandler(cfg config.Config, doer resolution.HTTPDoer, agentHTTPClient *ht
 	if err != nil {
 		return nil, err
 	}
-	transport, err := a2atransport.NewClient(agentHTTPClient, cfg.InternalRequestLimitBytes, cfg.AgentResponseLimitBytes, cfg.A2AEventLimitBytes, cfg.SSEEventLimitBytes)
+	credentialIssuer, err := credential.NewIssuer(cfg.AgentCredential, time.Now, rand.Reader)
+	if err != nil {
+		return nil, err
+	}
+	transport, err := a2atransport.NewClient(agentHTTPClient, credentialIssuer, cfg.InternalRequestLimitBytes, cfg.AgentResponseLimitBytes, cfg.A2AEventLimitBytes, cfg.SSEEventLimitBytes)
 	if err != nil {
 		return nil, err
 	}

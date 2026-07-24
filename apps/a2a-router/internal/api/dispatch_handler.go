@@ -36,15 +36,15 @@ type Resolver interface {
 }
 
 type NonStreamingTransport interface {
-	ValidateNonStreamingTarget(contracts.DispatchInvocationRequestV3, contracts.ResolveAgentResponse) error
-	SendNonStreaming(context.Context, contracts.DispatchInvocationRequestV3, contracts.ResolveAgentResponse) (json.RawMessage, error)
-	ValidateNonStreamingInput(contracts.DispatchInvocationRequestV3, contracts.ResolveAgentResponse) error
+	ValidateNonStreamingTarget(contracts.DispatchInvocationRequestV4, contracts.ResolveAgentResponse) error
+	SendNonStreaming(context.Context, contracts.DispatchInvocationRequestV4, contracts.ResolveAgentResponse) (json.RawMessage, error)
+	ValidateNonStreamingInput(contracts.DispatchInvocationRequestV4, contracts.ResolveAgentResponse) error
 }
 
 type StreamingTransport interface {
-	SendStreaming(context.Context, contracts.DispatchInvocationRequestV3, contracts.ResolveAgentResponse) iter.Seq2[streammodel.Event, error]
-	ValidateStreamingTarget(contracts.DispatchInvocationRequestV3, contracts.ResolveAgentResponse) error
-	ValidateStreamingInput(contracts.DispatchInvocationRequestV3, contracts.ResolveAgentResponse) error
+	SendStreaming(context.Context, contracts.DispatchInvocationRequestV4, contracts.ResolveAgentResponse) iter.Seq2[streammodel.Event, error]
+	ValidateStreamingTarget(contracts.DispatchInvocationRequestV4, contracts.ResolveAgentResponse) error
+	ValidateStreamingInput(contracts.DispatchInvocationRequestV4, contracts.ResolveAgentResponse) error
 }
 
 var errSSEFrameTooLarge = errors.New("SSE event exceeds the configured limit")
@@ -192,7 +192,7 @@ func NewDispatchHandlerWithTransportAndLedgerAndStreaming(authenticator Authenti
 }
 
 func (handler *DispatchHandler) RegisterRoutes(mux *http.ServeMux) {
-	mux.HandleFunc("POST /internal/v3/invocations", handler.dispatch)
+	mux.HandleFunc("POST /internal/v4/invocations", handler.dispatch)
 }
 
 // DispatchChild performs resolution, transport, and Ledger for an
@@ -201,7 +201,7 @@ func (handler *DispatchHandler) RegisterRoutes(mux *http.ServeMux) {
 // derivation. The accept header controls JSON/SSE result mode.
 // Unlike the internal dispatch path, DispatchChild accepts caller type
 // "agent" and propagates ParentInvocationID to Ledger events.
-func (handler *DispatchHandler) DispatchChild(writer http.ResponseWriter, request *http.Request, dispatchRequest contracts.DispatchInvocationRequestV3, accept string) {
+func (handler *DispatchHandler) DispatchChild(writer http.ResponseWriter, request *http.Request, dispatchRequest contracts.DispatchInvocationRequestV4, accept string) {
 	if _, err := contracts.NegotiateInvocationResultMode(dispatchRequest.Stream, accept); err != nil {
 		handler.writePreError(writer, dispatchRequest.TraceID, contracts.ErrorCodeNotAcceptable)
 		return
@@ -423,36 +423,36 @@ func resolvedDeadlineContext(parent context.Context, timeoutMS int64, invocation
 
 var errPayloadTooLarge = errors.New("router dispatch payload is too large")
 
-func (handler *DispatchHandler) readRequest(request *http.Request) (contracts.DispatchInvocationRequestV3, error) {
+func (handler *DispatchHandler) readRequest(request *http.Request) (contracts.DispatchInvocationRequestV4, error) {
 	if request.ContentLength > handler.requestLimit {
-		return contracts.DispatchInvocationRequestV3{}, errPayloadTooLarge
+		return contracts.DispatchInvocationRequestV4{}, errPayloadTooLarge
 	}
 	data, err := io.ReadAll(io.LimitReader(request.Body, handler.requestLimit+1))
 	if closeErr := request.Body.Close(); err == nil {
 		err = closeErr
 	}
 	if err != nil {
-		return contracts.DispatchInvocationRequestV3{}, err
+		return contracts.DispatchInvocationRequestV4{}, err
 	}
 	if int64(len(data)) > handler.requestLimit {
-		return contracts.DispatchInvocationRequestV3{}, errPayloadTooLarge
+		return contracts.DispatchInvocationRequestV4{}, errPayloadTooLarge
 	}
 	if err := rejectDuplicateMembers(data); err != nil {
-		return contracts.DispatchInvocationRequestV3{}, err
+		return contracts.DispatchInvocationRequestV4{}, err
 	}
-	var value contracts.DispatchInvocationRequestV3
+	var value contracts.DispatchInvocationRequestV4
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&value); err != nil {
-		return contracts.DispatchInvocationRequestV3{}, err
+		return contracts.DispatchInvocationRequestV4{}, err
 	}
 	if err := requireEOF(decoder); err != nil {
-		return contracts.DispatchInvocationRequestV3{}, err
+		return contracts.DispatchInvocationRequestV4{}, err
 	}
 	return value, nil
 }
 
-func validateDispatch(value contracts.DispatchInvocationRequestV3) error {
+func validateDispatch(value contracts.DispatchInvocationRequestV4) error {
 	if value.ParentInvocationID != "" {
 		return errors.New("root dispatch must not carry parent invocation id")
 	}
@@ -483,7 +483,7 @@ func validateDispatch(value contracts.DispatchInvocationRequestV3) error {
 // validateChildDispatch validates a trusted child dispatch request. Unlike
 // validateDispatch, it accepts caller type "agent" and requires a non-empty
 // ParentInvocationID for Ledger lineage.
-func validateChildDispatch(value contracts.DispatchInvocationRequestV3) error {
+func validateChildDispatch(value contracts.DispatchInvocationRequestV4) error {
 	for _, identifier := range []string{value.InvocationID, value.RootTaskID, value.WorkspaceID, value.TargetAgentID, value.Capability, value.Caller.ID} {
 		if !validIdentifier(identifier) {
 			return errors.New("child dispatch identifier is invalid")
@@ -511,7 +511,7 @@ func validateChildDispatch(value contracts.DispatchInvocationRequestV3) error {
 	return nil
 }
 
-func validateResolvedReleaseProvenance(request contracts.DispatchInvocationRequestV3, resolved contracts.ResolveAgentResponse) error {
+func validateResolvedReleaseProvenance(request contracts.DispatchInvocationRequestV4, resolved contracts.ResolveAgentResponse) error {
 	if err := contracts.ValidateInvocationReleaseProvenance(resolved.Installation.InstalledReleaseID, resolved.Installation.AgentCardDigest); err != nil {
 		return err
 	}
@@ -540,7 +540,7 @@ func (handler *DispatchHandler) writePreError(writer http.ResponseWriter, traceI
 	writeJSON(writer, status, traceID, payload)
 }
 
-func (handler *DispatchHandler) writeCorrelatedError(writer http.ResponseWriter, request contracts.DispatchInvocationRequestV3, code contracts.PlatformErrorCode) {
+func (handler *DispatchHandler) writeCorrelatedError(writer http.ResponseWriter, request contracts.DispatchInvocationRequestV4, code contracts.PlatformErrorCode) {
 	status := errorStatus(code)
 	payload, err := contracts.NewCorrelatedPlatformErrorV4(code, request.TraceID, request.InvocationID, request.RootTaskID)
 	if err != nil {
@@ -550,7 +550,7 @@ func (handler *DispatchHandler) writeCorrelatedError(writer http.ResponseWriter,
 	writeJSON(writer, status, request.TraceID, payload)
 }
 
-func (handler *DispatchHandler) writeInvocationResult(writer http.ResponseWriter, request contracts.DispatchInvocationRequestV3, result json.RawMessage) {
+func (handler *DispatchHandler) writeInvocationResult(writer http.ResponseWriter, request contracts.DispatchInvocationRequestV4, result json.RawMessage) {
 	payload := contracts.InvocationResult{
 		SchemaVersion: contracts.InvocationResultSchemaVersion,
 		InvocationID:  request.InvocationID,
@@ -562,7 +562,7 @@ func (handler *DispatchHandler) writeInvocationResult(writer http.ResponseWriter
 	writeJSON(writer, http.StatusOK, request.TraceID, payload)
 }
 
-func (handler *DispatchHandler) dispatchNonStreamingWithLedger(ctx context.Context, writer http.ResponseWriter, request contracts.DispatchInvocationRequestV3, resolved contracts.ResolveAgentResponse, targetErr error) {
+func (handler *DispatchHandler) dispatchNonStreamingWithLedger(ctx context.Context, writer http.ResponseWriter, request contracts.DispatchInvocationRequestV4, resolved contracts.ResolveAgentResponse, targetErr error) {
 	startedAt := time.Now().UTC().Truncate(time.Microsecond)
 	initialEvents := []contracts.InvocationEventV03{
 		lifecycleEvent(request, 0, "created", "pending", startedAt),
@@ -624,7 +624,7 @@ func (handler *DispatchHandler) dispatchNonStreamingWithLedger(ctx context.Conte
 	handler.writeInvocationResult(writer, request, result)
 }
 
-func (handler *DispatchHandler) dispatchStreamingWithLedger(ctx context.Context, cancel context.CancelFunc, response http.ResponseWriter, request contracts.DispatchInvocationRequestV3, resolved contracts.ResolveAgentResponse) {
+func (handler *DispatchHandler) dispatchStreamingWithLedger(ctx context.Context, cancel context.CancelFunc, response http.ResponseWriter, request contracts.DispatchInvocationRequestV4, resolved contracts.ResolveAgentResponse) {
 	startedAt := time.Now().UTC().Truncate(time.Microsecond)
 	childMode := request.ParentInvocationID != ""
 	if !handler.appendInitialLedgerEventsMode(ctx, response, request, startedAt, []contracts.InvocationEventV03{
@@ -801,7 +801,7 @@ func ledgerContext(ctx context.Context) (context.Context, context.CancelFunc) {
 // childMode is true and the sequence-0 created event fails, a
 // pre-correlation error is written because child acceptance never occurred
 // (FR-008). After sequence-0 commits, correlated errors are used.
-func (handler *DispatchHandler) appendInitialLedgerEventsMode(ctx context.Context, writer http.ResponseWriter, request contracts.DispatchInvocationRequestV3, startedAt time.Time, events []contracts.InvocationEventV03, childMode bool) bool {
+func (handler *DispatchHandler) appendInitialLedgerEventsMode(ctx context.Context, writer http.ResponseWriter, request contracts.DispatchInvocationRequestV4, startedAt time.Time, events []contracts.InvocationEventV03, childMode bool) bool {
 	for _, event := range events {
 		if err := handler.ledger.Append(ctx, event); err == nil {
 			continue
@@ -843,7 +843,7 @@ func contextTerminal(ctx context.Context) (contracts.PlatformErrorCode, string, 
 	}
 }
 
-func (handler *DispatchHandler) appendStreamingTerminal(ctx context.Context, request contracts.DispatchInvocationRequestV3, sequence int64, startedAt time.Time, latency int64, code contracts.PlatformErrorCode, eventType, status string) error {
+func (handler *DispatchHandler) appendStreamingTerminal(ctx context.Context, request contracts.DispatchInvocationRequestV4, sequence int64, startedAt time.Time, latency int64, code contracts.PlatformErrorCode, eventType, status string) error {
 	event, err := terminalLifecycleEvent(request, sequence, eventType, status, terminalOccurredAt(startedAt, sequence), latency, code)
 	if err != nil {
 		return err
@@ -861,7 +861,7 @@ func terminalOccurredAt(startedAt time.Time, sequence int64) time.Time {
 	return occurredAt
 }
 
-func (handler *DispatchHandler) finishStreamingFailure(ctx context.Context, cancel context.CancelFunc, writer *resultStreamWriter, sequence *contracts.RuntimeResultStreamSequenceValidator, request contracts.DispatchInvocationRequestV3, startedAt time.Time, streamSequence, ledgerSequence int64, code contracts.PlatformErrorCode) {
+func (handler *DispatchHandler) finishStreamingFailure(ctx context.Context, cancel context.CancelFunc, writer *resultStreamWriter, sequence *contracts.RuntimeResultStreamSequenceValidator, request contracts.DispatchInvocationRequestV4, startedAt time.Time, streamSequence, ledgerSequence int64, code contracts.PlatformErrorCode) {
 	typeValue, status := streamFailureType(code)
 	event, err := streamFailureEvent(request, streamSequence, typeValue, status, code)
 	if err != nil {
@@ -883,7 +883,7 @@ func (handler *DispatchHandler) finishStreamingFailure(ctx context.Context, canc
 	_ = sequence.Finish()
 }
 
-func (handler *DispatchHandler) finishStreamingFailureWithoutLedger(ctx context.Context, cancel context.CancelFunc, writer *resultStreamWriter, sequence *contracts.RuntimeResultStreamSequenceValidator, request contracts.DispatchInvocationRequestV3, streamSequence int64, code contracts.PlatformErrorCode) {
+func (handler *DispatchHandler) finishStreamingFailureWithoutLedger(ctx context.Context, cancel context.CancelFunc, writer *resultStreamWriter, sequence *contracts.RuntimeResultStreamSequenceValidator, request contracts.DispatchInvocationRequestV4, streamSequence int64, code contracts.PlatformErrorCode) {
 	typeValue, status := streamFailureType(code)
 	event, err := streamFailureEvent(request, streamSequence, typeValue, status, code)
 	if err != nil {
@@ -901,7 +901,7 @@ func (handler *DispatchHandler) finishStreamingFailureWithoutLedger(ctx context.
 	_ = sequence.Finish()
 }
 
-func streamFailureEvent(request contracts.DispatchInvocationRequestV3, sequence int64, eventType contracts.ResultStreamEventType, status string, code contracts.PlatformErrorCode) (contracts.InvocationResultStreamEventV2, error) {
+func streamFailureEvent(request contracts.DispatchInvocationRequestV4, sequence int64, eventType contracts.ResultStreamEventType, status string, code contracts.PlatformErrorCode) (contracts.InvocationResultStreamEventV2, error) {
 	platformError, err := contracts.NewCorrelatedPlatformErrorV4(code, request.TraceID, request.InvocationID, request.RootTaskID)
 	if err != nil {
 		return contracts.InvocationResultStreamEventV2{}, err
@@ -964,7 +964,7 @@ func streamWriteErrorCode(ctx context.Context, err error) contracts.PlatformErro
 	return contracts.ErrorCodeDependency
 }
 
-func lifecycleEvent(request contracts.DispatchInvocationRequestV3, sequence int64, eventType, status string, occurredAt time.Time) contracts.InvocationEventV03 {
+func lifecycleEvent(request contracts.DispatchInvocationRequestV4, sequence int64, eventType, status string, occurredAt time.Time) contracts.InvocationEventV03 {
 	return contracts.InvocationEventV03{
 		SchemaVersion:      contracts.RuntimeInvocationEventSchemaVersion,
 		EventID:            lifecycleEventID(request.InvocationID, sequence, eventType),
@@ -986,7 +986,7 @@ func lifecycleEvent(request contracts.DispatchInvocationRequestV3, sequence int6
 	}
 }
 
-func terminalLifecycleEvent(request contracts.DispatchInvocationRequestV3, sequence int64, eventType, status string, occurredAt time.Time, latencyMS int64, code contracts.PlatformErrorCode) (contracts.InvocationEventV03, error) {
+func terminalLifecycleEvent(request contracts.DispatchInvocationRequestV4, sequence int64, eventType, status string, occurredAt time.Time, latencyMS int64, code contracts.PlatformErrorCode) (contracts.InvocationEventV03, error) {
 	event := lifecycleEvent(request, sequence, eventType, status, occurredAt)
 	event.LatencyMS = &latencyMS
 	platformError, err := contracts.NewCorrelatedPlatformErrorV4(code, request.TraceID, request.InvocationID, request.RootTaskID)

@@ -25,7 +25,7 @@ func TestRuntimeContractOpenAPIDirectionsAndVersions(t *testing.T) {
 		serverPart string
 	}{
 		{"openapi/control-plane-invocation.v4.yaml", "4.0.0", "/v4/workspaces/{workspaceId}/invocations", "bearerAuth", "api.nekiro.dev"},
-		{"openapi/router-internal.v3.yaml", "3.0.0", "/internal/v3/invocations", "serviceBearerAuth", "a2a-router.internal"},
+		{"openapi/router-internal.v4.yaml", "4.0.0", "/internal/v4/invocations", "serviceBearerAuth", "a2a-router.internal"},
 		{"openapi/router-agent.v1.yaml", "1.0.0", "/agent/v1/invocations", "agentBearerAuth", "a2a-router.agent"},
 	}
 
@@ -101,7 +101,7 @@ func TestRuntimeContractExactFailureMappings(t *testing.T) {
 
 	for _, path := range []string{
 		"openapi/control-plane-invocation.v4.yaml",
-		"openapi/router-internal.v3.yaml",
+		"openapi/router-internal.v4.yaml",
 		"openapi/router-agent.v1.yaml",
 	} {
 		document := loadOpenAPIDocument(t, filepath.FromSlash(path))
@@ -109,8 +109,8 @@ func TestRuntimeContractExactFailureMappings(t *testing.T) {
 		switch path {
 		case "openapi/control-plane-invocation.v4.yaml":
 			route = "/v4/workspaces/{workspaceId}/invocations"
-		case "openapi/router-internal.v3.yaml":
-			route = "/internal/v3/invocations"
+		case "openapi/router-internal.v4.yaml":
+			route = "/internal/v4/invocations"
 		default:
 			route = "/agent/v1/invocations"
 		}
@@ -132,7 +132,7 @@ func TestRuntimeContractLimitsAndSSEHaveNoDefaults(t *testing.T) {
 
 	for _, test := range []struct{ path, route string }{
 		{"openapi/control-plane-invocation.v4.yaml", "/v4/workspaces/{workspaceId}/invocations"},
-		{"openapi/router-internal.v3.yaml", "/internal/v3/invocations"},
+		{"openapi/router-internal.v4.yaml", "/internal/v4/invocations"},
 		{"openapi/router-agent.v1.yaml", "/agent/v1/invocations"},
 	} {
 		document := loadOpenAPIDocument(t, filepath.FromSlash(test.path))
@@ -183,7 +183,7 @@ func TestRuntimeContractWorkspaceScopedProjectionAndLineageReads(t *testing.T) {
 		path, invocationRoute, traceRoute string
 	}{
 		{"openapi/control-plane-invocation.v4.yaml", "/v4/workspaces/{workspaceId}/invocations/{invocationId}", "/v4/workspaces/{workspaceId}/traces/{traceId}"},
-		{"openapi/router-internal.v3.yaml", "/internal/v3/workspaces/{workspaceId}/invocations/{invocationId}", "/internal/v3/workspaces/{workspaceId}/traces/{traceId}"},
+		{"openapi/router-metadata.v3.yaml", "/internal/v3/workspaces/{workspaceId}/invocations/{invocationId}", "/internal/v3/workspaces/{workspaceId}/traces/{traceId}"},
 	} {
 		document := loadOpenAPIDocument(t, filepath.FromSlash(test.path))
 		invocationOperation := document.Paths.Find(test.invocationRoute)
@@ -440,17 +440,17 @@ func TestRuntimeContractPostAcceptanceErrorsRequireCorrelation(t *testing.T) {
 		t.Fatal("post-acceptance error without root Task correlation was accepted")
 	}
 
-	document := loadOpenAPIDocument(t, filepath.FromSlash("openapi/router-internal.v3.yaml"))
+	document := loadOpenAPIDocument(t, filepath.FromSlash("openapi/router-internal.v4.yaml"))
 	phase := document.Components.Schemas["PhasePlatformError"].Value.Extensions
 	if phase["x-nekiro-phase-boundary"] != "successful-created-commit" ||
 		phase["x-nekiro-pre-acceptance-schema"] != "PreCorrelationPlatformError" ||
 		phase["x-nekiro-post-acceptance-schema"] != "CorrelatedPlatformError" {
 		t.Fatalf("phase error schema does not bind correlation to acceptance: %#v", phase)
 	}
-	agentFailure := document.Paths.Find("/internal/v3/invocations").Post.Responses.Status(502).Value.Content["application/json"].Schema
+	agentFailure := document.Paths.Find("/internal/v4/invocations").Post.Responses.Status(502).Value.Content["application/json"].Schema
 	valid := CorrelatedPlatformErrorV4{Code: ErrorCodeAgentAuthUnsupported, Message: platformErrorV4Messages[ErrorCodeAgentAuthUnsupported], TraceID: "trace-1", InvocationID: "inv-1", RootTaskID: "task-1"}
 	validateOpenAPIValue(t, agentFailure, valid)
-	forbidden := document.Paths.Find("/internal/v3/invocations").Post.Responses.Status(403).Value.Content["application/json"].Schema
+	forbidden := document.Paths.Find("/internal/v4/invocations").Post.Responses.Status(403).Value.Content["application/json"].Schema
 	validateOpenAPIValue(t, forbidden, PreCorrelationPlatformErrorV4{Code: ErrorCodeForbidden, Message: platformErrorV4Messages[ErrorCodeForbidden], TraceID: "trace-1"})
 	validateOpenAPIValue(t, forbidden, CorrelatedPlatformErrorV4{Code: ErrorCodeAgentReleaseSuspended, Message: platformErrorV4Messages[ErrorCodeAgentReleaseSuspended], TraceID: "trace-1", InvocationID: "inv-1", RootTaskID: "task-1"})
 }
@@ -497,8 +497,8 @@ func TestRuntimeContractStreamV2ValidatorRequiresCorrelatedError(t *testing.T) {
 func TestRuntimeContractSchemasAndContentExclusion(t *testing.T) {
 	t.Parallel()
 
-	document := loadOpenAPIDocument(t, filepath.FromSlash("openapi/router-internal.v3.yaml"))
-	request := DispatchInvocationRequestV3{
+	document := loadOpenAPIDocument(t, filepath.FromSlash("openapi/router-internal.v4.yaml"))
+	request := DispatchInvocationRequestV4{
 		InvocationID: "inv-1", RootTaskID: "task-1", TraceID: "trace-1",
 		Caller: Caller{Type: "user", ID: "user-1"}, WorkspaceID: "workspace-1",
 		TargetAgentID: "agent-1", AgentCardVersion: "1.0.0", Capability: "summarize",
@@ -565,7 +565,7 @@ func TestInvocationReleaseProvenanceIsOptionalButAtomic(t *testing.T) {
 }
 
 func TestRouterInternalRootRequestRejectsParentInvocationIDOnWire(t *testing.T) {
-	var request DispatchInvocationRequestV3
+	var request DispatchInvocationRequestV4
 	decoder := json.NewDecoder(strings.NewReader(`{"invocationId":"inv-1","rootTaskId":"task-1","parentInvocationId":"inv-parent","traceId":"trace-1","caller":{"type":"user","id":"user-1"},"workspaceId":"workspace-1","targetAgentId":"agent-1","agentCardVersion":"1.0.0","capability":"summarize","input":{},"stream":false}`))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&request); err == nil {

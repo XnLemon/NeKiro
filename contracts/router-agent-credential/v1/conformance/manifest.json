@@ -1,0 +1,13 @@
+{
+  "schemaVersion": "1",
+  "cases": [
+    { "id": "valid-root", "file": "valid-root.json", "kind": "claims", "expectedValid": true },
+    { "id": "valid-child", "file": "valid-child.json", "kind": "claims", "expectedValid": true },
+    { "id": "invalid-audience-count", "file": "invalid-audience-count.json", "kind": "claims", "expectedValid": false },
+    { "id": "invalid-card-digest", "file": "invalid-card-digest.json", "kind": "claims", "expectedValid": false },
+    { "id": "invalid-lifetime", "file": "invalid-lifetime.json", "kind": "claims", "expectedValid": false },
+    { "id": "invalid-noncanonical-issuer", "file": "invalid-noncanonical-issuer.json", "kind": "claims", "expectedValid": false },
+    { "id": "valid-headers", "file": "valid-headers.json", "kind": "headers", "expectedValid": true },
+    { "id": "invalid-headers-missing-release", "file": "invalid-headers-missing-release.json", "kind": "headers", "expectedValid": false }
+  ]
+}

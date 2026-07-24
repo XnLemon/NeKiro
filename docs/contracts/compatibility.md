@@ -21,11 +21,12 @@ consumers and must not redefine their semantics.
 | Installation Schema | `v1` | `v2` | Breaking: canonical semantic invariants are frozen |
 | Northbound API | `v1` / `v2` | `v3` | Breaking: v3 completes authenticated Workspace/Installation semantics and body-bearing uninstall |
 | Control Plane Internal API | `v1` | `v2` exact Card resolution / `v3` installed-version resolution | v2 is breaking from v1; v3 additively owns deterministic nested version selection |
-| Router Internal API | `v1` / `v2` | `v3` | Breaking: dispatch and Workspace-scoped metadata reads use the runtime contract |
+| Router Internal metadata API | `v1` / `v2` | `v3` | Breaking: Workspace-scoped metadata reads use the runtime contract |
 | Invocation Event Schema | `0.1` | `0.2` | Breaking: terminal status and error-code combinations are stricter |
 | Platform Error | `v1` | `v2` / `v3` | v2 remains active for Catalog/Invocation; v3 adds Workspace `INSTALLATION_DISABLED` |
 | Invocation Result | none | `v1` | New transient JSON and SSE result contracts |
 | A2A Profile Schema | `0.1` | `0.2` | Breaking profile metadata and conformance requirements |
+| Router Invocation Credential | none | `v1` | New companion contract: exact Ed25519 Router-to-Agent request authentication |
 | A2A protocol | `0.3.0` | `0.3.0` | Unchanged wire protocol |
 
 Spec 011 adds invocation-runtime targets without replacing the active Catalog
@@ -34,7 +35,7 @@ and Workspace surfaces:
 | Contract | Historical | Runtime target | Compatibility impact |
 | --- | --- | --- | --- |
 | Northbound Invocation API | invocation routes in Control Plane `v3` | invocation-only `v4` | Breaking acceptance, size, error, and persistence-interruption semantics; Catalog/Workspace/Installation remain on v3 |
-| Router Internal API | `v1` / `v2` | `v3` | Breaking service-auth, acceptance, size, and post-side-effect failure semantics |
+| Router Internal dispatch API | `v1` / `v2` / `v3` | `v4` | Breaking service-auth, managed `http_bearer` acceptance, size, and post-side-effect failure semantics; v3 dispatch is historical evidence |
 | Agent Router API | none | `v1` | New authenticated Agent-SDK direction and parent-derived trust model |
 | Control Plane Internal API | `v1` | `v2` exact Card resolution / `v3` installed-version resolution | v3 adds a phase-aware nested version-selection operation without dual-read fallback |
 | Platform Error | `v1` / `v2` / `v3` | `v4` for invocation runtime | Breaking closed pre/correlated shapes and exact unsupported-auth/request-size/Agent-response-size outcomes |
@@ -45,6 +46,17 @@ Historical files remain unchanged as migration evidence. The first backend
 runtime implements only active targets. No deployed runtime consumer exists,
 so there is no dual-read, dual-write, or dual-dispatch compatibility window.
 All consumers must adopt the active target before that runtime is introduced.
+
+Router Invocation Credential `v1` is a separately versioned companion contract
+for the managed Router-to-Agent HTTP hop. It owns the complete signed claim and
+context-header binding, strict 401/403 response shape, and portable conformance
+corpus under `contracts/router-agent-credential/v1/`. It does not modify A2A
+Profile Schema `0.2`, Agent Card Schema `0.2`, Router Internal dispatch API `v4`,
+Router Internal metadata API `v3` (`router-metadata.v3.yaml`), result contracts,
+or Invocation Ledger facts. The complete `router-internal.v3.yaml` is
+historical evidence and is not an active dependency.
+Agent-to-Router nested credentials remain
+the existing opaque Workspace/Agent binding in the opposite direction.
 
 ## Catalog v2 Completion
 
@@ -147,7 +159,8 @@ historical artifacts remain unchanged migration evidence.
   the v3-owned domains.
 - Legacy Invocation paths embedded in `control-plane.v3.yaml` are migration
   evidence only; no runtime may serve them or pair them with the v4 routes.
-- Control Plane Dispatch uses Router Internal v3. Agent SDKs use Agent Router
+- Control Plane Dispatch uses Router Internal dispatch v4. Workspace-scoped
+  Invocation/Trace reads use Router Internal metadata v3. Agent SDKs use Agent Router
   v1 with an Agent-bound credential; the caller classes and credentials are not
   interchangeable.
 - Adopt Platform Error v4, Invocation Event 0.3, and Result Stream Event v2
@@ -169,8 +182,9 @@ historical artifacts remain unchanged migration evidence.
 - Treat successful `created` commit as acceptance. A post-side-effect
   `DEPENDENCY_ERROR` may coexist with a last committed non-terminal Ledger
   history; do not infer or synthesize a terminal outcome.
-- Do not run v3/v4 Northbound Invocation or v2/v3 Router dispatch as fallback
-  pairs. No deployed runtime consumer justifies a compatibility window.
+- Do not run v3/v4 Northbound Invocation or v3/v4 Router dispatch as fallback
+  pairs. No deployed runtime consumer justifies a compatibility window; the v3
+  dispatch route is retired while v3 metadata reads remain active.
 
 ## Compatible Changes
 
@@ -212,8 +226,8 @@ compatibility runtime is justified.
   replayed, or recoverable after disconnect; obtaining output requires a new
   Invocation.
 - Route nested installed-version selection to Control Plane Internal v3, then
-  exact Card resolution to Control Plane Internal v2. Route dispatch and
-  Ledger/trace reads to Router Internal v3.
+  exact Card resolution to Control Plane Internal v2. Route dispatch to Router
+  Internal v4 and Ledger/trace reads to Router Internal metadata v3.
 
 ## Failure And Data Semantics
 

@@ -2,19 +2,28 @@ package a2a
 
 import (
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/Nene7ko/NeKiro/contracts"
 )
 
-func TestNewTargetAcceptsExactA2ANoneAuthEndpoint(t *testing.T) {
-	resolved := contracts.ResolveAgentResponse{Card: targetCard("http://127.0.0.1:4101/a2a", "none", "capability-a")}
+func TestNewTargetAcceptsExactA2ABearerEndpoint(t *testing.T) {
+	resolved := resolvedTarget(targetCard("http://127.0.0.1:4101/a2a", "none", "capability-a"))
 	target, err := NewTarget(resolved, "capability-a")
 	if err != nil {
 		t.Fatalf("NewTarget = %v", err)
 	}
-	if target.AgentID != "agent-a" || target.Version != "1.0.0" || target.Endpoint != "http://127.0.0.1:4101/a2a" || target.AuthType != "none" {
+	if target.AgentID != "agent-a" || target.Version != "1.0.0" || target.Endpoint != "http://127.0.0.1:4101/a2a" || target.Audience != "http://127.0.0.1:4101" || target.AuthType != "http_bearer" {
 		t.Fatalf("target = %#v", target)
+	}
+}
+
+func TestNewTargetRejectsAnonymousManagedAuthentication(t *testing.T) {
+	card := targetCard("http://127.0.0.1:4101/a2a", "none", "capability-a")
+	card.Authentication.Type = "none"
+	if _, err := NewTarget(resolvedTarget(card), "capability-a"); errorCode(err) != contracts.ErrorCodeAgentAuthUnsupported {
+		t.Fatalf("anonymous target error = %v", err)
 	}
 }
 
@@ -22,7 +31,7 @@ func TestNewTargetClampsLargeCardLimitsToTransportIntegerRange(t *testing.T) {
 	card := targetCard("http://127.0.0.1:4101/a2a", "none", "capability-a")
 	card.Limits.MaxInputBytes = "999999999999999999999999999999999999999999"
 	card.Limits.MaxOutputBytes = "999999999999999999999999999999999999999999"
-	target, err := NewTarget(contracts.ResolveAgentResponse{Card: card}, "capability-a")
+	target, err := NewTarget(resolvedTarget(card), "capability-a")
 	if err != nil {
 		t.Fatalf("NewTarget = %v", err)
 	}
@@ -46,7 +55,7 @@ func TestNewTargetRejectsUnsupportedStates(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			if _, err := NewTarget(contracts.ResolveAgentResponse{Card: test.card}, test.cap); err == nil {
+			if _, err := NewTarget(resolvedTarget(test.card), test.cap); err == nil {
 				t.Fatal("NewTarget succeeded, want error")
 			} else if code := errorCode(err); code != test.code {
 				t.Fatalf("error code = %q, want %q", code, test.code)
@@ -66,6 +75,9 @@ func errorCode(err error) contracts.PlatformErrorCode {
 }
 
 func targetCard(endpoint, authType, capability string) contracts.AgentCard {
+	if authType == "none" {
+		authType = "http_bearer"
+	}
 	return contracts.AgentCard{
 		AgentID: "agent-a", Version: "1.0.0",
 		Protocol:       contracts.AgentProtocol{Type: "a2a", Version: contracts.A2AProtocolVersion, Transport: "JSONRPC", Endpoint: endpoint},
@@ -73,4 +85,8 @@ func targetCard(endpoint, authType, capability string) contracts.AgentCard {
 		Skills:         []contracts.AgentSkill{{ID: capability}},
 		Limits:         contracts.AgentLimits{TimeoutMS: 1000, MaxInputBytes: "4096", MaxOutputBytes: "4096", Streaming: true},
 	}
+}
+
+func resolvedTarget(card contracts.AgentCard) contracts.ResolveAgentResponse {
+	return contracts.ResolveAgentResponse{Card: card, Installation: contracts.ResolvedInstallation{InstallationID: "installation-a", WorkspaceID: "workspace-a", AgentID: card.AgentID, InstalledVersion: card.Version, InstalledReleaseID: "release-a", AgentCardDigest: strings.Repeat("a", 64), Status: "enabled"}}
 }

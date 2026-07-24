@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/Nene7ko/NeKiro/contracts"
+	"github.com/Nene7ko/NeKiro/sdks/agent-sdk/routerauth"
 )
 
 const (
@@ -35,6 +36,7 @@ type Config struct {
 	Capability    string
 	ResponseLimit int64
 	EventLimit    int64
+	RouterAuth    routerauth.Config
 }
 
 // LoadConfig reads and validates every required Runtime A setting.
@@ -77,6 +79,10 @@ func LoadConfig(lookup func(string) (string, bool)) (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	routerAuth, err := routerauth.LoadConfig(lookup)
+	if err != nil {
+		return Config{}, err
+	}
 	config := Config{
 		ListenAddress: listenAddress,
 		AgentID:       agentID,
@@ -86,6 +92,7 @@ func LoadConfig(lookup func(string) (string, bool)) (Config, error) {
 		Capability:    capability,
 		ResponseLimit: responseLimit,
 		EventLimit:    eventLimit,
+		RouterAuth:    routerAuth,
 	}
 	if err := config.Validate(); err != nil {
 		return Config{}, err
@@ -135,6 +142,9 @@ func (config Config) Validate() error {
 	}
 	if config.EventLimit < contracts.RuntimeByteLimitMinimum || config.EventLimit > contracts.RuntimeByteLimitMaximum {
 		return fmt.Errorf("%s must be an integer from %d through %d", EventLimitEnvironment, contracts.RuntimeByteLimitMinimum, contracts.RuntimeByteLimitMaximum)
+	}
+	if err := config.RouterAuth.Validate(); err != nil {
+		return err
 	}
 	return nil
 }

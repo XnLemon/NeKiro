@@ -19,7 +19,7 @@ paths:
       description: >-
         Gateway authenticates the caller, strictly validates media and the
         required configured public body bound, generates root correlation, and
-        dispatches only to Router Internal v3. Successful Router created-event
+        dispatches only to Router Internal Dispatch v4. Successful Router created-event
         commit is acceptance. Before it, failures create no Ledger fact. Clean
         success follows terminal Ledger commit. After an Agent side effect,
         Ledger persistence loss is explicit DEPENDENCY_ERROR and leaves only

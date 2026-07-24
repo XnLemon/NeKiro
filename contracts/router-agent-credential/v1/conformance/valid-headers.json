@@ -1,0 +1,12 @@
+{
+  "authorization": ["Bearer compact.jwt.signature"],
+  "x-nek-workspace-id": ["workspace-a"],
+  "x-nek-target-agent-id": ["agent-a"],
+  "x-nek-agent-card-version": ["1.2.3"],
+  "x-nek-agent-release-id": ["release-a"],
+  "x-nek-agent-card-digest": ["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"],
+  "x-nek-capability": ["agent.execute"],
+  "x-nek-invocation-id": ["inv_0123456789abcdef0123456789abcdef"],
+  "x-nek-root-task-id": ["task-a"],
+  "x-nek-trace-id": ["trace-a"]
+}

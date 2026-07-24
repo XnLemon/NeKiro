@@ -63,8 +63,12 @@ Cross-language contracts are owned by language-neutral artifacts:
 - `contracts/openapi/control-plane-invocation.v4.yaml` defines the active
   Invocation and Trace Northbound API.
 - `contracts/openapi/control-plane-internal.v2.yaml` defines Router-to-Control Plane exact Agent resolution; `control-plane-internal.v3.yaml` defines nested installed-version resolution.
-- `contracts/openapi/router-internal.v3.yaml` defines active Control Plane-to-Router dispatch, result transport, and Workspace-scoped Invocation/Trace reads; v2 is historical migration evidence.
+- `contracts/openapi/router-internal.v4.yaml` defines active Control Plane-to-Router dispatch and result transport; `router-metadata.v3.yaml` is the active Workspace-scoped Invocation/Trace read contract, while the complete `router-internal.v3.yaml` is historical migration evidence.
 - `contracts/a2a-profile/v0.3.0/profile.v0.2.json` pins the active supported A2A subset and context headers.
+- `contracts/router-agent-credential/v1/` and
+  `contracts/schemas/router-agent-credential.v1.schema.json` define the
+  separately versioned signed Router-to-Agent request binding without changing
+  A2A Profile Schema `0.2`.
 - `contracts/*.go` maps these contracts into Go and verifies the mapping against the source schemas.
 
 Go and TypeScript types are consumers of these artifacts, never competing sources of truth. Services must not exchange internal implementation types across a process boundary.
@@ -72,6 +76,17 @@ Go and TypeScript types are consumers of these artifacts, never competing source
 Historical v1 files remain unchanged as migration evidence. The first backend
 runtime implements only the active versions and does not introduce speculative
 dual-version behavior.
+
+## Router-to-Agent authentication
+
+The Router signs a fresh compact Ed25519 JWT for every A2A HTTP request. The
+credential binds the canonical endpoint origin, exact Agent/Card release,
+Workspace authorization context, capability, Invocation/Task/Trace lineage,
+and optional parent Invocation. Agents accept one configured issuer, audience,
+key ID, and public key, reject replayed `jti` values atomically in-process, and
+execute runtime logic only after all claims match single-valued context
+headers. Stream and cancel requests use different credentials. No credential,
+key, signature, or `jti` enters Agent Card, result, event, or Ledger storage.
 
 ## Northbound API v3: Catalog and Workspace
 
@@ -115,12 +130,12 @@ represented as not found, an empty list, or success.
 | --- | --- | --- | --- |
 | `POST` | `/internal/v2/resolve-agent` | Control Plane | Resolve an authorized installed exact Agent Card v0.2 and capability |
 | `POST` | `/internal/v3/resolve-installed-version` | Control Plane | Resolve the exact enabled Installation pin for a nested call |
-| `POST` | `/internal/v3/invocations` | Router | Execute an authorized root invocation and return a transient JSON or SSE result |
+| `POST` | `/internal/v4/invocations` | Router | Execute an authorized root invocation and return a transient JSON or SSE result |
 | `GET` | `/internal/v3/workspaces/:workspaceId/invocations/:invocationId` | Router | Read Workspace-scoped metadata-only Invocation detail |
 | `GET` | `/internal/v3/workspaces/:workspaceId/traces/:traceId` | Router | Read Workspace-scoped metadata-only lineage |
 
 Control Plane Internal v2/v3 are served by the Control Plane and called by the
-Router. Router Internal v3 is served by the Router and called by the Control
+Router. Router Internal dispatch v4 is served by the Router and called by the Control
 Plane. Their server destinations are distinct and explicitly configured. The
 Router resolves cards through the internal Control Plane API and must not query
 Registry or Workspace tables directly.

@@ -37,7 +37,7 @@ func NewRouterClient(doer HTTPDoer, url, token string) (*RouterClient, error) {
 	return &RouterClient{doer: doer, url: url, token: token}, nil
 }
 
-func (client *RouterClient) Dispatch(ctx context.Context, value contracts.DispatchInvocationRequestV3, mode contracts.InvocationResultMode) (*RouterResponse, error) {
+func (client *RouterClient) Dispatch(ctx context.Context, value contracts.DispatchInvocationRequestV4, mode contracts.InvocationResultMode) (*RouterResponse, error) {
 	var body bytes.Buffer
 	encoder := json.NewEncoder(&body)
 	encoder.SetEscapeHTML(false)
