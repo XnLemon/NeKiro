@@ -177,6 +177,16 @@ type cancelingLedgerRecorder struct {
 	delay  time.Duration
 }
 
+type cancelDuringTerminalLedgerRecorder struct {
+	events []contracts.InvocationEventV03
+	cancel context.CancelFunc
+}
+
+type cancelDuringStreamLedgerRecorder struct {
+	events []contracts.InvocationEventV03
+	cancel context.CancelFunc
+}
+
 type failingStreamWriter struct {
 	header http.Header
 }
@@ -207,6 +217,26 @@ func (recorder *cancelingLedgerRecorder) Append(ctx context.Context, event contr
 		return nil
 	}
 	if event.Type == "routing" {
+		return ctx.Err()
+	}
+	recorder.events = append(recorder.events, event)
+	return nil
+}
+
+func (recorder *cancelDuringTerminalLedgerRecorder) Append(ctx context.Context, event contracts.InvocationEventV03) error {
+	if event.Type == "canceled" {
+		recorder.cancel()
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+	}
+	recorder.events = append(recorder.events, event)
+	return nil
+}
+
+func (recorder *cancelDuringStreamLedgerRecorder) Append(ctx context.Context, event contracts.InvocationEventV03) error {
+	if event.Type == "stream" {
+		recorder.cancel()
 		return ctx.Err()
 	}
 	recorder.events = append(recorder.events, event)
@@ -817,12 +847,12 @@ func TestResolvedDeadlineContextUsesConfiguredAndCardMinimum(t *testing.T) {
 	}
 }
 
-func TestLedgerContextProvidesBoundedGraceAfterCancellation(t *testing.T) {
+func TestTerminalLedgerContextProvidesBoundedGraceAfterCancellation(t *testing.T) {
 	var key ledgerContextTestKey
 	parent := context.WithValue(context.Background(), key, "correlation")
 	canceled, cancelParent := context.WithCancel(parent)
 	cancelParent()
-	grace, release := ledgerContext(canceled)
+	grace, release := terminalLedgerContext(canceled)
 	defer release()
 	if grace.Err() != nil {
 		t.Fatalf("grace context already failed: %v", grace.Err())
@@ -834,6 +864,52 @@ func TestLedgerContextProvidesBoundedGraceAfterCancellation(t *testing.T) {
 	if !ok || time.Until(deadline) <= 0 || time.Until(deadline) > ledgerCommitGrace {
 		t.Fatalf("grace deadline=%s ok=%v, want within %s", deadline, ok, ledgerCommitGrace)
 	}
+}
+
+func TestDispatchStreamingCancellationDuringTerminalCommitUsesBoundedLedgerContext(t *testing.T) {
+	requestContext, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	resolver := &resolverStub{response: contracts.ResolveAgentResponse{Card: dispatchResolvedCard("https://agent.example/a2a")}}
+	transport := &streamingTransportStub{err: codedTransportError{code: contracts.ErrorCodeCanceled, cause: context.Canceled}}
+	ledger := &cancelDuringTerminalLedgerRecorder{cancel: cancel}
+	handler, err := NewDispatchHandlerWithTransportAndLedgerAndStreaming(authStub{caller: auth.Caller{ID: "control-plane"}}, resolver, transport, ledger, 4096, 4096, time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mux := http.NewServeMux()
+	handler.RegisterRoutes(mux)
+	request := httptest.NewRequest(http.MethodPost, "/internal/v4/invocations", strings.NewReader(validDispatchBody(true))).WithContext(requestContext)
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Accept", "text/event-stream")
+	response := httptest.NewRecorder()
+	mux.ServeHTTP(response, request)
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"type":"canceled"`) || strings.Contains(response.Body.String(), `"code":"DEPENDENCY_ERROR"`) {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+	assertLedgerLifecycle(t, ledger.events, []string{"created", "routing", "started", "canceled"})
+}
+
+func TestDispatchStreamingCancellationDuringChunkCommitRecordsCanceledTerminal(t *testing.T) {
+	requestContext, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	resolver := &resolverStub{response: contracts.ResolveAgentResponse{Card: dispatchResolvedCard("https://agent.example/a2a")}}
+	transport := &streamingTransportStub{events: []streammodel.Event{{Kind: "task", Payload: json.RawMessage(`{"kind":"task","id":"task-a","contextId":"ctx-a","status":{"state":"working"}}`)}}}
+	ledger := &cancelDuringStreamLedgerRecorder{cancel: cancel}
+	handler, err := NewDispatchHandlerWithTransportAndLedgerAndStreaming(authStub{caller: auth.Caller{ID: "control-plane"}}, resolver, transport, ledger, 4096, 4096, time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mux := http.NewServeMux()
+	handler.RegisterRoutes(mux)
+	request := httptest.NewRequest(http.MethodPost, "/internal/v4/invocations", strings.NewReader(validDispatchBody(true))).WithContext(requestContext)
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Accept", "text/event-stream")
+	response := httptest.NewRecorder()
+	mux.ServeHTTP(response, request)
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"sequence":1,"type":"canceled"`) || strings.Contains(response.Body.String(), `"code":"DEPENDENCY_ERROR"`) {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+	assertLedgerLifecycle(t, ledger.events, []string{"created", "routing", "started", "canceled"})
 }
 
 type ledgerContextTestKey struct{}

@@ -76,6 +76,14 @@ capability, and JSON input. JSON/SSE results and Platform Error v4 responses are
 strictly validated without direct Router/Agent routing or compatibility
 fallback. See [Client SDK usage](sdks/client-sdk/README.md).
 
+The clean trusted-publication acceptance links every managed Invocation to its
+immutable published Release, exercises endpoint proof, Release/Installation,
+Router-credential, direct-Agent, and unavailable-endpoint failures, and scans
+responses, persistence, and logs for secret material. See the
+[acceptance quickstart](specs/026-trusted-publication-acceptance/quickstart.md)
+and [trusted-publication operations](docs/runbooks/trusted-publication-operations.md)
+for the provider, Workspace-owner, and operator workflow.
+
 The first-stage architecture keeps these boundaries:
 
 ```text
@@ -146,4 +154,5 @@ docker compose --env-file .env --file deploy/compose.yaml down
 
 See [Local development](docs/runbooks/local-development.md) for health,
 persistence, migration, dedicated integration-database safeguards, and reset
-procedures.
+procedures. The clean trusted-publication acceptance uses its own Compose
+project and volumes; do not run it against the ordinary local stack.

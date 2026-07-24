@@ -1,67 +1,70 @@
-# Current Handoff: Workspace Client SDK
+# Current Handoff: Trusted Publication Acceptance and Operations
 
 **Updated**: 2026-07-24 (Asia/Shanghai)
 
-**State**: Spec 025 / Issue #51 is implemented, fully verified, independently
-reviewed, and converged on `codex/workspace-client-sdk`. Commit, PR, CI, and
-merge remain in progress.
+**State**: Spec 026 / Issue #52 is implemented, locally verified,
+independently reviewed, and converged on
+`codex/trusted-publication-acceptance`. Commit/PR/CI/merge and issue closure
+remain.
 
 ## Repository State
 
 - Upstream: `https://github.com/NeKiro-project/NeKiro.git`
 - Fork: `https://github.com/XnLemon/NeKiro.git`
-- Current branch: `codex/workspace-client-sdk`
-- Active artifacts: `specs/025-workspace-client-sdk/`
-- Parent trusted-publication artifacts: `specs/023-trusted-agent-publication/`
+- Base: `main` at `2566defd510b5acbd36ffdce255b67500e8783c0`
+- Current branch: `codex/trusted-publication-acceptance`
+- Active artifacts: `specs/026-trusted-publication-acceptance/`
+- Parent artifacts: `specs/023-trusted-agent-publication/`
 - Required Git identity: `Nene7ko_ <1604009816@qq.com>`
 
 ## Delivered Scope
 
-- Standalone `sdks/client-sdk` package, separate from the Agent SDK and with no
-  service-internal dependency.
-- One immutable Client binds an explicit HTTP client, canonical Gateway origin,
-  Workspace ID, opaque Owner-mapped application credential, and explicit
-  request/response/SSE limits.
-- Per-call input is exactly Agent ID, capability, and duplicate-free JSON
-  object; endpoint, Router, version, Release, digest, Workspace, correlation,
-  and Agent credentials are not accepted.
-- One-request non-streaming Invocation Result v1 delivery with exact media,
-  body, Trace, correlation, and size validation.
-- Incremental Result Stream Event v2 delivery with strict compact SSE framing,
-  accepted/chunk/terminal ordering, contiguous indices, context cancellation,
-  and terminal-followed-by-real-EOF completion.
-- Complete typed Platform Error v4 status/code/phase matrix. Public errors retain
-  only status, code, Trace, and optional Invocation/root Task correlation.
-- Northbound Invocation v4 and Router Internal v4 now declare required Trace
-  headers and HTTP 500 `INTERNAL_ERROR`; Router no longer defaults that code to
-  503.
-- Control Plane requires one Router response Trace equal to its dispatch Trace,
-  and Gateway keeps the Trace it created instead of selecting a downstream
-  replacement.
-- SDK README, compiled application example, project entry point, compatibility
-  guidance, and focused configuration/request/stream/error/secrecy tests.
+- One authoritative clean Compose/PostgreSQL acceptance for trusted Register ->
+  Verify -> Publish -> Discover -> Install -> Invoke -> Record.
+- Exact Binding, Challenge, Release, Installation, Invocation/Event, and Trace
+  fact retention in the E2E harness, with Release ID/Card digest linkage back to
+  the Catalog-owned `http_well_known` trust method.
+- Cross-runtime Runtime A -> Router -> Runtime B lineage with one Trace/root
+  Task and exact per-Agent immutable Release provenance.
+- Wrong proof plus fresh-challenge recovery, expired/reused challenge,
+  disallowed destination, unavailable verification endpoint, unpublished/
+  suspended/revoked Release, and disabled Installation cases.
+- Compose-internal forged, expired, wrong-audience, and missing Router
+  credential rejection without exposing an Agent host port.
+- Accepted unavailable endpoint failure with correlated terminal Ledger record
+  and exact Release provenance.
+- Extended post-issuance response, Card/Binding/Challenge/Release/Installation,
+  Ledger, and process-log secrecy scans.
+- Router cancellation race correction: terminal commits use one bounded context
+  independent of caller cancellation; interrupted stream chunks are not retried
+  or sequence-advanced, and cancellation no longer becomes dependency failure
+  or permanent `running` state.
+- Provider/Workspace-owner/operator trusted-publication operations runbook with
+  inspection, responsibility, recovery, completion, and `Needs policy` tables.
 
 ## Verification Completed
 
-- `go test ./sdks/client-sdk/... -run '^Example'`
-- `go test ./contracts ./sdks/client-sdk/...`
-- `go test ./apps/control-plane/internal/invocation ./apps/control-plane/internal/gateway`
-- `go test ./apps/a2a-router/internal/api`
-- `go build ./...`, `go test ./...`, and `go vet ./...`
-- WSL/Linux `go test -race ./sdks/client-sdk/...`
-- Exact CI `golangci-lint v2.12.2 run` and `git diff --check`
-- Independent Standards/Spec final Reviews: PASS with zero High/Medium/Low
-  findings; `speckit-converge`: zero gaps and no appended tasks.
+- Fresh `nekiro-acceptance-spec026` Compose volumes and
+  `go test -tags=e2e -count=1 ./tests/e2e/invoke-record`: PASS in 28.351s,
+  including five real cancellation probes and exact no-Ledger rejection reads.
+- `go test ./...`, `go vet ./...`, `golangci-lint run`: PASS.
+- WSL/Linux `go test -race ./...`: PASS.
+- Runtime A test/vet and WSL/Linux race: PASS.
+- `docker compose ... config --quiet`, GitHub Actions `actionlint`, and
+  `git diff --check`: PASS.
+- `speckit-analyze`: 18/18 FR, 8/8 SC, and 23/23 tasks mapped; zero
+  Critical/High/Medium findings.
+- Independent Spec and standards re-review: zero High/Medium findings.
+- `speckit-converge`: 18/18 FR, 8/8 SC, 12/12 acceptance scenarios, 7/7 plan
+  decisions, and 8/8 constitution principles satisfied; no task appended.
 
 ## Remaining Delivery Gates
 
-- Commit implementation, push, open a ready PR referencing #51 and #47, wait
-  for green CI, merge, close #51, and sync `main`.
-- Keep parent Issue #47 open for dependent Issue #52, which owns the complete
-  clean Compose trusted-publication negative-path acceptance and operator
-  recovery presentation.
+1. Commit with the repository-local identity, push, and open a ready PR that
+   references #52 and #47.
+2. Require green CI, merge, close #52, and close #47 only after checking every
+   parent acceptance criterion against the merged evidence.
 
-Frontend Console work remains paused and `apps/console` is not present. Do not
-add credential lifecycle, delegated roles, retries, redirects, alternate
-destinations, Ledger result polling, v3 invocation compatibility, or direct
-Agent access without a new approved Spec/ADR.
+Do not add retry, alternate endpoint, automatic Release recovery, key rotation,
+cross-replica replay storage, old-protocol fallback, SQL state mutation, or
+direct Agent access. Those behaviors require a separate approved Spec/ADR.

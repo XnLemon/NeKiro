@@ -201,6 +201,22 @@ go test -tags=integration -count=1 ./apps/control-plane/internal/workspace/postg
 The suffix guard is mandatory and prevents accidental execution against a
 shared, staging, or production database.
 
+## Clean trusted-publication acceptance
+
+The authoritative backend acceptance starts from an isolated Compose project
+with empty volumes and proves Register -> Verify -> Publish -> Discover ->
+Install -> Invoke -> Record, cross-runtime nested lineage, the full negative
+trust matrix, and metadata/log secrecy. Use the explicit environment from the
+`backend-acceptance` CI job and follow
+[the Spec 026 quickstart](../../specs/026-trusted-publication-acceptance/quickstart.md).
+
+Do not reuse the ordinary local Compose project or database. Set a unique
+`NEKIRO_E2E_COMPOSE_PROJECT`, keep the challenge verification timeout shorter
+than its explicit TTL, and always run teardown with `--volumes` even after a
+failed test. Provider, Workspace-owner, and operator diagnosis and recovery are
+documented in the
+[trusted-publication operations runbook](trusted-publication-operations.md).
+
 ## Install and verify the workspace
 
 ```powershell

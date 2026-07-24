@@ -219,8 +219,10 @@ jobs:
       NEKIRO_ROUTER_INTERNAL_BEARER_TOKEN: router-internal-token
       NEKIRO_CONTROL_PLANE_SERVICE_TOKEN: control-plane-internal-token
       NEKIRO_CORS_ALLOWED_ORIGINS: http://127.0.0.1:3000
-      NEKIRO_ENDPOINT_CHALLENGE_TTL_SECONDS: "300"
-      NEKIRO_ENDPOINT_VERIFICATION_TIMEOUT_MS: "10000"
+      # Short, explicit acceptance values exercise the real challenge-expiry
+      # boundary; the verification timeout must remain shorter than the TTL.
+      NEKIRO_ENDPOINT_CHALLENGE_TTL_SECONDS: "10"
+      NEKIRO_ENDPOINT_VERIFICATION_TIMEOUT_MS: "3000"
       NEKIRO_ENDPOINT_ALLOWED_PRIVATE_HOSTS_JSON: '["runtime-a","runtime-b"]'
       NEKIRO_CONTROL_PLANE_INTERNAL_REQUEST_MAX_BYTES: "1048576"
       NEKIRO_GATEWAY_INVOCATION_REQUEST_MAX_BYTES: "1048576"
@@ -254,6 +256,7 @@ jobs:
       NEKIRO_E2E_OTHER_TOKEN: acceptance-other-token
       NEKIRO_E2E_DATABASE_URL: postgresql://nekiro_acceptance:acceptance-only-password@127.0.0.1:55432/nekiro_acceptance?sslmode=disable
       NEKIRO_E2E_COMPOSE_FILE: ${{ github.workspace }}/deploy/compose.yaml
+      NEKIRO_E2E_COMPOSE_PROJECT: nekiro-acceptance
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -265,15 +268,46 @@ jobs:
           cache-dependency-path: go.sum
 
       - name: Start clean backend Compose stack
-        run: docker compose --file deploy/compose.yaml up --build --detach --wait --wait-timeout 120
+        run: docker compose --project-name "$NEKIRO_E2E_COMPOSE_PROJECT" --file deploy/compose.yaml up --build --detach --wait --wait-timeout 120
 
-      - name: Run real Invoke-to-Record acceptance
+      - name: Run trusted publication Invoke-to-Record acceptance
         run: go test -tags=e2e -count=1 ./tests/e2e/invoke-record
 
-      - name: Capture backend logs
+      - name: Capture sanitized backend logs
         if: always()
-        run: docker compose --file deploy/compose.yaml logs --no-color
+        shell: bash
+        run: |
+          docker compose --project-name "$NEKIRO_E2E_COMPOSE_PROJECT" --file deploy/compose.yaml logs --no-color 2>&1 |
+            perl -pe '
+              BEGIN {
+                @secret_names = qw(
+                  POSTGRES_PASSWORD NEKIRO_COMPOSE_DATABASE_URL
+                  NEKIRO_ROUTER_INTERNAL_BEARER_TOKEN NEKIRO_CONTROL_PLANE_SERVICE_TOKEN
+                  NEKIRO_ROUTER_AGENT_CREDENTIAL_KEY_ID NEKIRO_ROUTER_AGENT_CREDENTIAL_PRIVATE_KEY_BASE64URL
+                  NEKIRO_AGENT_ROUTER_KEY_ID NEKIRO_AGENT_ROUTER_PUBLIC_KEY_BASE64URL
+                  RUNTIME_A_ROUTER_TOKEN NEKIRO_E2E_ROUTER_TOKEN NEKIRO_E2E_OWNER_TOKEN
+                  NEKIRO_E2E_USER_TOKEN NEKIRO_E2E_OTHER_TOKEN NEKIRO_E2E_DATABASE_URL
+                );
+                @secrets = grep { defined($_) && length($_) } @ENV{@secret_names};
+                @fixtures = qw(
+                  direct-json-value direct-sse-value nested-value
+                  policy-content-secret protocol-content-secret agent-content-secret
+                  route-content-secret timeout-content-secret cancel-content-secret
+                  interrupted-content-secret dependency-content-secret dependency-raw-secret
+                  direct-agent-must-not-execute credential-forged-must-not-execute
+                  credential-expired-must-not-execute credential-wrong-audience-must-not-execute
+                  disabled-installation-must-not-execute suspended-release-must-not-execute
+                  revoked-release-must-not-execute
+                );
+              }
+              for my $value (@secrets, @fixtures) { s/\Q$value\E/[REDACTED]/g; }
+              s/\b[0-9a-f]{64}\b/[REDACTED-64-HEX]/g;
+              s{(?:[A-Za-z0-9_-]+\.){2}[A-Za-z0-9_-]+}{[REDACTED-ROUTER-CREDENTIAL]}g;
+              s/\b[A-Za-z0-9_-]{86}\b/[REDACTED-ED25519-SIGNATURE]/g;
+              s/\brtj_[A-Za-z0-9._:-]*/[REDACTED-ROUTER-JTI]/g;
+              s/\bconcurrent-[A-Za-z0-9._:-]*/[REDACTED-FIXTURE]/g;
+            '
 
       - name: Tear down clean backend stack
         if: always()
-        run: docker compose --file deploy/compose.yaml down --volumes --remove-orphans
+        run: docker compose --project-name "$NEKIRO_E2E_COMPOSE_PROJECT" --file deploy/compose.yaml down --volumes --remove-orphans

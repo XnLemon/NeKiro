@@ -51,9 +51,9 @@
 
 ## Slice E — Acceptance (#52)
 
-- [ ] T017 Add clean Compose E2E for Register -> Verify -> Publish -> Install
+- [x] T017 Add clean Compose E2E for Register -> Verify -> Publish -> Install
       -> Invoke -> Record and all negative paths.
-- [ ] T018 Add operator/provider failure-category/next-action presentation,
+- [x] T018 Add operator/provider failure-category/next-action presentation,
       recovery runbook, and convergence evidence.
 
 ## Dependency order
@@ -97,3 +97,10 @@ T016 -> T017 -> T018
   Client SDK, strict JSON/SSE and Platform Error v4 validation, compiled
   application example, and focused contract/Router/Control Plane/SDK tests.
   Full Issue #51 gates and independent Review are recorded in Spec 025.
+- T017 is implemented under Spec 026 with one isolated clean Compose run that
+  proves trusted cross-runtime Release provenance, the complete publication/
+  lifecycle/credential/direct/unavailable negative matrix, secret absence, and
+  race-safe cancellation terminalization. Local E2E and full Go/race/vet/lint
+  gates pass. T018's runbook, independent Spec/standards Review, and
+  `speckit-converge` are complete with zero High/Medium findings and no
+  appended convergence work; PR/CI/merge remains under Spec 026 T023.

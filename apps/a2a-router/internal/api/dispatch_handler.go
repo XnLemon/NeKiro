@@ -578,7 +578,7 @@ func (handler *DispatchHandler) dispatchNonStreamingWithLedger(ctx context.Conte
 	if targetErr != nil {
 		code := dispatchErrorCode(targetErr)
 		event, buildErr := terminalLifecycleEvent(request, 2, "failed", "failed", terminalOccurredAt(startedAt, 2), 0, code)
-		appendCtx, release := ledgerContext(ctx)
+		appendCtx, release := terminalLedgerContext(ctx)
 		defer release()
 		if buildErr != nil || handler.ledger.Append(appendCtx, event) != nil {
 			handler.writeCorrelatedError(writer, request, contracts.ErrorCodeDependency)
@@ -603,7 +603,7 @@ func (handler *DispatchHandler) dispatchNonStreamingWithLedger(ctx context.Conte
 			eventType, status = "canceled", "canceled"
 		}
 		event, buildErr := terminalLifecycleEvent(request, 3, eventType, status, terminalAt, latencyMS, code)
-		appendCtx, release := ledgerContext(ctx)
+		appendCtx, release := terminalLedgerContext(ctx)
 		defer release()
 		if buildErr != nil || handler.ledger.Append(appendCtx, event) != nil {
 			handler.writeCorrelatedError(writer, request, contracts.ErrorCodeDependency)
@@ -615,7 +615,7 @@ func (handler *DispatchHandler) dispatchNonStreamingWithLedger(ctx context.Conte
 
 	event := lifecycleEvent(request, 3, "succeeded", "succeeded", terminalAt)
 	event.LatencyMS = &latencyMS
-	appendCtx, release := ledgerContext(ctx)
+	appendCtx, release := terminalLedgerContext(ctx)
 	defer release()
 	if err := handler.ledger.Append(appendCtx, event); err != nil {
 		handler.writeCorrelatedError(writer, request, contracts.ErrorCodeDependency)
@@ -635,9 +635,7 @@ func (handler *DispatchHandler) dispatchStreamingWithLedger(ctx context.Context,
 		return
 	}
 	appendEvent := func(event contracts.InvocationEventV03) error {
-		appendCtx, release := ledgerContext(ctx)
-		defer release()
-		return handler.ledger.Append(appendCtx, event)
+		return handler.ledger.Append(ctx, event)
 	}
 
 	streamSequence, err := contracts.NewRuntimeResultStreamSequenceValidator(handler.streamValidator, request.InvocationID, request.RootTaskID, request.TraceID)
@@ -681,7 +679,6 @@ func (handler *DispatchHandler) dispatchStreamingWithLedger(ctx context.Context,
 		}
 		return
 	}
-
 	sequence := int64(1)
 	chunkIndex := int64(0)
 	ledgerSequence := int64(3)
@@ -707,7 +704,7 @@ func (handler *DispatchHandler) dispatchStreamingWithLedger(ctx context.Context,
 			ChunkIndex:    &streamChunkIndex,
 			Chunk:         append(json.RawMessage(nil), event.Payload...),
 		}
-		if err := streamSequence.Accept(chunk); err != nil {
+		if err := handler.streamValidator.ValidateInvocationResultStreamEventV2(chunk); err != nil {
 			handler.finishStreamingFailure(ctx, cancel, streamWriter, streamSequence, request, startedAt, sequence, ledgerSequence, contracts.ErrorCodeA2AProtocol)
 			return
 		}
@@ -718,7 +715,15 @@ func (handler *DispatchHandler) dispatchStreamingWithLedger(ctx context.Context,
 		ledgerChunk.ChunkIndex = &ledgerChunkIndex
 		ledgerChunk.ChunkBytes = &ledgerChunkBytes
 		if err := appendEvent(ledgerChunk); err != nil {
-			handler.finishStreamingFailureWithoutLedger(ctx, cancel, streamWriter, streamSequence, request, sequence+1, contracts.ErrorCodeDependency)
+			if code, _, _, ok := contextTerminal(ctx); ok {
+				handler.finishStreamingFailure(ctx, cancel, streamWriter, streamSequence, request, startedAt, sequence, ledgerSequence, code)
+				return
+			}
+			handler.finishStreamingFailureWithoutLedger(ctx, cancel, streamWriter, streamSequence, request, sequence, contracts.ErrorCodeDependency)
+			return
+		}
+		if err := streamSequence.Accept(chunk); err != nil {
+			handler.finishStreamingFailure(ctx, cancel, streamWriter, streamSequence, request, startedAt, sequence, ledgerSequence+1, contracts.ErrorCodeA2AProtocol)
 			return
 		}
 		if err := streamWriter.Write(chunk); err != nil {
@@ -760,7 +765,10 @@ func (handler *DispatchHandler) dispatchStreamingWithLedger(ctx context.Context,
 			ledgerTerminal := lifecycleEvent(request, ledgerSequence, "succeeded", "succeeded", terminalOccurredAt(startedAt, ledgerSequence))
 			latency := time.Since(startedAt).Milliseconds()
 			ledgerTerminal.LatencyMS = &latency
-			if err := appendEvent(ledgerTerminal); err != nil {
+			appendCtx, release := terminalLedgerContext(ctx)
+			err := handler.ledger.Append(appendCtx, ledgerTerminal)
+			release()
+			if err != nil {
 				handler.finishStreamingFailureWithoutLedger(ctx, cancel, streamWriter, streamSequence, request, sequence, contracts.ErrorCodeDependency)
 				return
 			}
@@ -790,10 +798,7 @@ func (handler *DispatchHandler) dispatchStreamingWithLedger(ctx context.Context,
 	handler.finishStreamingFailure(ctx, cancel, streamWriter, streamSequence, request, startedAt, sequence, ledgerSequence, code)
 }
 
-func ledgerContext(ctx context.Context) (context.Context, context.CancelFunc) {
-	if ctx.Err() == nil {
-		return ctx, func() {}
-	}
+func terminalLedgerContext(ctx context.Context) (context.Context, context.CancelFunc) {
 	return context.WithTimeout(context.WithoutCancel(ctx), ledgerCommitGrace)
 }
 
@@ -808,7 +813,7 @@ func (handler *DispatchHandler) appendInitialLedgerEventsMode(ctx context.Contex
 		} else if event.Sequence > 0 {
 			if code, eventType, status, ok := contextTerminal(ctx); ok {
 				terminal, buildErr := terminalLifecycleEvent(request, event.Sequence, eventType, status, terminalOccurredAt(startedAt, event.Sequence), time.Since(startedAt).Milliseconds(), code)
-				appendCtx, release := ledgerContext(ctx)
+				appendCtx, release := terminalLedgerContext(ctx)
 				appendErr := buildErr
 				if appendErr == nil {
 					appendErr = handler.ledger.Append(appendCtx, terminal)
@@ -848,7 +853,7 @@ func (handler *DispatchHandler) appendStreamingTerminal(ctx context.Context, req
 	if err != nil {
 		return err
 	}
-	appendCtx, release := ledgerContext(ctx)
+	appendCtx, release := terminalLedgerContext(ctx)
 	defer release()
 	return handler.ledger.Append(appendCtx, event)
 }
