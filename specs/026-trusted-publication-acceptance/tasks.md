@@ -103,7 +103,9 @@ using only existing public/deployment boundaries.
 - [x] T020 Run focused E2E, full Go/race/vet/lint, Compose config, and diff checks recorded in `specs/026-trusted-publication-acceptance/quickstart.md`
 - [x] T021 Perform an independent Spec/standards Review and fix all High/Medium findings in the files named by the Review
 - [x] T022 Run `speckit-converge` against `specs/026-trusted-publication-acceptance/` and complete any appended tasks
-- [ ] T023 Commit, push, open a PR referencing #52 and #47, require green CI, merge, close #52, and close #47 only when its parent acceptance criteria are satisfied
+- [x] T023 Commit, push, open a PR referencing #52 and #47, require green CI, merge, close #52, and close #47 only when its parent acceptance criteria are satisfied
+  - Delivery evidence: PR #57 merged as `785f9cf`; all seven checks passed in
+    CI run `30074754169`; Issues #52 and #47 are closed.
 
 ---
 

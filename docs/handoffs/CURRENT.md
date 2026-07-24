@@ -1,18 +1,17 @@
-# Current Handoff: Trusted Publication Acceptance and Operations
+# Current Handoff: Trusted Publication Acceptance Complete
 
 **Updated**: 2026-07-24 (Asia/Shanghai)
 
-**State**: Spec 026 / Issue #52 is implemented, locally verified,
-independently reviewed, and converged on
-`codex/trusted-publication-acceptance`. Commit/PR/CI/merge and issue closure
-remain.
+**State**: Spec 026 / Issue #52 is complete and merged through PR #57. All
+seven checks passed in CI run `30074754169`; Issue #52 and parent Issue #47 are
+closed.
 
 ## Repository State
 
 - Upstream: `https://github.com/NeKiro-project/NeKiro.git`
 - Fork: `https://github.com/XnLemon/NeKiro.git`
-- Base: `main` at `2566defd510b5acbd36ffdce255b67500e8783c0`
-- Current branch: `codex/trusted-publication-acceptance`
+- Base: `main` at `785f9cf2deec57f4bd9f6dd1d1ead46c800da351`
+- Delivery: PR #57, squash merge `785f9cf2deec57f4bd9f6dd1d1ead46c800da351`
 - Active artifacts: `specs/026-trusted-publication-acceptance/`
 - Parent artifacts: `specs/023-trusted-agent-publication/`
 - Required Git identity: `Nene7ko_ <1604009816@qq.com>`
@@ -57,13 +56,15 @@ remain.
 - Independent Spec and standards re-review: zero High/Medium findings.
 - `speckit-converge`: 18/18 FR, 8/8 SC, 12/12 acceptance scenarios, 7/7 plan
   decisions, and 8/8 constitution principles satisfied; no task appended.
+- PR #57 CI run `30074754169`: all seven checks PASS, including
+  `backend-acceptance` in 2m32s.
+- Issue #52 and parent Issue #47: CLOSED after criterion-by-criterion audit.
 
-## Remaining Delivery Gates
+## Delivery Closure
 
-1. Commit with the repository-local identity, push, and open a ready PR that
-   references #52 and #47.
-2. Require green CI, merge, close #52, and close #47 only after checking every
-   parent acceptance criterion against the merged evidence.
+No Spec 026 delivery gates remain. Any follow-on retention, key-rotation,
+replay, reconciliation, or production-governance work requires a separate
+approved Spec/ADR.
 
 Do not add retry, alternate endpoint, automatic Release recovery, key rotation,
 cross-replica replay storage, old-protocol fallback, SQL state mutation, or

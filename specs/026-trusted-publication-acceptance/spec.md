@@ -4,7 +4,8 @@
 
 **Created**: 2026-07-24
 
-**Status**: Implemented, locally verified, independently reviewed, and converged; PR/CI/merge pending
+**Status**: Complete and merged through PR #57 after all required checks passed
+in CI run `30074754169`
 
 **Input**: User description: "Continue Issue #52: prove the trusted publication flow and negative paths in a fresh environment, document provider/operator recovery, review, and merge."
 

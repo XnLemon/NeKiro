@@ -75,3 +75,14 @@ Local verification on 2026-07-24 used the isolated Compose project
 The Windows shell had `CGO_ENABLED=0` and no C compiler, so the authoritative
 race gate was run in the same Linux environment class used by CI; no compiler
 or race fallback was added.
+
+## Delivery record
+
+- PR [#57](https://github.com/NeKiro-project/NeKiro/pull/57) was squash-merged
+  as commit `785f9cf2deec57f4bd9f6dd1d1ead46c800da351`.
+- CI run
+  [`30074754169`](https://github.com/NeKiro-project/NeKiro/actions/runs/30074754169)
+  passed all seven required checks, including the clean `backend-acceptance`
+  job.
+- Issue #52 and parent Issue #47 were closed after their acceptance criteria
+  were audited against the merged evidence.
