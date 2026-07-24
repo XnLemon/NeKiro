@@ -95,7 +95,7 @@
 ### Tests for User Story 3
 
 - [x] T026 [P] [US3] Add streaming and cancellation transport tests proving fresh credentials and unchanged stream/cancel classification in `apps/a2a-router/internal/transport/a2a/streaming_test.go` per US3 acceptance.
-- [ ] T027 [US3] Run and, only where mapped behavior requires, update JSON/SSE/nested/failure/Ledger acceptance assertions in `tests/e2e/invoke-record/invoke_record_test.go` per SC-003/SC-004.
+- [x] T027 [US3] Run and, only where mapped behavior requires, update JSON/SSE/nested/failure/Ledger acceptance assertions in `tests/e2e/invoke-record/invoke_record_test.go` per SC-003/SC-004.
 
 **Checkpoint**: Both Router-to-Agent hops in the cross-runtime call are authenticated and the full Ledger lineage remains metadata-only.
 
@@ -106,7 +106,7 @@
 **Purpose**: Align operator guidance and prove the complete approved scope.
 
 - [x] T028 [P] Update required key generation/configuration, startup failure, direct-request rejection, and credential secrecy guidance in `README.md`, `docs/runbooks/local-development.md`, `docs/architecture/phase-1-spec.md`, `docs/handoffs/CURRENT.md`, and the active-contract/status text in `AGENTS.md`.
-- [ ] T029 Execute the commands in `specs/024-router-agent-authentication/quickstart.md`, run `git diff --check`, verify no credential fields entered Card/Ledger/result schemas, record the fallback delta, and mark all completed tasks in `specs/024-router-agent-authentication/tasks.md`.
+- [x] T029 Execute the commands in `specs/024-router-agent-authentication/quickstart.md`, run `git diff --check`, verify no credential fields entered Card/Ledger/result schemas, record the fallback delta, and mark all completed tasks in `specs/024-router-agent-authentication/tasks.md`.
 
 ---
 

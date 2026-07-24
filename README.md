@@ -62,13 +62,11 @@ runtime logic; stream cancellation receives a separate one-time `jti`.
 Frontend Console work remains paused and `apps/console` is not yet present. The
 thin Go Agent SDK, Router-owned nested adapter, isolated Runtime A, cross-Runtime
 nested invocation, and process/Compose wiring are implemented. CI run
-`29810057739` is the Spec 021 baseline and passed the static, contract,
-PostgreSQL, Runtime A, Compose, and Invoke-to-Record acceptance gates before
-Router-to-Agent authentication was added. Spec 024's authenticated real-Compose
-acceptance remains pending in CI (T027/T029). The repository therefore proves
-the backend/headless Phase 1 loop once that gate passes, but not yet the
-user-facing Console or the later production governance and deployment
-integration stages.
+`30060752722` passed root build/test/race/vet/lint, Runtime A test/vet/race,
+PostgreSQL integration, Compose configuration, Frontend, Codecov, and the real
+authenticated Invoke-to-Record acceptance. The repository therefore proves
+the backend/headless Phase 1 loop, but not yet the user-facing Console or the
+later production governance and deployment integration stages.
 
 The first-stage architecture keeps these boundaries:
 

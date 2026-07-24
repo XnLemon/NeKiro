@@ -1,10 +1,10 @@
 # Current Handoff: Router-to-Agent Authentication
 
-**Updated**: 2026-07-22 (Asia/Shanghai)
+**Updated**: 2026-07-24 (Asia/Shanghai)
 
-**State**: Spec 024 / Issue #50 is implemented on
-`codex/router-agent-auth`. Delivery review, CI, and merge remain to be
-completed before this handoff is considered merged upstream.
+**State**: Spec 024 / Issue #50 is implemented and independently reviewed on
+`codex/router-agent-auth`. PR #55 CI run `30060752722` is green; merge remains
+before this handoff is considered merged upstream.
 
 ## Repository State
 
@@ -36,9 +36,11 @@ completed before this handoff is considered merged upstream.
 
 ## Verification
 
-Local unit, contract, Runtime sample, race, vet, Compose-config, and E2E compile
-gates are recorded in Spec 024 tasks/quickstart as they complete. The real
-Compose acceptance must still pass in GitHub Actions before merge.
+Local unit, contract, Runtime sample, vet, Compose-config, focused secrecy, and
+E2E compile gates passed. PR #55 CI run `30060752722` also passed root
+build/test/race/vet/lint, Runtime A test/vet/race, PostgreSQL integration,
+Compose configuration, Frontend, Codecov, and the real authenticated
+Invoke-to-Record acceptance.
 
 ## Remaining Scope
 
