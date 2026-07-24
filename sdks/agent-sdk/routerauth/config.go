@@ -59,16 +59,16 @@ func LoadConfig(lookup func(string) (string, bool)) (Config, error) {
 
 func (config Config) Validate() error {
 	if err := contracts.ValidateRouterAgentIssuer(config.Issuer); err != nil {
-		return fmt.Errorf("Router issuer is invalid: %w", err)
+		return fmt.Errorf("router issuer is invalid: %w", err)
 	}
 	if err := contracts.ValidateRouterAgentAudience(config.Audience); err != nil {
-		return fmt.Errorf("Router audience is invalid: %w", err)
+		return fmt.Errorf("router audience is invalid: %w", err)
 	}
 	if err := contracts.ValidateRouterAgentKeyID(config.KeyID); err != nil {
-		return fmt.Errorf("Router key ID is invalid: %w", err)
+		return fmt.Errorf("router key ID is invalid: %w", err)
 	}
 	if len(config.PublicKey) != ed25519.PublicKeySize {
-		return errors.New("Router public key is invalid")
+		return errors.New("router public key is invalid")
 	}
 	return nil
 }

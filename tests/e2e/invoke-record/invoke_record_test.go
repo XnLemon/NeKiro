@@ -570,7 +570,7 @@ func routerCredentialLeakError(body []byte, surface string) error {
 	for _, match := range ed25519SignaturePattern.FindAllSubmatch(body, -1) {
 		decoded, err := base64.RawURLEncoding.Strict().DecodeString(string(match[2]))
 		if err == nil && len(decoded) == ed25519.SignatureSize {
-			return fmt.Errorf("Ed25519 signature encoding appeared in %s", surface)
+			return fmt.Errorf("ed25519 signature encoding appeared in %s", surface)
 		}
 	}
 	return nil

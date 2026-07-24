@@ -33,7 +33,7 @@ func NewVerifier(config Config, now func() time.Time) (*Verifier, error) {
 		return nil, err
 	}
 	if now == nil {
-		return nil, errors.New("Router credential verification clock is required")
+		return nil, errors.New("router credential verification clock is required")
 	}
 	replay, err := NewReplayGuard(now)
 	if err != nil {

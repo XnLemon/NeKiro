@@ -44,7 +44,7 @@ func NewClient(httpClient *http.Client, credentialIssuer CredentialIssuer, input
 		return nil, errors.New("A2A transport HTTP client is required")
 	}
 	if credentialIssuer == nil {
-		return nil, errors.New("A2A transport credential issuer is required")
+		return nil, errors.New("a2a transport credential issuer is required")
 	}
 	if inputLimitBytes < contracts.RuntimeByteLimitMinimum || inputLimitBytes > contracts.RuntimeByteLimitMaximum {
 		return nil, errors.New("A2A Agent input limit is invalid")

@@ -15,7 +15,7 @@ func credentialFromHeaders(header http.Header) (string, error) {
 	}
 	credential := strings.TrimPrefix(values[0], "Bearer ")
 	if credential == "" || strings.ContainsAny(credential, " \t\r\n,") {
-		return "", unauthenticated(errors.New("Bearer credential is malformed"))
+		return "", unauthenticated(errors.New("bearer credential is malformed"))
 	}
 	return credential, nil
 }

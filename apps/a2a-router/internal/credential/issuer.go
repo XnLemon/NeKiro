@@ -42,10 +42,10 @@ func NewIssuer(config Config, now func() time.Time, random io.Reader) (*Issuer, 
 		return nil, err
 	}
 	if now == nil {
-		return nil, errors.New("Router credential clock is required")
+		return nil, errors.New("router credential clock is required")
 	}
 	if random == nil {
-		return nil, errors.New("Router credential random source is required")
+		return nil, errors.New("router credential random source is required")
 	}
 	privateKey := make(ed25519.PrivateKey, len(config.PrivateKey))
 	copy(privateKey, config.PrivateKey)
@@ -66,7 +66,7 @@ func (issuer *Issuer) Issue(context contracts.RouterInvocationCredentialContextV
 		ParentInvocationID: context.ParentInvocationID, TraceID: context.TraceID,
 	}
 	if err := contracts.ValidateRouterInvocationCredentialClaimsV1(claims, now); err != nil {
-		return "", fmt.Errorf("Router credential context is invalid: %w", err)
+		return "", fmt.Errorf("router credential context is invalid: %w", err)
 	}
 	wire := signedClaims{
 		RegisteredClaims: jwt.RegisteredClaims{
@@ -82,7 +82,7 @@ func (issuer *Issuer) Issue(context contracts.RouterInvocationCredentialContextV
 	token.Header["kid"] = issuer.keyID
 	serialized, err := token.SignedString(issuer.privateKey)
 	if err != nil {
-		return "", errors.New("sign Router credential")
+		return "", errors.New("sign router credential")
 	}
 	return serialized, nil
 }
@@ -90,7 +90,7 @@ func (issuer *Issuer) Issue(context contracts.RouterInvocationCredentialContextV
 func (issuer *Issuer) newJWTID() (string, error) {
 	randomBytes := make([]byte, jwtIDRandomBytes)
 	if _, err := io.ReadFull(issuer.random, randomBytes); err != nil {
-		return "", errors.New("generate Router credential identifier")
+		return "", errors.New("generate router credential identifier")
 	}
 	return "rtj_" + hex.EncodeToString(randomBytes), nil
 }

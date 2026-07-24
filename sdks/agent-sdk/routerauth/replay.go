@@ -14,7 +14,7 @@ type ReplayGuard struct {
 
 func NewReplayGuard(now func() time.Time) (*ReplayGuard, error) {
 	if now == nil {
-		return nil, errors.New("Router credential replay clock is required")
+		return nil, errors.New("router credential replay clock is required")
 	}
 	return &ReplayGuard{now: now, expires: make(map[string]int64)}, nil
 }

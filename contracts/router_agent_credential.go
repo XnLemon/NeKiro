@@ -101,7 +101,7 @@ func LoadRouterAgentCredentialConformanceManifestV1() (RouterAgentCredentialConf
 		return RouterAgentCredentialConformanceManifestV1{}, err
 	}
 	if manifest.SchemaVersion != RouterAgentCredentialSchemaVersion || len(manifest.Cases) == 0 {
-		return RouterAgentCredentialConformanceManifestV1{}, errors.New("Router credential conformance manifest is invalid")
+		return RouterAgentCredentialConformanceManifestV1{}, errors.New("router credential conformance manifest is invalid")
 	}
 	return manifest, nil
 }
@@ -122,23 +122,23 @@ func ValidateRouterInvocationCredentialClaimsV1(claims RouterInvocationCredentia
 		return err
 	}
 	if len(claims.Audience) != 1 {
-		return errors.New("Router credential must contain exactly one audience")
+		return errors.New("router credential must contain exactly one audience")
 	}
 	if err := ValidateRouterAgentAudience(claims.Audience[0]); err != nil {
 		return err
 	}
 	if claims.IssuedAt < 1 || claims.ExpiresAt <= claims.IssuedAt {
-		return errors.New("Router credential time range is invalid")
+		return errors.New("router credential time range is invalid")
 	}
 	if claims.ExpiresAt-claims.IssuedAt > int64(RouterAgentCredentialMaximumTTL/time.Second) {
-		return errors.New("Router credential lifetime exceeds the profile maximum")
+		return errors.New("router credential lifetime exceeds the profile maximum")
 	}
 	nowUnix := now.UTC().Unix()
 	if claims.IssuedAt > nowUnix {
-		return errors.New("Router credential issuance time is in the future")
+		return errors.New("router credential issuance time is in the future")
 	}
 	if nowUnix >= claims.ExpiresAt {
-		return errors.New("Router credential is expired")
+		return errors.New("router credential is expired")
 	}
 	for name, value := range map[string]string{
 		"jti": claims.JWTID, "workspaceId": claims.WorkspaceID,
@@ -147,32 +147,32 @@ func ValidateRouterInvocationCredentialClaimsV1(claims RouterInvocationCredentia
 		"rootTaskId": claims.RootTaskID, "traceId": string(claims.TraceID),
 	} {
 		if !safeIdentifierPattern.MatchString(value) {
-			return fmt.Errorf("Router credential %s is invalid", name)
+			return fmt.Errorf("router credential %s is invalid", name)
 		}
 	}
 	if claims.ParentInvocationID != "" && !safeIdentifierPattern.MatchString(claims.ParentInvocationID) {
-		return errors.New("Router credential parentInvocationId is invalid")
+		return errors.New("router credential parentInvocationId is invalid")
 	}
 	if _, err := semver.StrictNewVersion(claims.AgentVersion); err != nil {
-		return errors.New("Router credential agentVersion is invalid")
+		return errors.New("router credential agentVersion is invalid")
 	}
 	if !isLowerHexDigest(claims.CardDigest) {
-		return errors.New("Router credential cardDigest is invalid")
+		return errors.New("router credential cardDigest is invalid")
 	}
 	return nil
 }
 
 func ValidateRouterAgentIssuer(value string) error {
 	if value == "" || value != strings.TrimSpace(value) || len(value) > 2048 {
-		return errors.New("Router credential issuer is invalid")
+		return errors.New("router credential issuer is invalid")
 	}
 	parsed, err := url.Parse(value)
 	if err != nil || parsed.Scheme != "https" || parsed.Host == "" || parsed.User != nil || parsed.Path != "" || parsed.RawPath != "" || parsed.RawQuery != "" || parsed.ForceQuery || parsed.Fragment != "" || parsed.RawFragment != "" {
-		return errors.New("Router credential issuer must be an HTTPS origin URI")
+		return errors.New("router credential issuer must be an HTTPS origin URI")
 	}
 	canonical, err := canonicalHTTPOrigin(value, false)
 	if err != nil || canonical != value {
-		return errors.New("Router credential issuer must be canonical")
+		return errors.New("router credential issuer must be canonical")
 	}
 	return nil
 }
@@ -180,7 +180,7 @@ func ValidateRouterAgentIssuer(value string) error {
 func ValidateRouterAgentAudience(value string) error {
 	canonical, err := canonicalHTTPOrigin(value, false)
 	if err != nil || canonical != value {
-		return errors.New("Router credential audience must be a canonical HTTP(S) origin")
+		return errors.New("router credential audience must be a canonical HTTP(S) origin")
 	}
 	return nil
 }
@@ -191,7 +191,7 @@ func CanonicalRouterAgentAudience(endpoint string) (string, error) {
 
 func ValidateRouterAgentKeyID(value string) error {
 	if !safeIdentifierPattern.MatchString(value) {
-		return errors.New("Router credential key ID is invalid")
+		return errors.New("router credential key ID is invalid")
 	}
 	return nil
 }
@@ -216,32 +216,32 @@ func RouterAgentContextHeadersV1(context RouterInvocationCredentialContextV1) ma
 
 func canonicalHTTPOrigin(value string, allowPath bool) (string, error) {
 	if value == "" || value != strings.TrimSpace(value) || strings.ContainsAny(value, "\r\n") || len(value) > 2048 {
-		return "", errors.New("HTTP origin value is invalid")
+		return "", errors.New("http origin value is invalid")
 	}
 	parsed, err := url.Parse(value)
 	if err != nil || parsed.Opaque != "" || parsed.Host == "" || parsed.User != nil || parsed.RawQuery != "" || parsed.ForceQuery || parsed.Fragment != "" || parsed.RawFragment != "" || parsed.RawPath != "" {
-		return "", errors.New("HTTP origin value is invalid")
+		return "", errors.New("http origin value is invalid")
 	}
 	if !allowPath && parsed.Path != "" {
-		return "", errors.New("HTTP origin must not contain a path")
+		return "", errors.New("http origin must not contain a path")
 	}
 	scheme := strings.ToLower(parsed.Scheme)
 	if scheme != "http" && scheme != "https" {
-		return "", errors.New("HTTP origin scheme is unsupported")
+		return "", errors.New("http origin scheme is unsupported")
 	}
 	host := strings.TrimSuffix(strings.ToLower(parsed.Hostname()), ".")
 	if host == "" || strings.Contains(host, "%") {
-		return "", errors.New("HTTP origin host is invalid")
+		return "", errors.New("http origin host is invalid")
 	}
 	portText := parsed.Port()
 	if portText == "" && strings.HasSuffix(parsed.Host, ":") {
-		return "", errors.New("HTTP origin port is invalid")
+		return "", errors.New("http origin port is invalid")
 	}
 	port := 0
 	if portText != "" {
 		port, err = strconv.Atoi(portText)
 		if err != nil || port < 1 || port > 65535 {
-			return "", errors.New("HTTP origin port is invalid")
+			return "", errors.New("http origin port is invalid")
 		}
 	}
 	hostPort := host

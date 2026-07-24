@@ -230,3 +230,10 @@ adapter already used by its source build.
 Go lint gate without changing failure semantics.
 
 - [x] T045 Lowercase Router credential `Config.Validate` error strings per the ST1005 findings in CI run `30060127995` and re-run the credential tests.
+
+## Phase 14: Complete CI Lint Remediation
+
+**Purpose**: Remove the remaining capitalized internal error strings that the
+lint job reports in batches of three.
+
+- [x] T046 Lowercase every Spec 024 internal `errors.New`/`fmt.Errorf` prefix identified by the full inventory after CI run `30060327191`, without changing public error payloads or validation branches.
