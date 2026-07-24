@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"net/url"
 	"path/filepath"
 	"strconv"
@@ -205,6 +206,46 @@ func TestInvocationOpenAPIResultMediaAndStatusMapping(t *testing.T) {
 	}
 	if strings.Contains(northbound.Servers[0].URL, "localhost") {
 		t.Fatal("Northbound v3 defines a localhost destination fallback")
+	}
+}
+
+func TestInvocationV4RequiresTraceAndExactInternalErrorMapping(t *testing.T) {
+	testCases := []struct {
+		name string
+		path string
+		doc  string
+	}{
+		{name: "Northbound", path: "/v4/workspaces/{workspaceId}/invocations", doc: "control-plane-invocation.v4.yaml"},
+		{name: "Router Internal", path: "/internal/v4/invocations", doc: "router-internal.v4.yaml"},
+	}
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			document := loadResultOpenAPIDocument(t, filepath.Join("openapi", testCase.doc))
+			operation := document.Paths.Find(testCase.path).Post
+			for statusText, response := range operation.Responses.Map() {
+				if response == nil || response.Value == nil || response.Value.Headers["x-nek-trace-id"] == nil {
+					t.Fatalf("response %s does not require the Trace header", statusText)
+				}
+				trace := response.Value.Headers["x-nek-trace-id"]
+				if trace.Value == nil || !trace.Value.Required {
+					t.Fatalf("response %s Trace header is not required", statusText)
+				}
+			}
+
+			assertExactResponseErrorCodes(t, operation, http.StatusInternalServerError, []string{"INTERNAL_ERROR"})
+			assertResponseOmitsErrorCode(t, operation, http.StatusServiceUnavailable, "INTERNAL_ERROR")
+			internalResponse := operation.Responses.Status(http.StatusInternalServerError)
+			pre, err := NewPreCorrelationPlatformErrorV4(ErrorCodeInternal, "trace-internal")
+			if err != nil {
+				t.Fatal(err)
+			}
+			correlated, err := NewCorrelatedPlatformErrorV4(ErrorCodeInternal, "trace-internal", "inv-internal", "task-internal")
+			if err != nil {
+				t.Fatal(err)
+			}
+			validateOpenAPIValue(t, internalResponse.Value.Content["application/json"].Schema, pre)
+			validateOpenAPIValue(t, internalResponse.Value.Content["application/json"].Schema, correlated)
+		})
 	}
 }
 
@@ -683,9 +724,12 @@ func loadResultOpenAPIDocument(t *testing.T, path string) *openapi3.T {
 				"/installation/v2":                   "schemas/installation.v2.schema.json",
 				"/platform-error/v2":                 "schemas/platform-error.v2.schema.json",
 				"/platform-error/v3":                 "schemas/platform-error.v3.schema.json",
+				"/platform-error/v4":                 "schemas/platform-error.v4.schema.json",
 				"/invocation-event/v0.2":             "schemas/invocation-event.v0.2.schema.json",
+				"/invocation-event/v0.3":             "schemas/invocation-event.v0.3.schema.json",
 				"/invocation-result/v1":              "schemas/invocation-result.v1.schema.json",
 				"/invocation-result-stream-event/v1": "schemas/invocation-result-stream-event.v1.schema.json",
+				"/invocation-result-stream-event/v2": "schemas/invocation-result-stream-event.v2.schema.json",
 			}
 			localPath, exists := schemaFiles[location.Path]
 			if !exists {

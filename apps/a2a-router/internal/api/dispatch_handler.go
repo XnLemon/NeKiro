@@ -1045,6 +1045,8 @@ func errorStatus(code contracts.PlatformErrorCode) int {
 		return http.StatusRequestEntityTooLarge
 	case contracts.ErrorCodeTimeout:
 		return http.StatusGatewayTimeout
+	case contracts.ErrorCodeInternal:
+		return http.StatusInternalServerError
 	default:
 		return http.StatusServiceUnavailable
 	}

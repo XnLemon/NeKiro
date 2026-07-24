@@ -68,6 +68,14 @@ authenticated Invoke-to-Record acceptance. The repository therefore proves
 the backend/headless Phase 1 loop, but not yet the user-facing Console or the
 later production governance and deployment integration stages.
 
+The Go Workspace Client SDK under `sdks/client-sdk` is the application-facing
+entry point for invoking an installed Agent through Gateway. One immutable
+Client binds an explicit HTTP client, Gateway origin, Workspace, Owner-mapped
+opaque credential, and byte limits; each call supplies only Agent ID,
+capability, and JSON input. JSON/SSE results and Platform Error v4 responses are
+strictly validated without direct Router/Agent routing or compatibility
+fallback. See [Client SDK usage](sdks/client-sdk/README.md).
+
 The first-stage architecture keeps these boundaries:
 
 ```text

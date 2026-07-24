@@ -949,6 +949,7 @@ func TestDispatchMapsTransportFailureMatrix(t *testing.T) {
 		{name: "agent execution", code: contracts.ErrorCodeAgentExecutionFailed, status: http.StatusBadGateway},
 		{name: "timeout", code: contracts.ErrorCodeTimeout, status: http.StatusGatewayTimeout, cause: context.DeadlineExceeded},
 		{name: "canceled", code: contracts.ErrorCodeCanceled, status: http.StatusConflict},
+		{name: "internal", code: contracts.ErrorCodeInternal, status: http.StatusInternalServerError},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

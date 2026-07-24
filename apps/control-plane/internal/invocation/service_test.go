@@ -68,6 +68,19 @@ func TestDispatchStopsBeforeIDsAndRouterWhenWorkspaceRejects(t *testing.T) {
 	}
 }
 
+func TestDispatchMapsRootIDFailureToUncorrelatedInternalError(t *testing.T) {
+	router := &routerStub{}
+	service, err := NewService(&authorizerStub{result: workspace.AuthorizedInvocation{AgentCardVersion: "1.0.0"}}, router, idsStub{err: errors.New("entropy unavailable")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = service.Dispatch(context.Background(), workspace.AuthenticatedCaller{ID: "owner-a"}, "trace-root", "workspace-a", contracts.InvokeAgentRequest{AgentID: "agent-a", Capability: "capability.read"}, []byte(`{}`), contracts.InvocationResultModeJSON)
+	var dispatchError *DispatchError
+	if !errors.As(err, &dispatchError) || dispatchError.Code != contracts.ErrorCodeInternal || dispatchError.InvocationID != "" || dispatchError.RootTaskID != "" || router.calls != 0 {
+		t.Fatalf("dispatch error=%#v router calls=%d", err, router.calls)
+	}
+}
+
 func TestDispatchCorrelatesRouterTransportAndDeadlineFailures(t *testing.T) {
 	for _, test := range []struct {
 		name string

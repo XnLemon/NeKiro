@@ -91,7 +91,7 @@ func TestInvocationHandlerStrictlyRejectsPreDispatchRequests(t *testing.T) {
 }
 
 func TestInvocationHandlerForwardsExactJSONAndTrustedArguments(t *testing.T) {
-	result := `{"schemaVersion":"1","invocationId":"inv-root","rootTaskId":"task-root","traceId":"trace-root","status":"succeeded","result":{"answer":42}}`
+	result := `{"schemaVersion":"1","invocationId":"inv-root","rootTaskId":"task-root","traceId":"trc_00000000000000000000000000000000_1","status":"succeeded","result":{"answer":42}}`
 	headers := http.Header{}
 	headers.Set(TraceHeader, "router-trace")
 	dispatcher := &invocationDispatcherStub{response: &invocation.RouterResponse{StatusCode: 200, ContentType: "application/json", Headers: headers, Body: io.NopCloser(strings.NewReader(result))}}
@@ -104,8 +104,8 @@ func TestInvocationHandlerForwardsExactJSONAndTrustedArguments(t *testing.T) {
 	if response.Code != 200 || response.Body.String() != result || dispatcher.calls != 1 || dispatcher.caller.ID != "owner-a" || dispatcher.workspaceID != "workspace-a" || dispatcher.request.AgentID != "agent-a" || dispatcher.request.Capability != "capability.read" || dispatcher.request.Stream || string(dispatcher.input) != `{"query":"hello"}` || dispatcher.mode != contracts.InvocationResultModeJSON {
 		t.Fatalf("response=%d %q dispatcher=%#v", response.Code, response.Body.String(), dispatcher)
 	}
-	if response.Header().Get(TraceHeader) != "router-trace" {
-		t.Fatalf("trace header = %q, want Router trace", response.Header().Get(TraceHeader))
+	if response.Header().Get(TraceHeader) != string(dispatcher.traceID) || response.Header().Get(TraceHeader) == "router-trace" {
+		t.Fatalf("trace header = %q, Gateway trace = %q", response.Header().Get(TraceHeader), dispatcher.traceID)
 	}
 }
 
@@ -140,6 +140,33 @@ func TestInvocationHandlerMapsWorkspaceBeforeRootAndRouterAfterRootErrors(t *tes
 		var platformError contracts.CorrelatedPlatformErrorV4
 		if response.Code != http.StatusServiceUnavailable || json.Unmarshal(response.Body.Bytes(), &platformError) != nil || platformError.InvocationID != "inv-root" || platformError.RootTaskID != "task-root" || platformError.Code != contracts.ErrorCodeDependency {
 			t.Fatalf("status=%d error=%#v", response.Code, platformError)
+		}
+	})
+	t.Run("internal failure before root is uncorrelated HTTP 500", func(t *testing.T) {
+		dispatcher := &invocationDispatcherStub{err: &invocation.DispatchError{Code: contracts.ErrorCodeInternal, Cause: errors.New("id generation failed")}}
+		response := invokeWithTestHandler(t, dispatcher)
+		var platformError contracts.PreCorrelationPlatformErrorV4
+		if response.Code != http.StatusInternalServerError || json.Unmarshal(response.Body.Bytes(), &platformError) != nil || platformError.Code != contracts.ErrorCodeInternal {
+			t.Fatalf("status=%d error=%#v body=%s", response.Code, platformError, response.Body.String())
+		}
+	})
+	t.Run("internal failure after root is correlated HTTP 500", func(t *testing.T) {
+		traceID := contracts.TraceID("trc_00000000000000000000000000000000_1")
+		platformError, err := contracts.NewCorrelatedPlatformErrorV4(contracts.ErrorCodeInternal, traceID, "inv-root", "task-root")
+		if err != nil {
+			t.Fatal(err)
+		}
+		body, err := json.Marshal(platformError)
+		if err != nil {
+			t.Fatal(err)
+		}
+		headers := http.Header{}
+		headers.Set(TraceHeader, "router-trace")
+		dispatcher := &invocationDispatcherStub{response: &invocation.RouterResponse{StatusCode: http.StatusInternalServerError, ContentType: "application/json", Headers: headers, Body: io.NopCloser(bytes.NewReader(body))}}
+		response := invokeWithTestHandler(t, dispatcher)
+		var got contracts.CorrelatedPlatformErrorV4
+		if response.Code != http.StatusInternalServerError || json.Unmarshal(response.Body.Bytes(), &got) != nil || got.Code != contracts.ErrorCodeInternal || got.InvocationID != "inv-root" || response.Header().Get(TraceHeader) != string(traceID) {
+			t.Fatalf("status=%d error=%#v trace=%q", response.Code, got, response.Header().Get(TraceHeader))
 		}
 	})
 }

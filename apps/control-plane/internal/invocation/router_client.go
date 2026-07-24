@@ -17,6 +17,8 @@ type HTTPDoer interface {
 	Do(*http.Request) (*http.Response, error)
 }
 
+const routerTraceHeader = "x-nek-trace-id"
+
 type RouterResponse struct {
 	StatusCode  int
 	ContentType string
@@ -61,6 +63,19 @@ func (client *RouterClient) Dispatch(ctx context.Context, value contracts.Dispat
 	response, err := client.doer.Do(request)
 	if err != nil {
 		return nil, fmt.Errorf("dispatch to Router: %w", err)
+	}
+	if response == nil || response.Body == nil {
+		return nil, errors.New("Router dispatch response is empty")
+	}
+	traceValues := response.Header.Values(routerTraceHeader)
+	if len(traceValues) != 1 {
+		_ = response.Body.Close()
+		return nil, errors.New("Router dispatch response must contain exactly one Trace header")
+	}
+	responseTrace, err := contracts.ParseTraceID(traceValues[0])
+	if err != nil || responseTrace != value.TraceID {
+		_ = response.Body.Close()
+		return nil, errors.New("Router dispatch response Trace does not match request")
 	}
 	contentType := response.Header.Get("Content-Type")
 	want := "application/json"

@@ -40,14 +40,14 @@
 
 ## Slice C — Router-to-Agent trust (#50)
 
-- [ ] T012 Define Router credential contract and explicit key configuration.
-- [ ] T013 Sign and validate short-lived Router-to-Agent credentials.
-- [ ] T014 Add forged, expired, audience, direct, JSON/SSE, and nested tests.
+- [x] T012 Define Router credential contract and explicit key configuration.
+- [x] T013 Sign and validate short-lived Router-to-Agent credentials.
+- [x] T014 Add forged, expired, audience, direct, JSON/SSE, and nested tests.
 
 ## Slice D — Client SDK (#51)
 
-- [ ] T015 Add lightweight Go Client SDK through Gateway.
-- [ ] T016 Add SDK contract tests and application example.
+- [x] T015 Add lightweight Go Client SDK through Gateway.
+- [x] T016 Add SDK contract tests and application example.
 
 ## Slice E — Acceptance (#52)
 
@@ -90,3 +90,10 @@ T016 -> T017 -> T018
   files in the Sample Agent containers and exercises the trusted
   Register -> Verify -> Publish -> Install path. T017 remains open for the
   complete trusted-publication negative-path acceptance matrix.
+- T012-T014 completed in Spec 024 and merged through PR #55 after CI run
+  `30060752722` passed authenticated JSON/SSE/nested/cancel acceptance, race,
+  vet, lint, and credential conformance gates.
+- T015-T016 are implemented under Spec 025 with a standalone Gateway-only Go
+  Client SDK, strict JSON/SSE and Platform Error v4 validation, compiled
+  application example, and focused contract/Router/Control Plane/SDK tests.
+  Full Issue #51 gates and independent Review are recorded in Spec 025.

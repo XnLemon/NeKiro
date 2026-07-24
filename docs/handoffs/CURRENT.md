@@ -1,57 +1,67 @@
-# Current Handoff: Router-to-Agent Authentication
+# Current Handoff: Workspace Client SDK
 
 **Updated**: 2026-07-24 (Asia/Shanghai)
 
-**State**: Spec 024 / Issue #50 is implemented and independently reviewed on
-`codex/router-agent-auth`. PR #55 CI run `30060752722` is green; merge remains
-before this handoff is considered merged upstream.
+**State**: Spec 025 / Issue #51 is implemented, fully verified, independently
+reviewed, and converged on `codex/workspace-client-sdk`. Commit, PR, CI, and
+merge remain in progress.
 
 ## Repository State
 
 - Upstream: `https://github.com/NeKiro-project/NeKiro.git`
 - Fork: `https://github.com/XnLemon/NeKiro.git`
-- Current branch: `codex/router-agent-auth`
-- Active authentication artifacts: `specs/024-router-agent-authentication/`
-- Backend acceptance artifacts: `specs/021-invoke-record-acceptance/`
-- Parent invocation artifacts: `specs/010-invocation-routing-ledger/`
+- Current branch: `codex/workspace-client-sdk`
+- Active artifacts: `specs/025-workspace-client-sdk/`
+- Parent trusted-publication artifacts: `specs/023-trusted-agent-publication/`
 - Required Git identity: `Nene7ko_ <1604009816@qq.com>`
 
 ## Delivered Scope
 
-- Catalog, Discovery, Workspace, Installation, and exact-version authorization.
-- Gateway v4 Invocation Dispatch through Router Internal dispatch v4; Router
-  Internal v3 remains the metadata-read contract.
-- Independent A2A Router with JSON/SSE delivery and strict endpoint resolution.
-- Router-owned append-only metadata-only Invocation Ledger and scoped reads.
-- Runtime B direct A2A sample.
-- Thin Agent SDK and authenticated Router-mediated nested invocation.
-- Isolated Runtime A caller using `trpc-agent-go` only inside its own module.
-- Runtime A -> Router -> Runtime B parent-child lineage.
-- Compose/PostgreSQL deployment and real Invoke-to-Record E2E acceptance.
-- Router Invocation Credential v1 with Ed25519 signing, exact claim/header
-  binding, strict 401/403 responses, and Agent-local one-time `jti` replay
-  rejection.
-- Authenticated JSON, SSE, nested, failure, and cancel transport paths; direct
-  Agent execution is rejected before Runtime logic.
+- Standalone `sdks/client-sdk` package, separate from the Agent SDK and with no
+  service-internal dependency.
+- One immutable Client binds an explicit HTTP client, canonical Gateway origin,
+  Workspace ID, opaque Owner-mapped application credential, and explicit
+  request/response/SSE limits.
+- Per-call input is exactly Agent ID, capability, and duplicate-free JSON
+  object; endpoint, Router, version, Release, digest, Workspace, correlation,
+  and Agent credentials are not accepted.
+- One-request non-streaming Invocation Result v1 delivery with exact media,
+  body, Trace, correlation, and size validation.
+- Incremental Result Stream Event v2 delivery with strict compact SSE framing,
+  accepted/chunk/terminal ordering, contiguous indices, context cancellation,
+  and terminal-followed-by-real-EOF completion.
+- Complete typed Platform Error v4 status/code/phase matrix. Public errors retain
+  only status, code, Trace, and optional Invocation/root Task correlation.
+- Northbound Invocation v4 and Router Internal v4 now declare required Trace
+  headers and HTTP 500 `INTERNAL_ERROR`; Router no longer defaults that code to
+  503.
+- Control Plane requires one Router response Trace equal to its dispatch Trace,
+  and Gateway keeps the Trace it created instead of selecting a downstream
+  replacement.
+- SDK README, compiled application example, project entry point, compatibility
+  guidance, and focused configuration/request/stream/error/secrecy tests.
 
-## Verification
+## Verification Completed
 
-Local unit, contract, Runtime sample, vet, Compose-config, focused secrecy, and
-E2E compile gates passed. PR #55 CI run `30060752722` also passed root
-build/test/race/vet/lint, Runtime A test/vet/race, PostgreSQL integration,
-Compose configuration, Frontend, Codecov, and the real authenticated
-Invoke-to-Record acceptance.
+- `go test ./sdks/client-sdk/... -run '^Example'`
+- `go test ./contracts ./sdks/client-sdk/...`
+- `go test ./apps/control-plane/internal/invocation ./apps/control-plane/internal/gateway`
+- `go test ./apps/a2a-router/internal/api`
+- `go build ./...`, `go test ./...`, and `go vet ./...`
+- WSL/Linux `go test -race ./sdks/client-sdk/...`
+- Exact CI `golangci-lint v2.12.2 run` and `git diff --check`
+- Independent Standards/Spec final Reviews: PASS with zero High/Medium/Low
+  findings; `speckit-converge`: zero gaps and no appended tasks.
 
-## Remaining Scope
+## Remaining Delivery Gates
 
-- `apps/console` is not present; frontend work remains intentionally paused.
-- `sdks/client-sdk` and production identity/governance are not implemented.
-- Spec 010 T020/T021 remain `Needs policy` for task retention/capacity,
-  timeout ownership, graceful shutdown, and in-flight SSE/Ledger semantics.
-- Do not add retry, cache, stale-card compatibility, silent task eviction, or
-  degraded success without a new approved Spec/ADR.
+- Commit implementation, push, open a ready PR referencing #51 and #47, wait
+  for green CI, merge, close #51, and sync `main`.
+- Keep parent Issue #47 open for dependent Issue #52, which owns the complete
+  clean Compose trusted-publication negative-path acceptance and operator
+  recovery presentation.
 
-Before changing public behavior, read `AGENTS.md`, the active child Spec
-artifacts, the language-neutral contracts, and the relevant ADRs. Contract,
-data-ownership, trace, or failure-policy changes must return to SDD before code
-changes.
+Frontend Console work remains paused and `apps/console` is not present. Do not
+add credential lifecycle, delegated roles, retries, redirects, alternate
+destinations, Ledger result polling, v3 invocation compatibility, or direct
+Agent access without a new approved Spec/ADR.

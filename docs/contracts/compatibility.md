@@ -177,6 +177,14 @@ historical artifacts remain unchanged migration evidence.
 - Use the exact shared Accept matrix: non-stream JSON accepts
   `application/json`, `application/*`, or `*/*`; stream accepts only
   `text/event-stream`. Do not normalize or fall back from unsupported values.
+- Every active Northbound Invocation v4 and Router Internal dispatch v4
+  response carries exactly one `x-nek-trace-id`. The Router response Trace must
+  equal the Gateway-created dispatch Trace; Gateway retains that original
+  northbound Trace rather than selecting a downstream replacement.
+- HTTP 500 is the explicit `INTERNAL_ERROR` mapping on both invocation v4
+  surfaces and permits the phase-appropriate pre- or correlated Platform Error
+  v4 shape. It is not compatible with the HTTP 503 dependency/unavailable
+  mapping.
 - Configure every deadline/size value explicitly. Omission or invalid text is a
   startup/readiness failure and has no migration default.
 - Treat successful `created` commit as acceptance. A post-side-effect
@@ -185,6 +193,9 @@ historical artifacts remain unchanged migration evidence.
 - Do not run v3/v4 Northbound Invocation or v3/v4 Router dispatch as fallback
   pairs. No deployed runtime consumer justifies a compatibility window; the v3
   dispatch route is retired while v3 metadata reads remain active.
+- Go applications may consume this active surface through `sdks/client-sdk`.
+  The Client SDK targets only the Gateway v4 Workspace invocation route and
+  does not probe v3, Router Internal, Agent Router, or provider endpoints.
 
 ## Compatible Changes
 

@@ -23,7 +23,7 @@ func TestRouterClientUsesOnlyFrozenInternalV3Direction(t *testing.T) {
 			t.Error(err)
 		}
 		writer.Header().Set("Content-Type", "text/event-stream")
-		writer.Header().Set("x-nek-trace-id", "trace-router")
+		writer.Header().Set("x-nek-trace-id", "trace-a")
 		_, _ = io.WriteString(writer, "data: {}\n\n")
 	}))
 	defer server.Close()
@@ -38,9 +38,64 @@ func TestRouterClientUsesOnlyFrozenInternalV3Direction(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = response.Body.Close() }()
-	if received.InvocationID != request.InvocationID || received.AgentReleaseID != request.AgentReleaseID || received.AgentCardDigest != digest || response.StatusCode != 200 || response.ContentType != "text/event-stream" || response.Headers.Get("x-nek-trace-id") != "trace-router" {
+	if received.InvocationID != request.InvocationID || received.AgentReleaseID != request.AgentReleaseID || received.AgentCardDigest != digest || response.StatusCode != 200 || response.ContentType != "text/event-stream" || response.Headers.Get("x-nek-trace-id") != "trace-a" {
 		t.Fatalf("received=%#v response=%#v", received, response)
 	}
+}
+
+func TestRouterClientRequiresOneMatchingTraceAndClosesRejectedBodies(t *testing.T) {
+	tests := []struct {
+		name     string
+		response func(*trackedReadCloser) *http.Response
+		closed   bool
+	}{
+		{name: "nil response", response: func(*trackedReadCloser) *http.Response { return nil }},
+		{name: "bodyless response", response: func(*trackedReadCloser) *http.Response {
+			return &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": []string{"application/json"}}}
+		}},
+		{name: "missing Trace", closed: true, response: traceTestResponse(nil)},
+		{name: "duplicate Trace", closed: true, response: traceTestResponse([]string{"trace-a", "trace-a"})},
+		{name: "malformed Trace", closed: true, response: traceTestResponse([]string{"bad trace"})},
+		{name: "mismatched Trace", closed: true, response: traceTestResponse([]string{"trace-b"})},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			body := &trackedReadCloser{Reader: strings.NewReader(`{}`)}
+			client, err := NewRouterClient(roundTripFunc(func(*http.Request) (*http.Response, error) {
+				return test.response(body), nil
+			}), "https://router.example/internal/v4/invocations", "service-secret")
+			if err != nil {
+				t.Fatal(err)
+			}
+			request := contracts.DispatchInvocationRequestV4{TraceID: "trace-a"}
+			if _, err := client.Dispatch(context.Background(), request, contracts.InvocationResultModeJSON); err == nil {
+				t.Fatal("invalid Router response was accepted")
+			}
+			if body.closed != test.closed {
+				t.Fatalf("body closed=%v, want %v", body.closed, test.closed)
+			}
+		})
+	}
+}
+
+func traceTestResponse(values []string) func(*trackedReadCloser) *http.Response {
+	return func(body *trackedReadCloser) *http.Response {
+		header := http.Header{"Content-Type": []string{"application/json"}}
+		for _, value := range values {
+			header.Add(routerTraceHeader, value)
+		}
+		return &http.Response{StatusCode: http.StatusOK, Header: header, Body: body}
+	}
+}
+
+type trackedReadCloser struct {
+	io.Reader
+	closed bool
+}
+
+func (body *trackedReadCloser) Close() error {
+	body.closed = true
+	return nil
 }
 
 func TestRouterClientRejectsWrongResultMediaWithoutFallback(t *testing.T) {

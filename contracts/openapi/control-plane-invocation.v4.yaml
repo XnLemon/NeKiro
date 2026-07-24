@@ -39,6 +39,8 @@ paths:
       responses:
         "200":
           description: JSON success or live SSE result
+          headers:
+            x-nek-trace-id: { $ref: "#/components/headers/TraceID" }
           content:
             application/json: { schema: { $ref: ../schemas/invocation-result.v1.schema.json } }
             text/event-stream:
@@ -57,6 +59,7 @@ paths:
         "406": { $ref: "#/components/responses/NotAcceptable" }
         "409": { $ref: "#/components/responses/Conflict" }
         "413": { $ref: "#/components/responses/PayloadTooLarge" }
+        "500": { $ref: "#/components/responses/InternalFailure" }
         "502": { $ref: "#/components/responses/AgentFailure" }
         "503": { $ref: "#/components/responses/Unavailable" }
         "504": { $ref: "#/components/responses/Timeout" }
@@ -120,6 +123,11 @@ components:
       name: Accept
       required: true
       schema: { type: string, minLength: 1 }
+  headers:
+    TraceID:
+      description: Exactly one Gateway-created Trace identifier for this response
+      required: true
+      schema: { $ref: ../schemas/common.v1.schema.json#/$defs/traceId }
   schemas:
     InvokeAgentRequest:
       type: object
@@ -187,13 +195,14 @@ components:
         - $ref: "#/components/schemas/PreCorrelationPlatformError"
         - $ref: "#/components/schemas/CorrelatedPlatformError"
   responses:
-    BadRequest: { description: Pre-acceptance invalid request, x-platform-error-codes: [VALIDATION_ERROR], content: { application/json: { schema: { $ref: "#/components/schemas/PreCorrelationPlatformError" } } } }
-    Unauthenticated: { description: Pre-acceptance authentication required, x-platform-error-codes: [UNAUTHENTICATED], content: { application/json: { schema: { $ref: "#/components/schemas/PreCorrelationPlatformError" } } } }
-    Forbidden: { description: Pre-acceptance Workspace/capability forbidden, x-platform-error-codes: [FORBIDDEN, CAPABILITY_NOT_ALLOWED], content: { application/json: { schema: { $ref: "#/components/schemas/PreCorrelationPlatformError" } } } }
-    NotFound: { description: Pre-acceptance Workspace/installation/resource not found, x-platform-error-codes: [NOT_FOUND, AGENT_NOT_INSTALLED], content: { application/json: { schema: { $ref: "#/components/schemas/PreCorrelationPlatformError" } } } }
-    NotAcceptable: { description: Pre-acceptance stream and Accept mismatch, x-platform-error-codes: [NOT_ACCEPTABLE], content: { application/json: { schema: { $ref: "#/components/schemas/PreCorrelationPlatformError" } } } }
-    Conflict: { description: Failure may occur before or after acceptance; correlated shape is mandatory after acceptance, x-platform-error-codes: [CONFLICT, INSTALLATION_DISABLED, AGENT_DISABLED, AGENT_RELEASE_UNPUBLISHED, AGENT_RELEASE_SUSPENDED, AGENT_RELEASE_REVOKED, CANCELED], content: { application/json: { schema: { $ref: "#/components/schemas/PhasePlatformError" } } } }
-    PayloadTooLarge: { description: Pre-acceptance public request overflow, x-platform-error-codes: [PAYLOAD_TOO_LARGE], content: { application/json: { schema: { $ref: "#/components/schemas/PreCorrelationPlatformError" } } } }
-    AgentFailure: { description: Post-acceptance exact Agent/protocol/auth/response-size failure, x-platform-error-codes: [AGENT_AUTH_UNSUPPORTED, AGENT_RESPONSE_TOO_LARGE, AGENT_EXECUTION_FAILED, A2A_PROTOCOL_ERROR], content: { application/json: { schema: { $ref: "#/components/schemas/CorrelatedPlatformError" } } } }
-    Unavailable: { description: May occur before/after acceptance; correlated shape is mandatory after acceptance, x-platform-error-codes: [ROUTE_NOT_FOUND, AGENT_UNAVAILABLE, DEPENDENCY_ERROR], content: { application/json: { schema: { $ref: "#/components/schemas/PhasePlatformError" } } } }
-    Timeout: { description: May occur before/after acceptance; correlated shape is mandatory after acceptance, x-platform-error-codes: [TIMEOUT], content: { application/json: { schema: { $ref: "#/components/schemas/PhasePlatformError" } } } }
+    BadRequest: { description: Pre-acceptance invalid request, headers: { x-nek-trace-id: { $ref: "#/components/headers/TraceID" } }, x-platform-error-codes: [VALIDATION_ERROR], content: { application/json: { schema: { $ref: "#/components/schemas/PreCorrelationPlatformError" } } } }
+    Unauthenticated: { description: Pre-acceptance authentication required, headers: { x-nek-trace-id: { $ref: "#/components/headers/TraceID" } }, x-platform-error-codes: [UNAUTHENTICATED], content: { application/json: { schema: { $ref: "#/components/schemas/PreCorrelationPlatformError" } } } }
+    Forbidden: { description: Pre-acceptance Workspace/capability forbidden, headers: { x-nek-trace-id: { $ref: "#/components/headers/TraceID" } }, x-platform-error-codes: [FORBIDDEN, CAPABILITY_NOT_ALLOWED], content: { application/json: { schema: { $ref: "#/components/schemas/PreCorrelationPlatformError" } } } }
+    NotFound: { description: Pre-acceptance Workspace/installation/resource not found, headers: { x-nek-trace-id: { $ref: "#/components/headers/TraceID" } }, x-platform-error-codes: [NOT_FOUND, AGENT_NOT_INSTALLED], content: { application/json: { schema: { $ref: "#/components/schemas/PreCorrelationPlatformError" } } } }
+    NotAcceptable: { description: Pre-acceptance stream and Accept mismatch, headers: { x-nek-trace-id: { $ref: "#/components/headers/TraceID" } }, x-platform-error-codes: [NOT_ACCEPTABLE], content: { application/json: { schema: { $ref: "#/components/schemas/PreCorrelationPlatformError" } } } }
+    Conflict: { description: Failure may occur before or after acceptance; correlated shape is mandatory after acceptance, headers: { x-nek-trace-id: { $ref: "#/components/headers/TraceID" } }, x-platform-error-codes: [CONFLICT, INSTALLATION_DISABLED, AGENT_DISABLED, AGENT_RELEASE_UNPUBLISHED, AGENT_RELEASE_SUSPENDED, AGENT_RELEASE_REVOKED, CANCELED], content: { application/json: { schema: { $ref: "#/components/schemas/PhasePlatformError" } } } }
+    PayloadTooLarge: { description: Pre-acceptance public request overflow, headers: { x-nek-trace-id: { $ref: "#/components/headers/TraceID" } }, x-platform-error-codes: [PAYLOAD_TOO_LARGE], content: { application/json: { schema: { $ref: "#/components/schemas/PreCorrelationPlatformError" } } } }
+    InternalFailure: { description: Internal failure may occur before/after acceptance; correlated shape is mandatory after acceptance, headers: { x-nek-trace-id: { $ref: "#/components/headers/TraceID" } }, x-platform-error-codes: [INTERNAL_ERROR], content: { application/json: { schema: { $ref: "#/components/schemas/PhasePlatformError" } } } }
+    AgentFailure: { description: Post-acceptance exact Agent/protocol/auth/response-size failure, headers: { x-nek-trace-id: { $ref: "#/components/headers/TraceID" } }, x-platform-error-codes: [AGENT_AUTH_UNSUPPORTED, AGENT_RESPONSE_TOO_LARGE, AGENT_EXECUTION_FAILED, A2A_PROTOCOL_ERROR], content: { application/json: { schema: { $ref: "#/components/schemas/CorrelatedPlatformError" } } } }
+    Unavailable: { description: May occur before/after acceptance; correlated shape is mandatory after acceptance, headers: { x-nek-trace-id: { $ref: "#/components/headers/TraceID" } }, x-platform-error-codes: [ROUTE_NOT_FOUND, AGENT_UNAVAILABLE, DEPENDENCY_ERROR], content: { application/json: { schema: { $ref: "#/components/schemas/PhasePlatformError" } } } }
+    Timeout: { description: May occur before/after acceptance; correlated shape is mandatory after acceptance, headers: { x-nek-trace-id: { $ref: "#/components/headers/TraceID" } }, x-platform-error-codes: [TIMEOUT], content: { application/json: { schema: { $ref: "#/components/schemas/PhasePlatformError" } } } }
