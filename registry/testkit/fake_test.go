@@ -144,6 +144,69 @@ func TestFakeDirectoryRebasesRevisionPerObservation(t *testing.T) {
 	}
 }
 
+func TestFakeDirectorySerializesConcurrentEmitPublication(t *testing.T) {
+	fixture := fakeFixture(t)
+	directory := newFakeDirectory(t)
+	if err := directory.Bind(fixture.Target, fixture.Initial); err != nil {
+		t.Fatalf("Bind: %v", err)
+	}
+	observation, err := directory.Observe(context.Background(), fixture.Target)
+	if err != nil {
+		t.Fatalf("Observe: %v", err)
+	}
+
+	directory.mu.Lock()
+	var activeWatch *fakeWatch
+	for watch := range directory.watches[fixture.Target] {
+		activeWatch = watch
+	}
+	if activeWatch == nil {
+		directory.mu.Unlock()
+		t.Fatal("observation watch was not registered")
+	}
+	blocking := newOrderedBlockingPublisher(activeWatch.publisher)
+	activeWatch.publisher = blocking
+	directory.mu.Unlock()
+
+	nextInstance := fakeInstance(t, "uid-a", false, false, true)
+	nextSnapshot := fakeSnapshot(t, fixture.Target, 1, registry.SnapshotStatePopulated, []registry.Instance{nextInstance})
+	nextChange, err := registry.NewInstanceChange(registry.InstanceChangeInput{
+		Kind:     registry.InstanceChangeInstancesChanged,
+		Revision: nextSnapshot.Revision(),
+		Upserts:  []registry.Instance{nextInstance},
+		Snapshot: nextSnapshot,
+	})
+	if err != nil {
+		t.Fatalf("NewInstanceChange: %v", err)
+	}
+
+	results := make(chan error, 2)
+	go func() { results <- directory.Emit(fixture.Target, fixture.Change) }()
+	blocking.awaitFirst(t)
+	go func() { results <- directory.Emit(fixture.Target, nextChange) }()
+
+	for index := 0; index < 2; index++ {
+		select {
+		case err := <-results:
+			if err != nil {
+				t.Fatalf("Emit %d: %v", index, err)
+			}
+		case <-time.After(time.Second):
+			t.Fatalf("Emit %d did not complete", index)
+		}
+	}
+
+	for wantOrder := uint64(1); wantOrder <= 2; wantOrder++ {
+		change, err := observation.Watch().Next(context.Background())
+		if err != nil {
+			t.Fatalf("Next order %d: %v", wantOrder, err)
+		}
+		if got := change.Revision().LocalOrder(); got != wantOrder {
+			t.Fatalf("change local order = %d, want %d", got, wantOrder)
+		}
+	}
+}
+
 func TestFakeDistinguishesMissingBindingFromMissingSnapshot(t *testing.T) {
 	directory := newFakeDirectory(t)
 	target := fakeTarget(t, "agent-a", "release-a")
@@ -324,6 +387,55 @@ type fakeEnteredContext struct {
 	context.Context
 	entered chan struct{}
 	once    sync.Once
+}
+
+type orderedBlockingPublisher struct {
+	inner registry.InstanceWatchPublisher
+
+	firstEntered  chan struct{}
+	secondEntered chan struct{}
+	releaseFirst  chan struct{}
+	firstOnce     sync.Once
+	secondOnce    sync.Once
+}
+
+func newOrderedBlockingPublisher(inner registry.InstanceWatchPublisher) *orderedBlockingPublisher {
+	publisher := &orderedBlockingPublisher{
+		inner:         inner,
+		firstEntered:  make(chan struct{}),
+		secondEntered: make(chan struct{}),
+		releaseFirst:  make(chan struct{}),
+	}
+	go func() {
+		select {
+		case <-publisher.secondEntered:
+		case <-time.After(100 * time.Millisecond):
+		}
+		close(publisher.releaseFirst)
+	}()
+	return publisher
+}
+
+func (p *orderedBlockingPublisher) Publish(change registry.InstanceChange) error {
+	switch change.Revision().LocalOrder() {
+	case 1:
+		p.firstOnce.Do(func() { close(p.firstEntered) })
+		<-p.releaseFirst
+	case 2:
+		p.secondOnce.Do(func() { close(p.secondEntered) })
+	}
+	return p.inner.Publish(change)
+}
+
+func (p *orderedBlockingPublisher) Terminate(err error) { p.inner.Terminate(err) }
+
+func (p *orderedBlockingPublisher) awaitFirst(t testing.TB) {
+	t.Helper()
+	select {
+	case <-p.firstEntered:
+	case <-time.After(time.Second):
+		t.Fatal("first publication did not reach its blocking point")
+	}
 }
 
 func newFakeEnteredContext(ctx context.Context) *fakeEnteredContext {

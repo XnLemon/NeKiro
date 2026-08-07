@@ -214,16 +214,26 @@ func (d *FakeDirectory) Emit(target registry.ReleaseTarget, change registry.Inst
 		delivery.watch.current = delivery.change.Snapshot()
 	}
 	d.bindings[target] = next
-	d.mu.Unlock()
 
 	var firstErr error
+	failedWatches := make([]*fakeWatch, 0)
 	for _, delivery := range deliveries {
 		if err := delivery.watch.publisher.Publish(delivery.change); err != nil {
 			if firstErr == nil {
 				firstErr = err
 			}
-			delivery.watch.detach()
+			failedWatches = append(failedWatches, delivery.watch)
 		}
+	}
+	for _, watch := range failedWatches {
+		delete(d.watches[target], watch)
+	}
+	if len(d.watches[target]) == 0 {
+		delete(d.watches, target)
+	}
+	d.mu.Unlock()
+	for _, watch := range failedWatches {
+		watch.detach()
 	}
 	return firstErr
 }
