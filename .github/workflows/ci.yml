@@ -31,7 +31,7 @@ jobs:
       - name: Check formatting and module graph
         shell: bash
         run: |
-          test -z "$(gofmt -l apps config_center contracts tests)"
+          test -z "$(gofmt -l apps config_center contracts registry tests)"
           go mod tidy
           git diff --exit-code -- go.mod go.sum
           go mod verify
@@ -185,6 +185,26 @@ jobs:
       - name: Test Config Center
         run: go test -count=1 ./config_center/...
 
+  registry:
+    name: Test / Registry
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Set up Go
+        uses: actions/setup-go@44694675825211faa026b3c33043df3e48a5fa00
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      - name: Test Registry
+        run: |
+          go test -count=1 ./registry/...
+          go test -race -count=1 ./registry/...
+          go vet ./registry/...
+
   required:
     if: always()
     needs:
@@ -194,6 +214,7 @@ jobs:
       - images
       - security
       - config_center
+      - registry
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -205,8 +226,9 @@ jobs:
           IMAGES_RESULT: ${{ needs.images.result }}
           SECURITY_RESULT: ${{ needs.security.result }}
           CONFIG_CENTER_RESULT: ${{ needs.config_center.result }}
+          REGISTRY_RESULT: ${{ needs.registry.result }}
         shell: bash
         run: |
-          for result in "$QUALITY_RESULT" "$CONTRACT_RESULT" "$POSTGRES_RESULT" "$IMAGES_RESULT" "$SECURITY_RESULT" "$CONFIG_CENTER_RESULT"; do
+          for result in "$QUALITY_RESULT" "$CONTRACT_RESULT" "$POSTGRES_RESULT" "$IMAGES_RESULT" "$SECURITY_RESULT" "$CONFIG_CENTER_RESULT" "$REGISTRY_RESULT"; do
             test "$result" = success
           done

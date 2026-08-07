@@ -91,7 +91,7 @@ loader 注入和 dynamic governance 必须由独立 Issue/ADR 明确数据所有
 提交前至少运行与风险相称的检查：
 
 ```text
-gofmt -l apps config_center contracts tests
+gofmt -l apps config_center contracts registry tests
 go mod tidy
 go build ./...
 go test ./...
