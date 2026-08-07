@@ -3,7 +3,6 @@ package registry
 import (
 	"context"
 	"errors"
-	"fmt"
 )
 
 // Outcome identifies one terminal or operation outcome exposed by the
@@ -36,6 +35,7 @@ const (
 	CauseDeliveryOverflow        OutcomeCause = "delivery_overflow"
 	CauseWatchEventTooLarge      OutcomeCause = "watch_event_too_large"
 	CauseWatchEventInvalid       OutcomeCause = "watch_event_invalid"
+	CauseWatchStatusError        OutcomeCause = "watch_status_error"
 	CauseStreamEOF               OutcomeCause = "stream_eof"
 	CauseHTTPUnauthorized        OutcomeCause = "http_unauthorized"
 	CauseHTTPForbidden           OutcomeCause = "http_forbidden"
@@ -74,7 +74,7 @@ func (e *OutcomeError) Unwrap() error {
 // Is makes outcome sentinels usable with errors.Is.
 func (e *OutcomeError) Is(target error) bool {
 	targetOutcome, ok := target.(*OutcomeError)
-	return ok && e != nil && e.outcome == targetOutcome.outcome
+	return ok && e != nil && targetOutcome != nil && e.outcome == targetOutcome.outcome
 }
 
 // Outcome returns this error's v1 outcome code.
@@ -158,7 +158,7 @@ func validOutcomeCause(outcome Outcome, cause OutcomeCause) bool {
 		return cause == CauseNone || cause == CauseResourceVersionExpired
 	case OutcomeWatchInterrupted:
 		switch cause {
-		case CauseNone, CauseDeliveryOverflow, CauseWatchEventTooLarge, CauseWatchEventInvalid, CauseStreamEOF:
+		case CauseNone, CauseDeliveryOverflow, CauseWatchEventTooLarge, CauseWatchEventInvalid, CauseWatchStatusError, CauseStreamEOF:
 			return true
 		}
 	case OutcomeMissing, OutcomeCanceled, OutcomeClosed:
@@ -227,5 +227,5 @@ func typedTerminal(err error) error {
 		// the typed code and safe cause at the public watch boundary.
 		return NewOutcomeError(outcomeError.outcome, outcomeError.cause)
 	}
-	return fmt.Errorf("%w: %s", ErrInvalid, CauseTerminalOutcomeRequired)
+	return NewOutcomeError(OutcomeInvalid, CauseTerminalOutcomeRequired)
 }

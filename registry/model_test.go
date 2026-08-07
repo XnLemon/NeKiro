@@ -43,6 +43,11 @@ func TestReleaseTargetExactFieldsAndValidation(t *testing.T) {
 	if _, err := NewReleaseTarget(invalid); !errors.Is(err, ErrInvalid) {
 		t.Fatalf("audience path error = %v, want invalid", err)
 	}
+	invalid = input
+	invalid.Audience = "https://other.example"
+	if _, err := NewReleaseTarget(invalid); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("mismatched endpoint audience error = %v, want invalid", err)
+	}
 	for name, endpoint := range map[string]string{
 		"query":         "https://agent.example/a2a?redirect=other",
 		"fragment":      "https://agent.example/a2a#fragment",
@@ -202,6 +207,13 @@ func TestOutcomeErrorRejectsUnsafeCause(t *testing.T) {
 	}
 	if err.Cause() != CauseUnknownCause {
 		t.Fatalf("unsafe cause retained as %q, want %q", err.Cause(), CauseUnknownCause)
+	}
+}
+
+func TestOutcomeErrorTypedNilTargetDoesNotPanic(t *testing.T) {
+	var typedNil *OutcomeError
+	if errors.Is(ErrInvalid, typedNil) {
+		t.Fatal("invalid error unexpectedly matched a typed nil target")
 	}
 }
 

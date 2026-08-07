@@ -28,7 +28,8 @@ behavior that the topology package cannot audit.
 2. Its v1 provider-neutral boundary is an immutable exact `ReleaseTarget`,
    `InstanceDirectory.Snapshot`, `InstanceDirectory.Observe`, a pull-only
    single-consumer `InstanceWatch`, typed outcomes, and separately reported
-   optional capabilities.
+   optional capabilities. The target audience must equal the canonical Router
+   credential audience derived from its exact endpoint.
 3. The first provider is `registry/kubernetes`, read/watch only. It has no
    registration, lease, heartbeat, persistence, selection, load-balancing,
    route policy, failover, or Router/Gateway invocation behavior.
@@ -59,6 +60,10 @@ behavior that the topology package cannot audit.
     prior state and no instance delta. It is limited to empty instance sets;
     populated transitions retain their concrete upserts/deletions through
     `instances_changed`, and no-op source events remain silent.
+11. After a Kubernetes watch has opened successfully, only a status event with
+    code 410 is `stale`. Every other valid status event is the terminal typed
+    `watch_interrupted(watch_status_error)` outcome; pre-open HTTP status
+    classification is not reused for a live stream.
 
 ## Consequences
 

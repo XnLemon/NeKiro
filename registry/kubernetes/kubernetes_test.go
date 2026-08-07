@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -334,6 +335,25 @@ func TestTypedHTTPOutcomesAndNoRetry(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestPostOpenWatchStatusErrorsDoNotReuseHTTPOutcomes(t *testing.T) {
+	for _, statusCode := range []int{0, 400, 401, 403, 429, 500} {
+		t.Run(strconv.Itoa(statusCode), func(t *testing.T) {
+			err := outcomeFromWatchStatus(wireStatus{Code: statusCode, Reason: "provider status"})
+			if !errors.Is(err, registry.ErrWatchInterrupted) {
+				t.Fatalf("status %d error = %v, want watch_interrupted", statusCode, err)
+			}
+			var outcome *registry.OutcomeError
+			if !errors.As(err, &outcome) || outcome.Cause() != registry.CauseWatchStatusError {
+				t.Fatalf("status %d cause = %v, want %q", statusCode, err, registry.CauseWatchStatusError)
+			}
+		})
+	}
+
+	if err := outcomeFromWatchStatus(wireStatus{Code: 410, Reason: "Expired"}); !errors.Is(err, registry.ErrStale) {
+		t.Fatalf("resource version expiration error = %v, want stale", err)
 	}
 }
 

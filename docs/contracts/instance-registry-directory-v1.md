@@ -50,11 +50,16 @@ ReleaseTarget v1 consists of the following byte-exact strings:
 | Release ID | exact immutable Release identity |
 | Card digest | lower-case 64-hex Agent Card digest |
 | Canonical endpoint | canonical exact A2A endpoint |
-| Audience | canonical Router credential audience origin |
+| Audience | canonical Router credential audience origin derived from the exact endpoint |
 
 The directory validates this value at construction/use and must preserve every
 field byte-for-byte in snapshots and changes. It must not resolve another
 Release, endpoint, or audience.
+
+`Audience` must equal the canonical HTTP(S) origin derived from the exact
+`Canonical endpoint`, using the same Router credential audience rule. A target
+with an independently valid but different audience is invalid; the directory
+does not repair or substitute it.
 
 ## States And Outcomes
 
@@ -68,7 +73,7 @@ Release, endpoint, or audience.
 | Kubernetes 401/403 | typed `unauthorized` error |
 | Pre-open network failure or 429/5xx | typed `unavailable` error |
 | Expired resourceVersion/410 | typed `stale` error |
-| Stream EOF/non-stale failure/overflow | typed `watch_interrupted` error |
+| Stream EOF/non-410 watch `ERROR`/overflow | typed `watch_interrupted` error |
 | Caller context cancellation | typed `canceled` error for that call |
 | Explicit directory/watch closure | typed `closed` error |
 

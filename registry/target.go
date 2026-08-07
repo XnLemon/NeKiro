@@ -69,6 +69,10 @@ func (t ReleaseTarget) Validate() error {
 	if !validAudienceOrigin(t.audience) {
 		return newInvalidError("audience")
 	}
+	expectedAudience, ok := audienceForCanonicalEndpoint(t.canonicalEndpoint)
+	if !ok || expectedAudience != t.audience {
+		return newInvalidError("audience")
+	}
 	return nil
 }
 
@@ -92,6 +96,14 @@ func validCanonicalEndpoint(raw string) bool {
 func validAudienceOrigin(raw string) bool {
 	canonical, ok := canonicalHTTPValue(raw, false)
 	return ok && canonical == raw
+}
+
+func audienceForCanonicalEndpoint(endpoint string) (string, bool) {
+	parsed, err := url.Parse(endpoint)
+	if err != nil {
+		return "", false
+	}
+	return canonicalHTTPValue(parsed.Scheme+"://"+parsed.Host, false)
 }
 
 // canonicalHTTPValue mirrors the target form used by Router credential

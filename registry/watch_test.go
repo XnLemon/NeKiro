@@ -96,6 +96,22 @@ func TestInstanceWatchTerminalDropsUnsafeWrappedText(t *testing.T) {
 	}
 }
 
+func TestInstanceWatchRejectsUntypedTerminalWithSafeCause(t *testing.T) {
+	watch, publisher, err := NewInstanceWatch(1)
+	if err != nil {
+		t.Fatalf("NewInstanceWatch: %v", err)
+	}
+	publisher.Terminate(errors.New("untyped provider failure"))
+	_, err = watch.Next(context.Background())
+	if !errors.Is(err, ErrInvalid) {
+		t.Fatalf("Next error = %v, want invalid", err)
+	}
+	var outcome *OutcomeError
+	if !errors.As(err, &outcome) || outcome.Cause() != CauseTerminalOutcomeRequired {
+		t.Fatalf("terminal cause = %v, want %q", err, CauseTerminalOutcomeRequired)
+	}
+}
+
 func TestInstanceWatchCloseUnblocksAndIsIdempotent(t *testing.T) {
 	watch, _, err := NewInstanceWatch(1)
 	if err != nil {

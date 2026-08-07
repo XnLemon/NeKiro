@@ -20,6 +20,130 @@ func TestFakeDirectoryConformance(t *testing.T) {
 	RunDirectoryConformance(t, directory, fixture)
 }
 
+func TestFakeDirectoryRejectsImpossibleTransitionDelta(t *testing.T) {
+	fixture := fakeFixture(t)
+	directory := newFakeDirectory(t)
+	if err := directory.Bind(fixture.Target, fixture.Initial); err != nil {
+		t.Fatalf("Bind: %v", err)
+	}
+
+	empty := fakeSnapshot(t, fixture.Target, 1, registry.SnapshotStateEmpty, nil)
+	badDeletion, err := registry.NewInstanceChange(registry.InstanceChangeInput{
+		Kind:               registry.InstanceChangeInstancesChanged,
+		Revision:           empty.Revision(),
+		DeletedInstanceIDs: []string{"uid-not-in-previous-snapshot"},
+		Snapshot:           empty,
+	})
+	if err != nil {
+		t.Fatalf("NewInstanceChange bad deletion fixture: %v", err)
+	}
+	if err := directory.Emit(fixture.Target, badDeletion); !errors.Is(err, registry.ErrInvalid) {
+		t.Fatalf("Emit impossible deletion error = %v, want invalid", err)
+	}
+
+	if snapshot, err := directory.Snapshot(context.Background(), fixture.Target); err != nil || !snapshot.Equal(fixture.Initial) {
+		t.Fatalf("snapshot after rejected transition = %#v / %v, want initial unchanged", snapshot, err)
+	}
+}
+
+func TestFakeDirectoryRequiresStateChangeToMatchCurrentSnapshot(t *testing.T) {
+	directory := newFakeDirectory(t)
+	target := fakeTarget(t, "agent-a", "release-a")
+	current := fakeSnapshot(t, target, 0, registry.SnapshotStateEmpty, nil)
+	if err := directory.Bind(target, current); err != nil {
+		t.Fatalf("Bind: %v", err)
+	}
+	empty := fakeSnapshot(t, target, 1, registry.SnapshotStateEmpty, nil)
+	change, err := registry.NewInstanceChange(registry.InstanceChangeInput{
+		Kind:          registry.InstanceChangeStateChanged,
+		Revision:      empty.Revision(),
+		PreviousState: registry.SnapshotStateMissing,
+		Snapshot:      empty,
+	})
+	if err != nil {
+		t.Fatalf("NewInstanceChange state fixture: %v", err)
+	}
+	if err := directory.Emit(target, change); !errors.Is(err, registry.ErrInvalid) {
+		t.Fatalf("Emit mismatched previous state error = %v, want invalid", err)
+	}
+}
+
+func TestFakeDirectoryRebasesRevisionPerObservation(t *testing.T) {
+	fixture := fakeFixture(t)
+	directory := newFakeDirectory(t)
+	if err := directory.Bind(fixture.Target, fixture.Initial); err != nil {
+		t.Fatalf("Bind: %v", err)
+	}
+
+	first, err := directory.Observe(context.Background(), fixture.Target)
+	if err != nil {
+		t.Fatalf("first Observe: %v", err)
+	}
+	if err := directory.Emit(fixture.Target, fixture.Change); err != nil {
+		t.Fatalf("first Emit: %v", err)
+	}
+	firstChange, err := first.Watch().Next(context.Background())
+	if err != nil {
+		t.Fatalf("first Next: %v", err)
+	}
+	if firstChange.Revision().LocalOrder() != 1 {
+		t.Fatalf("first change local order = %d, want 1", firstChange.Revision().LocalOrder())
+	}
+
+	second, err := directory.Observe(context.Background(), fixture.Target)
+	if err != nil {
+		t.Fatalf("second Observe: %v", err)
+	}
+	if second.Initial().Revision().LocalOrder() != 0 {
+		t.Fatalf("second initial local order = %d, want 0", second.Initial().Revision().LocalOrder())
+	}
+	if got, want := second.Initial().Instances(), fixture.Change.Snapshot().Instances(); !sameInstances(got, want) {
+		t.Fatalf("second initial instances = %#v, want %#v", got, want)
+	}
+
+	nextInstance := fakeInstance(t, "uid-a", false, false, true)
+	nextSnapshot := fakeSnapshot(t, fixture.Target, 1, registry.SnapshotStatePopulated, []registry.Instance{nextInstance})
+	nextChange, err := registry.NewInstanceChange(registry.InstanceChangeInput{
+		Kind:     registry.InstanceChangeInstancesChanged,
+		Revision: nextSnapshot.Revision(),
+		Upserts:  []registry.Instance{nextInstance},
+		Snapshot: nextSnapshot,
+	})
+	if err != nil {
+		t.Fatalf("NewInstanceChange second transition: %v", err)
+	}
+	if err := directory.Emit(fixture.Target, nextChange); err != nil {
+		t.Fatalf("second Emit: %v", err)
+	}
+	firstNextChange, err := first.Watch().Next(context.Background())
+	if err != nil {
+		t.Fatalf("first second Next: %v", err)
+	}
+	if firstNextChange.Revision().LocalOrder() != 2 {
+		t.Fatalf("first second change local order = %d, want 2", firstNextChange.Revision().LocalOrder())
+	}
+	if got, want := firstNextChange.Upserts(), []registry.Instance{nextInstance}; !sameInstances(got, want) {
+		t.Fatalf("first second change upserts = %#v, want %#v", got, want)
+	}
+	if got, want := firstNextChange.Snapshot().Instances(), []registry.Instance{nextInstance}; !sameInstances(got, want) {
+		t.Fatalf("first second change instances = %#v, want %#v", got, want)
+	}
+
+	secondChange, err := second.Watch().Next(context.Background())
+	if err != nil {
+		t.Fatalf("second Next: %v", err)
+	}
+	if secondChange.Revision().LocalOrder() != 1 {
+		t.Fatalf("second change local order = %d, want 1", secondChange.Revision().LocalOrder())
+	}
+	if got, want := secondChange.Upserts(), []registry.Instance{nextInstance}; !sameInstances(got, want) {
+		t.Fatalf("second change upserts = %#v, want %#v", got, want)
+	}
+	if got, want := secondChange.Snapshot().Instances(), []registry.Instance{nextInstance}; !sameInstances(got, want) {
+		t.Fatalf("second change instances = %#v, want %#v", got, want)
+	}
+}
+
 func TestFakeDistinguishesMissingBindingFromMissingSnapshot(t *testing.T) {
 	directory := newFakeDirectory(t)
 	target := fakeTarget(t, "agent-a", "release-a")

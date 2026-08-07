@@ -4,6 +4,7 @@ package testkit
 
 import (
 	"context"
+	"sort"
 	"sync"
 
 	"github.com/NeKiro-project/NeKiro/registry"
@@ -25,6 +26,8 @@ type FakeDirectory struct {
 	queueCapacity int
 	closed        bool
 
+	// bindings retain the current topology rebased to local order zero. Every
+	// observation receives an independent local revision sequence.
 	bindings map[registry.ReleaseTarget]registry.InstanceSnapshot
 	watches  map[registry.ReleaseTarget]map[*fakeWatch]struct{}
 }
@@ -134,6 +137,7 @@ func (d *FakeDirectory) Observe(ctx context.Context, target registry.ReleaseTarg
 		target:    target,
 		watch:     watch,
 		publisher: publisher,
+		current:   snapshot,
 	}
 	if d.watches[target] == nil {
 		d.watches[target] = make(map[*fakeWatch]struct{})
@@ -160,8 +164,9 @@ func (d *FakeDirectory) Capabilities() registry.Capabilities {
 	return cloneCapabilities(d.capabilities)
 }
 
-// Emit delivers one ordered change to every current observation for target and
-// advances the configured current snapshot. It never coalesces changes.
+// Emit accepts the next transition from the current zero-based topology and
+// delivers an independently rebased ordered change to every active observation.
+// It never coalesces changes or shares one observation-local revision sequence.
 func (d *FakeDirectory) Emit(target registry.ReleaseTarget, change registry.InstanceChange) error {
 	if err := target.Validate(); err != nil {
 		return err
@@ -183,25 +188,182 @@ func (d *FakeDirectory) Emit(target registry.ReleaseTarget, change registry.Inst
 		d.mu.Unlock()
 		return registry.ErrMissing
 	}
-	if change.Revision().LocalOrder() != current.Revision().LocalOrder()+1 {
+	if change.Revision().LocalOrder() != 1 {
 		d.mu.Unlock()
 		return registry.NewOutcomeError(registry.OutcomeInvalid, registry.CauseInvalidInput)
 	}
-	d.bindings[target] = change.Snapshot()
-	watches := make([]*fakeWatch, 0, len(d.watches[target]))
-	for watch := range d.watches[target] {
-		watches = append(watches, watch)
+	if err := validateTransition(current, change); err != nil {
+		d.mu.Unlock()
+		return err
 	}
+	next, err := rebaseSnapshot(change.Snapshot(), 0)
+	if err != nil {
+		d.mu.Unlock()
+		return err
+	}
+	deliveries := make([]pendingDelivery, 0, len(d.watches[target]))
+	for watch := range d.watches[target] {
+		delivery, err := rebaseChange(watch.current, next, change.Kind())
+		if err != nil {
+			d.mu.Unlock()
+			return err
+		}
+		deliveries = append(deliveries, pendingDelivery{watch: watch, change: delivery})
+	}
+	for _, delivery := range deliveries {
+		delivery.watch.current = delivery.change.Snapshot()
+	}
+	d.bindings[target] = next
 	d.mu.Unlock()
 
 	var firstErr error
-	for _, watch := range watches {
-		if err := watch.publisher.Publish(change); err != nil && firstErr == nil {
-			firstErr = err
-			watch.detach()
+	for _, delivery := range deliveries {
+		if err := delivery.watch.publisher.Publish(delivery.change); err != nil {
+			if firstErr == nil {
+				firstErr = err
+			}
+			delivery.watch.detach()
 		}
 	}
 	return firstErr
+}
+
+func rebaseSnapshot(snapshot registry.InstanceSnapshot, localOrder uint64) (registry.InstanceSnapshot, error) {
+	revision, err := registry.NewRevision(registry.RevisionInput{
+		SourceTokens: snapshot.Revision().SourceTokens(),
+		LocalOrder:   localOrder,
+	})
+	if err != nil {
+		return registry.InstanceSnapshot{}, err
+	}
+	return registry.NewInstanceSnapshot(registry.InstanceSnapshotInput{
+		Target:    snapshot.Target(),
+		Revision:  revision,
+		State:     snapshot.State(),
+		Instances: snapshot.Instances(),
+	})
+}
+
+func rebaseChange(current, next registry.InstanceSnapshot, kind registry.InstanceChangeKind) (registry.InstanceChange, error) {
+	rebasedNext, err := rebaseSnapshot(next, current.Revision().LocalOrder()+1)
+	if err != nil {
+		return registry.InstanceChange{}, err
+	}
+	input := registry.InstanceChangeInput{
+		Kind:     kind,
+		Revision: rebasedNext.Revision(),
+		Snapshot: rebasedNext,
+	}
+	switch kind {
+	case registry.InstanceChangeInstancesChanged:
+		input.Upserts, input.DeletedInstanceIDs = instanceDelta(current.Instances(), rebasedNext.Instances())
+	case registry.InstanceChangeStateChanged:
+		input.PreviousState = current.State()
+	case registry.InstanceChangeTargetDeleted:
+	default:
+		return registry.InstanceChange{}, registry.NewOutcomeError(registry.OutcomeInvalid, registry.CauseInvalidInput)
+	}
+	return registry.NewInstanceChange(input)
+}
+
+func validateTransition(current registry.InstanceSnapshot, change registry.InstanceChange) error {
+	next := change.Snapshot()
+	switch change.Kind() {
+	case registry.InstanceChangeTargetDeleted:
+		return nil
+	case registry.InstanceChangeStateChanged:
+		if current.State() != change.PreviousState() || !sameInstances(current.Instances(), next.Instances()) {
+			return registry.NewOutcomeError(registry.OutcomeInvalid, registry.CauseInvalidInput)
+		}
+		return nil
+	case registry.InstanceChangeInstancesChanged:
+		return validateInstanceDelta(current.Instances(), next.Instances(), change.Upserts(), change.DeletedInstanceIDs())
+	default:
+		return registry.NewOutcomeError(registry.OutcomeInvalid, registry.CauseInvalidInput)
+	}
+}
+
+func validateInstanceDelta(previous, next, upserts []registry.Instance, deleted []string) error {
+	previousByID := instancesByID(previous)
+	nextByID := instancesByID(next)
+	upsertByID := instancesByID(upserts)
+	deletedByID := make(map[string]struct{}, len(deleted))
+	for _, id := range deleted {
+		deletedByID[id] = struct{}{}
+	}
+
+	for id, before := range previousByID {
+		after, remains := nextByID[id]
+		_, upserted := upsertByID[id]
+		_, deletedID := deletedByID[id]
+		switch {
+		case !remains:
+			if !deletedID || upserted {
+				return registry.NewOutcomeError(registry.OutcomeInvalid, registry.CauseInvalidInput)
+			}
+		case before.Equal(after):
+			if upserted || deletedID {
+				return registry.NewOutcomeError(registry.OutcomeInvalid, registry.CauseInvalidInput)
+			}
+		case !upserted || deletedID:
+			return registry.NewOutcomeError(registry.OutcomeInvalid, registry.CauseInvalidInput)
+		}
+	}
+	for id := range nextByID {
+		if _, existed := previousByID[id]; !existed {
+			if _, upserted := upsertByID[id]; !upserted {
+				return registry.NewOutcomeError(registry.OutcomeInvalid, registry.CauseInvalidInput)
+			}
+		}
+	}
+	for id := range deletedByID {
+		if _, existed := previousByID[id]; !existed {
+			return registry.NewOutcomeError(registry.OutcomeInvalid, registry.CauseInvalidInput)
+		}
+	}
+	return nil
+}
+
+func instancesByID(instances []registry.Instance) map[string]registry.Instance {
+	byID := make(map[string]registry.Instance, len(instances))
+	for _, instance := range instances {
+		byID[instance.ID()] = instance
+	}
+	return byID
+}
+
+func sameInstances(left, right []registry.Instance) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for index := range left {
+		if !left[index].Equal(right[index]) {
+			return false
+		}
+	}
+	return true
+}
+
+func instanceDelta(previous, next []registry.Instance) ([]registry.Instance, []string) {
+	previousByID := instancesByID(previous)
+	nextByID := instancesByID(next)
+
+	upserts := make([]registry.Instance, 0)
+	for id, instance := range nextByID {
+		prior, found := previousByID[id]
+		if !found || !prior.Equal(instance) {
+			upserts = append(upserts, instance)
+		}
+	}
+	deleted := make([]string, 0)
+	for id := range previousByID {
+		if _, found := nextByID[id]; !found {
+			deleted = append(deleted, id)
+		}
+	}
+	sort.Slice(upserts, func(left, right int) bool { return upserts[left].ID() < upserts[right].ID() })
+	sort.Strings(deleted)
+	return upserts, deleted
 }
 
 // Terminate latches a typed terminal outcome for every current observation of
@@ -275,8 +437,14 @@ type fakeWatch struct {
 	target    registry.ReleaseTarget
 	watch     registry.InstanceWatch
 	publisher registry.InstanceWatchPublisher
+	current   registry.InstanceSnapshot
 
 	detachOnce sync.Once
+}
+
+type pendingDelivery struct {
+	watch  *fakeWatch
+	change registry.InstanceChange
 }
 
 func (w *fakeWatch) Next(ctx context.Context) (registry.InstanceChange, error) {

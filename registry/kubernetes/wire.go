@@ -202,8 +202,8 @@ func validResourceVersion(value string) bool {
 }
 
 func outcomeFromWatchStatus(status wireStatus) error {
-	if status.Code == 410 || status.Reason == "Expired" || status.Reason == "Gone" {
+	if status.Code == 410 {
 		return registry.NewOutcomeError(registry.OutcomeStale, registry.CauseResourceVersionExpired)
 	}
-	return outcomeFromStatus(status.Code, true)
+	return registry.NewOutcomeError(registry.OutcomeWatchInterrupted, registry.CauseWatchStatusError)
 }
