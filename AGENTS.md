@@ -9,6 +9,8 @@ Core 只维护以下内容：
 - `apps/control-plane`：Gateway、Catalog、Workspace、Invocation Dispatch。
 - `apps/a2a-router`：A2A 路由、上下文传播、凭证、策略扩展点和 Invocation Ledger。
 - `config_center/`：provider-neutral 的配置源读取、观察和显式发布边界。
+- `registry`：provider-neutral 的临时 Agent 实例拓扑与适配器；它不是
+  Catalog Registry 的第二事实源，也不拥有 Release、Endpoint Binding、权限或持久化。
 - `contracts`：语言无关的 JSON Schema、OpenAPI、A2A Profile 及其 Go 映射。
 - Catalog、Workspace、Ledger 各自拥有的 PostgreSQL migrations。
 - Core 单元、契约和服务集成测试。
@@ -37,6 +39,8 @@ Register -> Discover -> Install -> Invoke -> Record
 1. Console 和外部应用只能访问 Gateway。
 2. Gateway 不直接调用 Agent；平台托管调用全部交给 A2A Router。
 3. Registry 是 Agent Card 与 Release 的唯一事实来源；Discovery 只提供派生查询。
+   根级 `registry/` 仅报告已经精确授权 Release 的临时实例拓扑，不得读取、写入、
+   解析或替代 Catalog Registry 事实。
 4. A2A Router 通过受控接口解析精确 Agent Card/Release，不保存第二份永久 Card。
 5. Agent-to-Agent 托管调用必须再次经过 Router，并传播 `root_task_id`、`parent_invocation_id` 和 `trace_id`。
 6. Ledger 只记录追加式 metadata 事实，不保存 Agent 输入、输出、凭证或密钥。
